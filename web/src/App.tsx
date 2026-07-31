@@ -1228,7 +1228,7 @@ function NewProjectModal({ onClose, onCreated }: { onClose: () => void; onCreate
             </div>
             <div className="modal-foot">
               {create.error ? <span className="hint-err">{(create.error as Error).message}</span>
-                : <span className="muted hint-inline">Scaffolds AGENTS.md + su-code memory + selected extras.</span>}
+                : <span className="muted hint-inline">Scaffolds AGENTS.md + agents memory + selected extras.</span>}
               <div className="row-actions">
                 <button onClick={onClose}>Cancel</button>
                 <button className="primary" disabled={!name.trim() || create.isPending} onClick={() => create.mutate()}>
@@ -1580,7 +1580,7 @@ function MarketplacePage() {
 // ── Knowledge (curated sindresorhus/awesome) ────────────────────────────────
 // Auto-fetched "awesome list of awesome lists": browse categories, search,
 // select high-signal entries, save them into the active project's
-// su-code/REFERENCES.md so the agent can consult them.
+// agents/REFERENCES.md so the agent can consult them.
 type KnSel = { name: string; url: string; desc: string; category: string };
 
 function KnowledgePage() {
@@ -1616,7 +1616,7 @@ function KnowledgePage() {
   return (
     <Page
       title="Knowledge"
-      sub={<>Curated from <b>sindresorhus/awesome</b> — pick high-signal resources, save them into this project's <code>su-code/REFERENCES.md</code>.</>}
+      sub={<>Curated from <b>sindresorhus/awesome</b> — pick high-signal resources, save them into this project's <code>agents/REFERENCES.md</code>.</>}
       action={
         <button className="ghost" disabled={isFetching}
           onClick={async () => { await api.knowledge(search, true); refetch(); }}>

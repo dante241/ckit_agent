@@ -16,6 +16,7 @@ pub(crate) mod index;
 pub(crate) mod inject;
 pub(crate) mod list;
 pub(crate) mod meta;
+pub(crate) mod pack;
 pub(crate) mod spec;
 pub(crate) mod update;
 
@@ -33,6 +34,7 @@ pub(crate) use inject::inject_agents_md;
       8sync skill add gh:owner/repo                              same, short form
       8sync skill add path:/abs/path#better-name                 register a local dir (symlink), optionally renamed
       8sync skill add builtin:karpathy                           register a builtin skill (already shipped)
+      8sync skill add pack:vtiger-php                             install a domain skill+rule pack (project-local: .omp/skills + .omp/rules)
       8sync skill gen 1 2                                        FUSE local skill #1 and #2 into one combined SKILL.md
       8sync skill gen karpathy-guidelines codegraph              same, but by name
       8sync skill update [name]                                  re-pull registered skills from their source (git/builtin/path)
@@ -50,7 +52,7 @@ pub(crate) use inject::inject_agents_md;
       ~/.config/8sync/skills.toml      skill registry (editable TOML)
       ~/.omp/skills/                   global skill directories (one per skill)
       ~/.omp/skills/00-force-load.md   master file — omp reads this first in every session
-      <project>/su-code/skills/         project-local skills (referenced from AGENTS.md)
+      <project>/.omp/skills/            project-local skills (referenced from AGENTS.md)
 "})]
 pub struct Args {
     /// Sub-action: list (default) | help | add <spec> | gen <id> <id> … | update [name]
@@ -64,7 +66,7 @@ pub struct Args {
 
 pub fn run(a: Args) -> Result<()> {
     let env = env_detect::Env::detect()?;
-    let skills_toml = env.xdg_config.join("8sync/skills.toml");
+    let skills_toml = crate::brand::config_dir(&env.home).join("skills.toml");
     match a.sub.as_deref() {
         None | Some("list") => list::list_skills(&env, &skills_toml),
         Some("help") => list::print_help(&env, &skills_toml),

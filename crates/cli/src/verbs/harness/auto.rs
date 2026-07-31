@@ -1,8 +1,8 @@
 //! `8sync harness` (bare, no subcommand) — the ONE command that makes a project
 //! fully agent-ready and current, in a single idempotent pass:
 //!   skills (deploy bundled + external) → update (pull registered from source) →
-//!   mirror into the project (additive) → inject force-load → seed memory +
-//!   gitleaks hook → consolidate learnings → re-index codegraph.
+//!   inject force-load → seed memory + gitleaks hook → consolidate learnings →
+//!   re-index codegraph.
 //! Re-run anytime; safe + cheap. `harness init` = explicit full bootstrap with
 //! progress UI; `harness up` = light refresh; `harness up --timer` = background loop.
 use std::process::Command;
@@ -13,7 +13,7 @@ use super::memory::{consolidate_learnings, seed_gitleaks_hook, seed_harness_memo
 use crate::verbs::skill::{deploy, discover, inject_agents_md, inject_subfolder_indexes, update};
 use crate::{env_detect, ui};
 
-pub(crate) fn harness_auto(env: &env_detect::Env, force: bool) -> Result<()> {
+pub(crate) fn harness_auto(env: &env_detect::Env, _force: bool) -> Result<()> {
     ui::header("8sync harness");
 
     // 1. Global skill library + rule layer — idempotent, shared with
@@ -29,14 +29,12 @@ pub(crate) fn harness_auto(env: &env_detect::Env, force: bool) -> Result<()> {
         return Ok(());
     };
 
-    // 2. Update registered skills from their sources, then mirror the rest in
-    //    (additive: never clobber an edited local skill — pass `--force` to refresh).
-    let _ = update::update_skills(env, &env.xdg_config.join("8sync/skills.toml"), None);
-    let count = deploy::mirror_global_to_local(&env.home, &root, force)?;
-    if count > 0 {
-        ui::ok(&format!("skills vendored → {}", root.join("su-code/skills").display()));
-    }
-    for d in discover::list_installed_skill_dirs(&root.join("su-code/skills")).unwrap_or_default() {
+    // 2. Update registered skills from their sources (git/builtin/path — additive,
+    //    never clobbers an edited local skill). No global→project skill copy:
+    //    skills live in ~/.omp/skills/ (global) or <root>/.omp/skills/ (project-local,
+    //    only if explicitly added via `8sync skill add`).
+    let _ = update::update_skills(env, &crate::brand::config_dir(&env.home).join("skills.toml"), None);
+    for d in discover::list_installed_skill_dirs(&root.join(".omp/skills")).unwrap_or_default() {
         deploy::ensure_skill_layout(&d);
     }
 

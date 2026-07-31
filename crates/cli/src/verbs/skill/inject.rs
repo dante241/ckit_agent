@@ -127,13 +127,13 @@ pub(crate) struct ForceLoadStats {
 /// the skill dirs, writes nothing.
 pub(crate) fn build_force_load(home: &Path, root: &Path) -> ForceLoadStats {
     let global_dir = home.join(".omp/skills");
-    let local_dir = root.join("su-code/skills");
+    let local_dir = root.join("agents/skills");
 
     let globals = list_installed_skill_dirs(&global_dir).unwrap_or_default();
     let locals = list_installed_skill_dirs(&local_dir).unwrap_or_default();
 
     // Dedupe global vs local (locals mirror globals): list each skill once,
-    // preferring the committed local copy under su-code/skills/.
+    // preferring the committed local copy under agents/skills/.
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut chosen: Vec<(PathBuf, bool)> = Vec::new(); // (dir, is_local)
     for p in locals.iter() {
@@ -188,7 +188,7 @@ pub(crate) fn build_force_load(home: &Path, root: &Path) -> ForceLoadStats {
                 continue;
             }
             let rel = if *is_local {
-                format!("su-code/skills/{}/{}", dirname, entry)
+                format!("agents/skills/{}/{}", dirname, entry)
             } else {
                 format!("~/.omp/skills/{}/{}", dirname, entry)
             };
@@ -229,7 +229,7 @@ Lý do: 5 query cấu trúc ≈ 3.4k token vs ≈ 412k token grep từng file (�
 {codegraph_install_hint}\
 ## 🚨 STEP 1 — skills 2 tầng: CORE (đọc ngay) · SPECIALIST + on-demand (đọc khi cần)\n\
 \n\
-Mỗi skill = 1 directory (Agent Skills open standard): `SKILL.md` có frontmatter `name`+`description`. Skill vendored ở `su-code/skills/<name>/` (bản commit trong repo, mirror từ `~/.omp/skills/`). Mỗi skill liệt kê 1 lần.\n\
+Mỗi skill = 1 directory (Agent Skills open standard): `SKILL.md` có frontmatter `name`+`description`. Skill vendored ở `agents/skills/<name>/` (bản commit trong repo, mirror từ `~/.omp/skills/`). Mỗi skill liệt kê 1 lần.\n\
 \n\
 ### ⛔ CORE always-on — ĐỌC NGAY (body), trước tool call đầu tiên (không skip)\n\
 \n\
@@ -251,11 +251,11 @@ KHÔNG đọc body mỗi phiên (giữ prefix gọn, tiết kiệm KV-cache). Kh
 - Đọc body **CORE** (codegraph → karpathy → ponytail → 8sync-cli) TRƯỚC tool call đầu tiên. **SPECIALIST** (assp · impeccable · taste · image-routing) đọc body KHI task khớp — `impeccable` bắt buộc ngay khi có việc UI/design.\n\
 - Skill **on-demand**: chỉ mở khi description khớp task hiện tại — đừng đọc thừa.\n\
 - Nếu skill có `scripts/` → ưu tiên invoke script đó thay vì viết lại logic.\n\
-- Khi áp dụng skill, **cite** rõ: ví dụ `su-code/skills/<name>/SKILL.md:line`.\n\
-- **Sau mỗi thay đổi:** cập nhật `CHANGELOG.md` (mục Unreleased) + ghi học được vào `su-code/KNOWLEDGE.md`.\n\
+- Khi áp dụng skill, **cite** rõ: ví dụ `agents/skills/<name>/SKILL.md:line`.\n\
+- **Sau mỗi thay đổi:** Ghi học được vào `agents/KNOWLEDGE.md`.\n\
 - **Doc-hygiene**: chạy `8sync harness audit` khi đụng vùng có docs — path lệch→fix, doc rác/superseded→xóa (thêm doc phải kèm xóa cái cũ), oversized→trim.\n\
-- **Loop / STATE spine**: đọc `su-code/STATE.md` đầu phiên; rewrite ở mỗi phase-boundary (Goal·Checklist·Current·Next). Context gần đầy → handoff vào STATE + bài học vào KNOWLEDGE rồi reinit. Đo loop: `8sync harness bench`.\n\
-- **Loop discipline (C/D/E)**: implementer↔verifier qua `task` (verifier chạy build/test ĐỘC LẬP, verify-gate TRƯỚC commit); FAIL → ghi `failure:` vào KNOWLEDGE, đọc đầu phiên để khỏi lặp; quy trình `validated:` → distill vào `su-code/PLAYBOOKS.md` (index theo `When:`); autonomy L1 report · L2 assisted · L3 unattended — không tự `push`/PR ở L3 mặc định.\n\
+- **Loop / STATE spine**: đọc `agents/STATE.md` đầu phiên; rewrite ở mỗi phase-boundary (Goal·Checklist·Current·Next). Context gần đầy → handoff vào STATE + bài học vào KNOWLEDGE rồi reinit. Đo loop: `8sync harness bench`.\n\
+- **Loop discipline (C/D/E)**: implementer↔verifier qua `task` (verifier chạy build/test ĐỘC LẬP, verify-gate TRƯỚC commit); FAIL → ghi `failure:` vào KNOWLEDGE, đọc đầu phiên để khỏi lặp; quy trình `validated:` → distill vào `agents/PLAYBOOKS.md` (index theo `When:`); autonomy L1 report · L2 assisted · L3 unattended — không tự `push`/PR ở L3 mặc định.\n\
 {END}"
     );
 

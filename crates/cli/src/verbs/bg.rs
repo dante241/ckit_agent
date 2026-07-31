@@ -96,11 +96,11 @@ fn conf_path(env: &Env) -> PathBuf {
 }
 
 fn collection_dir(env: &Env) -> PathBuf {
-    env.xdg_config.join(crate::brand::NS).join("wallpapers")
+    crate::brand::config_dir(&env.home).join("wallpapers")
 }
 
 fn record_path(env: &Env) -> PathBuf {
-    env.xdg_config.join(crate::brand::NS).join("wallpaper")
+    crate::brand::config_dir(&env.home).join("wallpaper")
 }
 
 /// Parse the active wallpaper from the `background_image` line in 8sync.conf.

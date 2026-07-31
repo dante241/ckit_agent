@@ -1,10 +1,10 @@
 //! `8sync feature` — deterministic ops for the large-scope GSD feature framework.
 //!
 //! Owns the on-disk planning tree + the cross-feature ACTIVE switch under
-//! `<project>/su-code/planning/`. The AI-judgement steps (`plan`/`go`/`ship`)
+//! `<project>/agents/planning/`. The AI-judgement steps (`plan`/`go`/`ship`)
 //! need model reasoning and live in the bundled `feature` skill + the `/feature`
 //! omp command; this verb only does the fast, deterministic file ops:
-//!   new <slug>    scaffold `su-code/planning/<slug>/` from templates + activate
+//!   new <slug>    scaffold `agents/planning/<slug>/` from templates + activate
 //!   switch <slug> flip the active feature (rewrite ACTIVE.md + config)
 //!   status        print the active feature's STATE position
 //!   list          list features (active marked) + archived
@@ -19,13 +19,13 @@ use crate::{assets, brand, ui, verbs::here};
 /// Planning tree location, relative to the project root (matches the bundled
 /// `config.json` `paths.planning_root`). Fixed so the switch is deterministic —
 /// `config.json` lives *inside* this dir and cannot relocate it.
-const PLANNING_REL: &str = "su-code/planning";
+const PLANNING_REL: &str = "agents/planning";
 
 #[derive(ClapArgs, Debug)]
 #[command(
     after_help = indoc::indoc! {"
         EXAMPLES
-          8sync feature new zalo-group   scaffold su-code/planning/zalo-group/ (+ activate)
+          8sync feature new zalo-group   scaffold agents/planning/zalo-group/ (+ activate)
           8sync feature list             list features (★ = active) + archived
           8sync feature switch other     flip the active feature
           8sync feature status           show the active feature's STATE position
@@ -250,7 +250,7 @@ fn load_config(planning: &Path) -> serde_json::Value {
             "code_review": true,
             "verifier": true
         },
-        "paths": { "planning_root": "su-code/planning", "archive": "su-code/planning/_archive" }
+        "paths": { "planning_root": "agents/planning", "archive": "agents/planning/_archive" }
     })
 }
 
@@ -280,17 +280,17 @@ fn active_slug(planning: &Path) -> Option<String> {
 }
 
 /// Best-effort: keep a one-line pointer at the top of the project's session
-/// `su-code/STATE.md` so `/auto` + the recall hook see which feature is active.
+/// `agents/STATE.md` so `/auto` + the recall hook see which feature is active.
 /// No-op when STATE.md is absent (only seeded projects have it); never clobbers
 /// other content — replaces its own marker line idempotently.
 fn write_active_pointer(root: &Path, slug: &str) {
-    let state = root.join("su-code/STATE.md");
+    let state = root.join("agents/STATE.md");
     let Ok(content) = std::fs::read_to_string(&state) else {
         return;
     };
     const MARKER: &str = "> **Active feature:**";
     let pointer = format!(
-        "{} `su-code/planning/{}/STATE.md` — `{} feature status`",
+        "{} `agents/planning/{}/STATE.md` — `{} feature status`",
         MARKER, slug, brand::CMD
     );
     let mut lines: Vec<String> = content

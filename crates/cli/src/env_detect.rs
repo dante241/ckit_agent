@@ -12,7 +12,14 @@ pub struct Env {
 impl Env {
     pub fn detect() -> Result<Self> {
         let home = dirs::home_dir().context("no HOME")?;
-        let xdg_config = dirs::config_dir().unwrap_or_else(|| home.join(".config"));
+        // Always `~/.config` (true XDG), on every OS — NOT `dirs::config_dir()`,
+        // which on macOS resolves to `~/Library/Application Support` and would
+        // split ckit's config away from `brand::config_dir` (and from where
+        // kitty/helix/fish actually read on macOS: `~/.config`). Single source.
+        let xdg_config = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .unwrap_or_else(|| home.join(".config"));
 
         let os_id = std::fs::read_to_string("/etc/os-release")
             .ok()

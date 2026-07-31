@@ -44,8 +44,8 @@ cargo build --release --locked || cargo build --release
 
 # 4. install vào ~/.local/bin
 mkdir -p "$HOME/.local/bin"
-install -m 755 target/release/8sync "$HOME/.local/bin/8sync"
-ok "Đã cài 8sync → ~/.local/bin/8sync"
+install -m 755 target/release/ckit "$HOME/.local/bin/ckit"
+ok "Đã cài ckit → ~/.local/bin/ckit"
 
 # 5. PATH hint
 case ":$PATH:" in

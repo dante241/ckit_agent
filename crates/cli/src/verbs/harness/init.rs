@@ -1,15 +1,16 @@
 //! `8sync harness init` — one command to stand up a maximal agent harness:
 //! deploy every bundled skill (+ codegraph binary + external skill packs),
-//! pull registered skills (su-code/skills.toml), mirror them into the project,
-//! init codegraph, seed agent memory + CHANGELOG,
-//! and inject force-load rules into the root AGENTS.md/CLAUDE.md plus a compact
-//! index into every significant sub-folder. Progress is tracked step by step.
+//! pull registered skills (agents/skills.toml), init codegraph, seed agent
+//! memory + CHANGELOG, and inject force-load rules into the root
+//! AGENTS.md/CLAUDE.md plus a compact index into every significant
+//! sub-folder. Progress is tracked step by step.
 use std::time::Instant;
 
 use anyhow::Result;
 
 use super::external::install_external_skill_packs;
 use super::memory::{seed_gitleaks_hook, seed_harness_memory};
+use crate::verbs::skill::pack::{discover_packs, install_pack, is_pack_installed};
 use crate::verbs::skill::{deploy, discover, inject_agents_md, inject_subfolder_indexes, update};
 use crate::{assets, env_detect, ui};
 
@@ -37,7 +38,7 @@ impl Progress {
     }
 }
 
-pub(crate) fn harness_init(env: &env_detect::Env, force: bool) -> Result<()> {
+pub(crate) fn harness_init(env: &env_detect::Env, _force: bool) -> Result<()> {
     ui::header("8sync harness init");
     deploy::migrate_namespace(&env.home);
     let in_project = discover::detect_current_project_root().is_some();
@@ -86,19 +87,45 @@ pub(crate) fn harness_init(env: &env_detect::Env, force: bool) -> Result<()> {
 
     // 5-9. Project-scoped scaffolding.
     if let Some(root) = discover::detect_current_project_root() {
-        // Pull every skill registered in su-code/skills.toml from its source
+        // Pull every skill registered in agents/skills.toml from its source
         // (git collections like feynman, builtin:, path:) — mirrors bare
         // `8sync harness` so init is a true superset, not a smaller bootstrap.
-        p.step("pull registered skills (su-code/skills.toml: feynman, …)");
-        let _ = update::update_skills(env, &env.xdg_config.join("8sync/skills.toml"), None);
-        p.step("mirror skills → su-code/skills/");
-        let count = deploy::mirror_global_to_local(&env.home, &root, force)?;
-        if count > 0 {
-            ui::ok(&format!("mirrored {} skill(s) into {}", count, root.join("su-code/skills").display()));
-        }
-        let local_dir = root.join("su-code/skills");
+        // No global→project skill copy: skills live in ~/.omp/skills/ (global)
+        // or <root>/.omp/skills/ (project-local, only if explicitly added).
+        p.step("pull registered skills (agents/skills.toml: feynman, …)");
+        let _ = update::update_skills(env, &crate::brand::config_dir(&env.home).join("skills.toml"), None);
+        let local_dir = root.join(".omp/skills");
         for d in discover::list_installed_skill_dirs(&local_dir).unwrap_or_default() {
             deploy::ensure_skill_layout(&d);
+        }
+
+        // Domain skill+rule packs (e.g. vtiger-php): y/N per pack not yet
+        // installed in THIS project — mirrors the `8sync setup` personal-profile
+        // prompt, but project-scoped (a pack writes into <root>/.omp/, so the
+        // question only makes sense once a project root is known).
+        p.step("domain packs (y/N each, not yet installed)");
+        if env_detect::has_tty() {
+            for pk in discover_packs() {
+                if is_pack_installed(&root, &pk.name) {
+                    continue;
+                }
+                let desc = if pk.description.is_empty() { pk.name.as_str() } else { pk.description.as_str() };
+                let q = format!("Install pack `{}` — {}", pk.name, desc);
+                if ui::prompt_yes_no(&q, false) {
+                    if let Err(e) = install_pack(&root, &pk.name, false) {
+                        ui::err(&format!("pack {} failed: {}", pk.name, e));
+                    } else {
+                        let manifest = root.join("agents/skills.toml");
+                        let mut reg = discover::read_registry(&manifest);
+                        reg.insert(pk.name.clone(), discover::SkillEntry {
+                            src: format!("pack:{}", pk.name),
+                            when: Some("on-demand".to_string()),
+                            rev: None,
+                        });
+                        let _ = discover::write_registry(&manifest, &reg);
+                    }
+                }
+            }
         }
 
         p.step("codegraph init + seed memory/CHANGELOG");

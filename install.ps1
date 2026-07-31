@@ -1,24 +1,26 @@
 <#
 .SYNOPSIS
-  8sync standalone installer for Windows (PowerShell).
+  ckit standalone installer for Windows (PowerShell) — PUBLIC GitHub repo.
 
 .DESCRIPTION
-  Downloads the prebuilt `8sync.exe` binary from GitHub Releases — no git clone,
-  no Rust toolchain, no cargo build. Ideal for a fresh machine or quick upgrade.
+  Downloads the prebuilt `ckit.exe` binary from the latest GitHub Release of
+  the public repo dante241x/ckit_agent. No token required.
 
   One-liner:
-    irm https://raw.githubusercontent.com/8-Sync-Dev/su-code/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/dante241x/ckit_agent/main/install.ps1 | iex
 
   Upgrade:   re-run the same command (atomically replaces the old binary).
   Uninstall: download the script and run:  .\install.ps1 -Uninstall
 
 .PARAMETER Uninstall
-  Remove the installed 8sync.exe and exit.
+  Remove the installed ckit.exe and exit.
 
 .NOTES
   Environment:
-    SUSYNC_VERSION   release tag to install (default: latest, e.g. v0.12.1)
-    SUSYNC_BIN_DIR   install location (default: %LOCALAPPDATA%\Programs\8sync)
+    CKIT_GITHUB_TOKEN  optional — only to dodge GitHub's 60-req/hour anonymous
+                       API limit. GITHUB_TOKEN also accepted.
+    CKIT_VERSION       release tag to install (default: latest, e.g. v0.53.0)
+    CKIT_BIN_DIR       install location (default: %LOCALAPPDATA%\Programs\ckit)
 #>
 param(
     [switch]$Uninstall
@@ -26,73 +28,23 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$Repo = '8-Sync-Dev/su-code'
-$BinDir = if ($env:SUSYNC_BIN_DIR) { $env:SUSYNC_BIN_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\8sync' }
-$BinName = '8sync.exe'
+$Repo = 'dante241x/ckit_agent'
+$Api = "https://api.github.com/repos/$Repo"
+$BinDir = if ($env:CKIT_BIN_DIR) { $env:CKIT_BIN_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\ckit' }
+$BinName = 'ckit.exe'
 $BinPath = Join-Path $BinDir $BinName
-
-# --- helpers ---------------------------------------------------------------
-
-# Pull the Location header off a response object (or an exception's .Response),
-# coping with the different shapes across Windows PowerShell 5.1 and PS 7+.
-function Get-HeaderLocation($obj) {
-    if ($null -eq $obj) { return $null }
-    try {
-        $h = $obj.Headers
-        if ($h) {
-            # Typed property (HttpResponseHeaders / WebHeaderCollection).
-            try { if ($h.Location) { return $h.Location.ToString() } } catch {}
-            # Dictionary-style indexer (BasicHtmlWebResponseObject).
-            try {
-                $v = $h['Location']
-                if ($v) { return ($v | Select-Object -First 1).ToString() }
-            } catch {}
-        }
-    } catch {}
-    return $null
-}
-
-# Resolve the latest release tag.
-#
-# Prefer the releases/latest *web* redirect over the GitHub API: the
-# unauthenticated API is rate-limited to 60 req/hour per IP (403 once
-# exhausted). The redirect (github.com/<repo>/releases/latest ->
-# .../releases/tag/vX.Y.Z) is not.
-function Get-LatestVersion {
-    $latestUrl = "https://github.com/$Repo/releases/latest"
-    $loc = $null
-    try {
-        # -MaximumRedirection 0: PS7 returns the 3xx response; 5.1 throws (caught below).
-        $resp = Invoke-WebRequest -Uri $latestUrl -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop
-        $loc = Get-HeaderLocation $resp
-    } catch {
-        $loc = Get-HeaderLocation $_.Exception.Response
-    }
-    if ($loc -and $loc -match '/releases/tag/([^/?#]+)') {
-        return $matches[1].Trim()
-    }
-    # Fallback: GitHub API (needs a User-Agent or it 403s).
-    try {
-        $apiUrl = "https://api.github.com/repos/$Repo/releases/latest"
-        $tag = (Invoke-RestMethod -Uri $apiUrl -UseBasicParsing -Headers @{ 'User-Agent' = '8sync-installer' }).tag_name
-        if ($tag) { return $tag }
-    } catch {}
-    return $null
-}
 
 # --- uninstall -------------------------------------------------------------
 
 if ($Uninstall) {
     if (Test-Path -LiteralPath $BinPath) {
         Remove-Item -LiteralPath $BinPath -Force
-        Write-Host "8sync uninstalled (removed $BinPath)."
+        Write-Host "ckit uninstalled (removed $BinPath)."
     } else {
-        Write-Host "8sync not found at $BinPath; nothing to uninstall."
+        Write-Host "ckit not found at $BinPath; nothing to uninstall."
     }
     return
 }
-
-# --- resolve version -------------------------------------------------------
 
 # Ensure TLS 1.2 on older Windows PowerShell (5.1 defaults can be too weak).
 try {
@@ -100,37 +52,50 @@ try {
         [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 } catch {}
 
-$version = $env:SUSYNC_VERSION
-if (-not $version) {
-    $version = Get-LatestVersion
+# Optional token — public repo needs none; only lifts the anon API rate limit.
+$token = if ($env:CKIT_GITHUB_TOKEN) { $env:CKIT_GITHUB_TOKEN } elseif ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { $null }
+$headers = @{ 'Accept' = 'application/vnd.github+json'; 'User-Agent' = 'ckit-installer' }
+if ($token) { $headers['Authorization'] = "Bearer $token" }
+
+# --- resolve release -------------------------------------------------------
+
+$version = $env:CKIT_VERSION
+if ($version) {
+    if ($version -notlike 'v*') { $version = "v$version" }
+    $relUrl = "$Api/releases/tags/$version"
+} else {
+    $relUrl = "$Api/releases/latest"
 }
-if (-not $version) {
-    throw "8sync: could not resolve latest version; set `$env:SUSYNC_VERSION (e.g. `$env:SUSYNC_VERSION='v0.12.1')."
+try {
+    $release = Invoke-RestMethod -Uri $relUrl -Headers $headers -UseBasicParsing
+} catch {
+    throw "ckit: could not query release ($relUrl)`n$($_.Exception.Message)"
 }
-# Release tags are vX.Y.Z; accept a bare X.Y.Z in SUSYNC_VERSION too.
-if ($version -notlike 'v*') { $version = "v$version" }
+$tag = $release.tag_name
+if (-not $tag) { throw "ckit: could not resolve release tag." }
+
+$asset = "ckit-$tag-windows-x86_64.exe"
+$assetObj = $release.assets | Where-Object { $_.name -eq $asset } | Select-Object -First 1
+if (-not $assetObj) { throw "ckit: release $tag has no asset '$asset'." }
 
 # --- download + install ----------------------------------------------------
 
-$asset = "8sync-$version-windows-x86_64.exe"
-$url = "https://github.com/$Repo/releases/download/$version/$asset"
-Write-Host "Installing 8sync $version (windows-x86_64)..."
-
+Write-Host "Installing ckit $tag (windows-x86_64)..."
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 
-$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("8sync-" + [System.Guid]::NewGuid().ToString('N') + ".exe")
+# Public repo → the browser_download_url needs no auth.
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("ckit-" + [System.Guid]::NewGuid().ToString('N') + ".exe")
 try {
-    Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
+    Invoke-WebRequest -Uri $assetObj.browser_download_url -OutFile $tmp -UseBasicParsing -Headers @{ 'User-Agent' = 'ckit-installer' }
 } catch {
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
-    throw "8sync: download failed: $url`n$($_.Exception.Message)"
+    throw "ckit: download failed: $($assetObj.browser_download_url)`n$($_.Exception.Message)"
 }
 if (-not (Test-Path -LiteralPath $tmp) -or (Get-Item -LiteralPath $tmp).Length -eq 0) {
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
-    throw "8sync: downloaded an empty file from $url"
+    throw "ckit: downloaded an empty file from $($assetObj.browser_download_url)"
 }
 
-# Atomically replace any existing binary (upgrade path).
 Move-Item -LiteralPath $tmp -Destination $BinPath -Force
 
 Write-Host "Installed -> $BinPath"
@@ -145,7 +110,6 @@ $already = $segments | Where-Object { $_.TrimEnd('\') -ieq $BinDir.TrimEnd('\') 
 if (-not $already) {
     $newPath = if ($userPath) { "$userPath;$BinDir" } else { $BinDir }
     [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-    # Reflect it in the current session too.
     $env:Path = "$env:Path;$BinDir"
     Write-Host ""
     Write-Host "$BinDir added to your user PATH."
@@ -156,6 +120,6 @@ if (-not $already) {
 
 Write-Host ""
 Write-Host "Done. Next steps:"
-Write-Host "  8sync setup        # full stack + config"
-Write-Host "  8sync doctor       # verify"
-Write-Host "  8sync up           # upgrade later (or re-run this installer)"
+Write-Host "  ckit setup        # full stack + config"
+Write-Host "  ckit doctor       # verify"
+Write-Host "  ckit up           # upgrade later (or re-run this installer)"

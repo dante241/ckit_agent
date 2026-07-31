@@ -66,7 +66,7 @@ fn spine_chars(root: &Path) -> usize {
     ["PROJECT.md", "KNOWLEDGE.md", "STATE.md", "DECISIONS.md", "PREFERENCES.md", "PLAYBOOKS.md"]
         .iter()
         .map(|f| {
-            std::fs::read_to_string(root.join("su-code").join(f))
+            std::fs::read_to_string(root.join("agents").join(f))
                 .map(|s| s.chars().count())
                 .unwrap_or(0)
         })
@@ -140,7 +140,7 @@ pub(crate) fn harness_bench(env: &env_detect::Env) -> Result<()> {
     if let Some(advice) = spine_advice(spine_tok, upfront) {
         ui::warn(&advice);
     }
-    ui::info("A3 headroom: route tool output > ~50 lines through headroom_compress (STEP 0)");
+    ui::info("A3 headroom: route tool output > ~300 lines through headroom_compress (STEP 0)");
     ui::info(&format!(
         "scorecard: upfront ~{} tok · deferred ~{} tok · A2 saved {}% · A1 {}",
         upfront, deferred, saved_pct, if stable { "PASS" } else { "FAIL" }
@@ -156,7 +156,7 @@ pub(crate) fn spine_advice(spine_tok: usize, upfront: usize) -> Option<String> {
         return None;
     }
     Some(format!(
-        "memory spine ~{} tok = {}% of upfront — trim su-code/STATE.md (archive finished phases) · KNOWLEDGE >200 lines auto-archives on next `8sync harness`",
+        "memory spine ~{} tok = {}% of upfront — trim agents/STATE.md (archive finished phases) · KNOWLEDGE >200 lines auto-archives on next `8sync harness`",
         spine_tok,
         spine_tok * 100 / upfront
     ))

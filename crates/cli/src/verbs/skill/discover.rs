@@ -27,11 +27,11 @@ pub(crate) fn read_registry(toml_path: &Path) -> BTreeMap<String, SkillEntry> {
 }
 
 /// Write a registry map to a TOML manifest — the committed project manifest
-/// `su-code/skills.toml`, so `8sync harness` re-pulls the same skills on any
+/// `agents/skills.toml`, so `8sync harness` re-pulls the same skills on any
 /// machine (the global `~/.config/8sync/skills.toml` is machine-local).
 pub(crate) fn write_registry(toml_path: &Path, reg: &BTreeMap<String, SkillEntry>) -> Result<()> {
     let mut s = String::from(
-        "# su-code/skills.toml — project skill manifest (committed). `8sync harness` re-pulls these on any machine.\n",
+        "# agents/skills.toml — project skill manifest (committed). `8sync harness` re-pulls these on any machine.\n",
     );
     for (name, e) in reg {
         s.push_str(&format!("\n[{}]\nsrc = \"{}\"\n", name, e.src));
@@ -68,13 +68,12 @@ pub(crate) fn list_installed_skill_dirs(skills_dir: &Path) -> Result<Vec<PathBuf
 
 /// Walk up from the cwd to the nearest recognised project root.
 pub(crate) fn detect_current_project_root() -> Option<PathBuf> {
-    // Markers in priority order. AGENTS.md / CLAUDE.md / su-code/ catch projects
+    // Markers in priority order. AGENTS.md / CLAUDE.md / agents/ catch projects
     // already seeded by `8sync .` even when they lack a language manifest.
     // `.git` / `.hg` catch any VCS repo. The rest cover major ecosystems.
     let markers = [
         "AGENTS.md",
         "CLAUDE.md",
-        "su-code",
         "agents",
         ".git",
         ".hg",

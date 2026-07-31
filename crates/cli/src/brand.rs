@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 /// terminal prose, error hints. Compile-time `&'static str` (clap needs it).
 pub const CMD: &str = match option_env!("SC_CMD") {
     Some(v) => v,
-    None => "8sync",
+    None => "ckit",
 };
 
 /// The on-disk namespace — `~/.config/<NS>`, `kitty/<NS>.conf`, AGENTS.md
@@ -27,7 +27,7 @@ pub const CMD: &str = match option_env!("SC_CMD") {
 /// (`~/.cache/` is deliberately excluded — see the note below.)
 pub const NS: &str = match option_env!("SC_NS") {
     Some(v) => v,
-    None => "8sync",
+    None => "ckit",
 };
 
 /// The legacy sentinels an older (`8sync`-namespaced) binary wrote into AGENTS.md.

@@ -22,7 +22,7 @@ last_updated: "DATE"
 
 ## Project Reference
 
-See: su-code/planning/SLUG/PROJECT.md · ROADMAP: su-code/planning/SLUG/ROADMAP.md
+See: agents/planning/SLUG/PROJECT.md · ROADMAP: agents/planning/SLUG/ROADMAP.md
 **Core value:** [1 câu từ PROJECT.md]
 **Current focus:** [phase đang làm]
 

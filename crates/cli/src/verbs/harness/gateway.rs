@@ -20,6 +20,11 @@ use crate::{assets, env_detect, ui};
 const PLACEHOLDER: &str = "__NINE_ROUTER_KEY__";
 /// Env var read for the key (keeps secrets out of shell history / git).
 const ENV_KEY: &str = "NINE_ROUTER_KEY";
+/// URL placeholder — the gateway base URL is NOT baked into the binary (keeps
+/// internal infra IPs out of git/binary). Substituted at apply time.
+const URL_PLACEHOLDER: &str = "__NINE_ROUTER_URL__";
+/// Env var read for the gateway base URL (e.g. http://<host>:<port>/v1).
+const ENV_URL: &str = "NINE_ROUTER_URL";
 
 pub(crate) fn harness_gateway(env: &env_detect::Env, args: &[String]) -> Result<()> {
     let path = env.home.join(".omp/agent/models.yml");
@@ -28,8 +33,16 @@ pub(crate) fn harness_gateway(env: &env_detect::Env, args: &[String]) -> Result<
         Some("key") => match args.get(1).map(|s| s.trim()).filter(|s| !s.is_empty()) {
             Some(k) => set_key(&path, k),
             None => {
-                ui::warn("usage: 8sync harness gateway key <KEY>");
-                ui::info("or set the $NINE_ROUTER_KEY env var and run `8sync harness gateway apply`");
+                ui::warn("usage: ckit harness gateway key <KEY>");
+                ui::info("or set the $NINE_ROUTER_KEY env var and run `ckit harness gateway apply`");
+                Ok(())
+            }
+        },
+        Some("url") => match args.get(1).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            Some(u) => set_url(&path, u),
+            None => {
+                ui::warn("usage: ckit harness gateway url <URL>");
+                ui::info("or set the $NINE_ROUTER_URL env var and run `ckit harness gateway apply`");
                 Ok(())
             }
         },
@@ -37,7 +50,7 @@ pub(crate) fn harness_gateway(env: &env_detect::Env, args: &[String]) -> Result<
         Some("status") | None => status(&path),
         Some(other) => {
             ui::warn(&format!("unknown gateway subcommand: {}", other));
-            ui::info("try: 8sync harness gateway apply | key <KEY> | verify | status");
+            ui::info("try: ckit harness gateway apply | key <KEY> | url <URL> | verify | status");
             Ok(())
         }
     }
@@ -82,21 +95,39 @@ fn apply(path: &Path) -> Result<()> {
     let tmpl = assets::read("configs/omp/gateway-models.yml")
         .ok_or_else(|| anyhow::anyhow!("embedded gateway template (configs/omp/gateway-models.yml) missing"))?;
 
-    let preserved = std::fs::read_to_string(path)
-        .ok()
-        .and_then(|raw| field(&raw, "apiKey").filter(|k| !k.is_empty() && *k != PLACEHOLDER).map(str::to_string));
+    let existing = std::fs::read_to_string(path).ok();
+    let preserved = existing
+        .as_deref()
+        .and_then(|raw| field(raw, "apiKey").filter(|k| !k.is_empty() && *k != PLACEHOLDER).map(str::to_string));
     let key = std::env::var(ENV_KEY)
         .ok()
         .filter(|s| !s.is_empty())
         .or(preserved)
         .ok_or_else(|| anyhow::anyhow!(
-            "no API key: set $NINE_ROUTER_KEY or run `8sync harness gateway key <KEY>` first"
+            "no API key: set $NINE_ROUTER_KEY or run `ckit harness gateway key <KEY>` first"
         ))?;
     if key == PLACEHOLDER {
         bail!("resolved key is still the placeholder — set $NINE_ROUTER_KEY");
     }
 
-    let rendered = tmpl.replace(PLACEHOLDER, &key);
+    // Resolve the base URL the same way: $NINE_ROUTER_URL first, else the URL
+    // already deployed in the file (preserve on refresh). NOT baked into the
+    // binary, so internal infra IPs never live in git.
+    let preserved_url = existing
+        .as_deref()
+        .and_then(|raw| field(raw, "baseUrl").filter(|u| !u.is_empty() && *u != URL_PLACEHOLDER).map(str::to_string));
+    let url = std::env::var(ENV_URL)
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or(preserved_url)
+        .ok_or_else(|| anyhow::anyhow!(
+            "no gateway URL: set $NINE_ROUTER_URL (e.g. http://<host>:<port>/v1) or run `ckit harness gateway url <URL>` first"
+        ))?;
+    if url == URL_PLACEHOLDER {
+        bail!("resolved URL is still the placeholder — set $NINE_ROUTER_URL");
+    }
+
+    let rendered = tmpl.replace(PLACEHOLDER, &key).replace(URL_PLACEHOLDER, &url);
     // Preserve managed provider blocks (local GGUF via `add-local-model`, remote
     // custom models via `add-model`) across a gateway re-deploy — each sentinel
     // block is re-attached under `providers:`.
@@ -129,6 +160,28 @@ fn apply(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Seed the team-default model catalog into `~/.omp/agent/models.yml` — the
+/// bootstrap counterpart to `apply`, invoked by `8sync setup` so a fresh machine
+/// gets the 9router providers/models WITHOUT needing an API key yet.
+///
+/// Unlike `apply` (which requires a key and back-ups/overwrites), `seed_default`
+/// only writes when the file is ABSENT, and writes the template verbatim with the
+/// `__NINE_ROUTER_KEY__` placeholder intact. If a file already exists — a real key
+/// the user set, or their own edits/managed blocks — it is left untouched.
+/// Returns `Ok(true)` if it wrote a new file, `Ok(false)` if one was already there.
+pub(crate) fn seed_default(path: &Path) -> Result<bool> {
+    if path.exists() {
+        return Ok(false);
+    }
+    let tmpl = assets::read("configs/omp/gateway-models.yml")
+        .ok_or_else(|| anyhow::anyhow!("embedded gateway template (configs/omp/gateway-models.yml) missing"))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, tmpl.as_bytes())?;
+    Ok(true)
+}
+
 /// Rotate just the API key in an already-deployed config (every `apiKey:` line),
 /// preserving comments and layout. Creates the file from the template if absent.
 fn set_key(path: &Path, key: &str) -> Result<()> {
@@ -154,6 +207,35 @@ fn set_key(path: &Path, key: &str) -> Result<()> {
     } else {
         // No config yet: create it from the template with this key.
         std::env::set_var(ENV_KEY, key);
+        apply(path)
+    }
+}
+
+/// Set the gateway base URL in an already-deployed config (every `baseUrl:` line),
+/// preserving comments and layout. Creates the file from the template if absent.
+fn set_url(path: &Path, url: &str) -> Result<()> {
+    if path.exists() {
+        let raw = std::fs::read_to_string(path)?;
+        let new: String = raw
+            .lines()
+            .map(|line| {
+                let t = line.trim_start();
+                if t.starts_with("baseUrl:") {
+                    let indent = &line[..line.len() - t.len()];
+                    format!("{}baseUrl: {}", indent, url)
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        std::fs::write(path, new)?;
+        ui::ok(&format!("gateway URL updated → {}", path.display()));
+        Ok(())
+    } else {
+        // No config yet: create it from the template with this URL.
+        std::env::set_var(ENV_URL, url);
         apply(path)
     }
 }
@@ -244,7 +326,7 @@ fn verify_model(raw: &str) -> Option<String> {
     fallback
 }
 
-/// Mask a secret for display: `sk-2d4e55340498...6efc`. Short values stay intact.
+/// Mask a secret for display: `sk-xxxxxx...xxxx`. Short values stay intact.
 fn mask(k: &str) -> String {
     if k.len() <= 10 {
         k.to_string()

@@ -7,7 +7,7 @@ description: Create a research watch baseline for a topic, with a documented fol
 
 Ported from `companion-inc/feynman`'s `/watch` slash-command. Self-contained omp-native version.
 
-**No scheduler**: feynman's `/watch` used a `schedule_prompt` tool for recurring follow-ups — omp has no equivalent built-in scheduler. Never claim a recurring watch was scheduled. Options to actually recur: a `cron`/systemd-timer entry the user sets up themselves (give them the exact command), or `8sync harness up --timer` if this is a su-code-managed loop. Record `Scheduling: BLOCKED - no scheduler tool available; see manual follow-up command below` when neither applies.
+**No scheduler**: feynman's `/watch` used a `schedule_prompt` tool for recurring follow-ups — omp has no equivalent built-in scheduler. Never claim a recurring watch was scheduled. Options to actually recur: a `cron`/systemd-timer entry the user sets up themselves (give them the exact command), or `8sync harness up --timer` if this is an 8sync-managed loop. Record `Scheduling: BLOCKED - no scheduler tool available; see manual follow-up command below` when neither applies.
 
 Derive a slug from the watch topic (lowercase, hyphens, ≤5 words).
 

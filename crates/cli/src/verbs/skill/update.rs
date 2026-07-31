@@ -14,6 +14,7 @@ use anyhow::Result;
 
 use super::deploy::copy_dir_recursive;
 use super::discover::{self, detect_current_project_root};
+use super::pack::install_pack;
 use super::spec::{collect_repo_skills, git_clone_at, install_path_skill};
 use super::{inject_agents_md, inject_subfolder_indexes};
 use crate::{assets, env_detect, ui};
@@ -24,10 +25,10 @@ pub(crate) fn update_skills(
     filter: Option<&str>,
 ) -> Result<()> {
     ui::header("8sync skill update");
-    // Global registry (machine-local) ∪ project manifest (su-code/skills.toml,
+    // Global registry (machine-local) ∪ project manifest (agents/skills.toml,
     // committed) — the manifest is what makes skills reproducible on a new machine.
     let project_root = detect_current_project_root();
-    let proj_manifest = project_root.as_ref().map(|r| r.join("su-code/skills.toml"));
+    let proj_manifest = project_root.as_ref().map(|r| r.join("agents/skills.toml"));
     let mut reg = discover::read_registry(toml_path);
     if let Some(pm) = &proj_manifest {
         for (k, v) in discover::read_registry(pm) {
@@ -35,7 +36,7 @@ pub(crate) fn update_skills(
         }
     }
     if reg.is_empty() {
-        ui::info("no registered skills — `8sync skill add <url>` (or commit su-code/skills.toml)");
+        ui::info("no registered skills — `8sync skill add <url>` (or commit agents/skills.toml)");
         return Ok(());
     }
     let omp_skills = env.home.join(".omp/skills");
@@ -94,10 +95,15 @@ pub(crate) fn update_skills(
                 ui::warn(&format!("  {} → global copy failed: {}", sname, e));
                 continue;
             }
+            // Refresh the project-local copy ONLY if it already exists (i.e. was
+            // explicitly added before via `skill add`) — never auto-create one;
+            // that would re-introduce the auto-mirror this update loop must avoid.
             if let Some(root) = project_root.as_ref() {
-                let lt = root.join("su-code/skills").join(sname);
-                let _ = std::fs::remove_dir_all(&lt);
-                let _ = copy_dir_recursive(sdir, &lt);
+                let lt = root.join(".omp/skills").join(sname);
+                if lt.is_dir() {
+                    let _ = std::fs::remove_dir_all(&lt);
+                    let _ = copy_dir_recursive(sdir, &lt);
+                }
             }
             ui::ok(&format!("updated `{}`", sname));
             updated += 1;
@@ -126,12 +132,36 @@ pub(crate) fn update_skills(
         let gt = omp_skills.join(name);
         let (w, _) = assets::install_tree(&prefix, &gt)?;
         if let Some(root) = project_root.as_ref() {
-            let lt = root.join("su-code/skills").join(name);
-            let _ = assets::install_tree(&prefix, &lt)?;
+            let lt = root.join(".omp/skills").join(name);
+            if lt.is_dir() {
+                let _ = assets::install_tree(&prefix, &lt)?;
+            }
         }
         ui::ok(&format!("updated builtin `{}` ({} file(s))", name, w));
         updated += 1;
         sources += 1;
+    }
+
+    // --- pack sources: reinstall the domain skill+rule pack (project-local only) ---
+    for (name, entry) in &reg {
+        let Some(pname) = entry.src.strip_prefix("pack:") else {
+            continue;
+        };
+        if !want(name) {
+            continue;
+        }
+        let Some(root) = project_root.as_ref() else {
+            ui::warn(&format!("pack `{}` is project-local — run inside the project to update", pname));
+            continue;
+        };
+        match install_pack(root, pname, true) {
+            Ok(_) => {
+                matched = true;
+                updated += 1;
+                sources += 1;
+            }
+            Err(e) => ui::warn(&format!("pack `{}` update failed: {}", pname, e)),
+        }
     }
 
     // --- path sources: re-ensure the symlink (idempotent) ---
@@ -146,8 +176,10 @@ pub(crate) fn update_skills(
         let gt = omp_skills.join(name);
         let _ = install_path_skill(Path::new(p), &gt);
         if let Some(root) = project_root.as_ref() {
-            let lt = root.join("su-code/skills").join(name);
-            let _ = install_path_skill(Path::new(p), &lt);
+            let lt = root.join(".omp/skills").join(name);
+            if lt.is_dir() {
+                let _ = install_path_skill(Path::new(p), &lt);
+            }
         }
         updated += 1;
         sources += 1;

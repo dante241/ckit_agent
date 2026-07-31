@@ -11,6 +11,7 @@ use super::deploy::copy_dir_recursive;
 use super::discover::detect_current_project_root;
 use super::inject::inject_agents_md;
 use super::meta::audit_skill_layout;
+use super::pack::install_pack;
 use super::spec::{
     collect_repo_skills, fetch_github_readme, git_clone_at, github_owner_repo,
     install_path_skill, parse_spec, resolve_head_sha, synthesize_skill_md, write_synth_skill,
@@ -28,6 +29,7 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
         Source::Git { name, .. } => name.clone(),
         Source::Path { name, .. } => name.clone(),
         Source::Builtin { name } => name.clone(),
+        Source::Pack { name } => name.clone(),
     };
     if name.is_empty() {
         return Err(anyhow!("empty skill name from `{}`", spec));
@@ -64,7 +66,7 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
                 write_synth_skill(&global_target, &body)?;
                 audit_skill_layout(&global_target);
                 if let Some(root) = project_root.as_ref() {
-                    let lt = root.join("su-code/skills").join(&name);
+                    let lt = root.join(".omp/skills").join(&name);
                     write_synth_skill(&lt, &body)?;
                     audit_skill_layout(&lt);
                 }
@@ -73,21 +75,31 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
                 ui::ok(&format!("{} → {} skill(s)", url, found.len()));
                 for (sname, sdir) in &found {
                     let gt = env.home.join(".omp/skills").join(sname);
-                    let lt = project_root.as_ref().map(|r| r.join("su-code/skills").join(sname));
-                    // Additive by default: don't clobber an already-installed skill.
-                    if (gt.exists() || lt.as_ref().is_some_and(|p| p.exists())) && !force {
-                        ui::skip(sname, "already installed (--force to overwrite)");
-                        installed.push(sname.clone());
-                        continue;
+                    let lt = project_root.as_ref().map(|r| r.join(".omp/skills").join(sname));
+                    // Global and project-local copies are independent targets:
+                    // additive by default (don't clobber an already-installed
+                    // skill), but already-global must not skip the project-local
+                    // copy this explicit `skill add` asked for.
+                    let mut wrote = false;
+                    if !gt.exists() || force {
+                        let _ = std::fs::remove_dir_all(&gt);
+                        copy_dir_recursive(sdir, &gt)?;
+                        audit_skill_layout(&gt);
+                        wrote = true;
                     }
-                    let _ = std::fs::remove_dir_all(&gt);
-                    copy_dir_recursive(sdir, &gt)?;
-                    audit_skill_layout(&gt);
                     if let Some(lt) = &lt {
-                        let _ = std::fs::remove_dir_all(lt);
-                        copy_dir_recursive(sdir, lt)?;
+                        if !lt.exists() || force {
+                            let _ = std::fs::remove_dir_all(lt);
+                            copy_dir_recursive(sdir, lt)?;
+                            audit_skill_layout(lt);
+                            wrote = true;
+                        }
                     }
-                    ui::ok(&format!("installed skill `{}`", sname));
+                    if wrote {
+                        ui::ok(&format!("installed skill `{}`", sname));
+                    } else {
+                        ui::skip(sname, "already installed (--force to overwrite)");
+                    }
                     installed.push(sname.clone());
                 }
             }
@@ -103,7 +115,7 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
             install_path_skill(src, &global_target)?;
             audit_skill_layout(&global_target);
             if let Some(root) = project_root.as_ref() {
-                let local_target = root.join("su-code/skills").join(&name);
+                let local_target = root.join(".omp/skills").join(&name);
                 if force {
                     let _ = std::fs::remove_file(&local_target);
                 }
@@ -117,22 +129,37 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
             // This is how opt-in bundled skills (e.g. `social-growth`) are enabled:
             // they ship in the binary but are NOT auto-deployed by `harness init`.
             let prefix = format!("skills/{}", name);
+            let local_target = project_root.as_ref().map(|r| r.join(".omp/skills").join(&name));
             if assets::iter_under(&format!("{}/", prefix)).is_empty() {
                 ui::warn(&format!("no bundled skill `{}` (assets/skills/{}/ not found)", name, name));
-            } else if global_target.exists() && !force {
-                ui::skip(&name, "already installed (--force to overwrite)");
-                installed.push(name.clone());
             } else {
-                let (w, _) = assets::install_tree(&prefix, &global_target)?;
-                ui::ok(&format!("enabled builtin `{}` ({} file(s)) → {}", name, w, global_target.display()));
-                audit_skill_layout(&global_target);
-                if let Some(root) = project_root.as_ref() {
-                    let lt = root.join("su-code/skills").join(&name);
-                    let _ = assets::install_tree(&prefix, &lt)?;
-                    audit_skill_layout(&lt);
+                // Global and project-local copies are independent targets: being
+                // already present globally (e.g. from `harness init`) must not skip
+                // the explicit project-local `skill add` this project asked for.
+                if !global_target.exists() || force {
+                    let (w, _) = assets::install_tree(&prefix, &global_target)?;
+                    ui::ok(&format!("enabled builtin `{}` ({} file(s)) → {}", name, w, global_target.display()));
+                    audit_skill_layout(&global_target);
+                } else {
+                    ui::skip(&name, "already installed globally (--force to overwrite)");
+                }
+                if let Some(lt) = &local_target {
+                    if !lt.exists() || force {
+                        let _ = assets::install_tree(&prefix, lt)?;
+                        audit_skill_layout(lt);
+                    }
                 }
                 installed.push(name.clone());
             }
+        }
+        Source::Pack { .. } => {
+            // Domain packs (skills + `.omp/rules/*.md`) are always project-local
+            // — the rule files only make sense scoped to a matching project.
+            let root = project_root.as_ref().ok_or_else(|| {
+                anyhow!("`pack:{}` must be run inside a project (needs a root for .omp/skills + .omp/rules)", name)
+            })?;
+            install_pack(root, &name, force)?;
+            installed.push(name.clone());
         }
     }
 
@@ -144,6 +171,7 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
         Source::Git { url, .. } => url.clone(),
         Source::Path { src, .. } => format!("path:{}", src.display()),
         Source::Builtin { name } => format!("builtin:{}", name),
+        Source::Pack { name } => format!("pack:{}", name),
     };
     let mut registry = std::fs::read_to_string(toml_path).unwrap_or_default();
     for sname in &installed {
@@ -164,9 +192,13 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
         inject_agents_md(&env.home, root)?;
     }
 
-    ui::info(&format!(
-        "installed {} skill(s); omp picks them up next `omp --continue`.",
-        installed.len()
-    ));
+    if let Source::Pack { .. } = &src {
+        ui::info("pack installed; omp picks up the new .omp/skills + .omp/rules next `omp --continue`.");
+    } else {
+        ui::info(&format!(
+            "installed {} skill(s); omp picks them up next `omp --continue`.",
+            installed.len()
+        ));
+    }
     Ok(())
 }

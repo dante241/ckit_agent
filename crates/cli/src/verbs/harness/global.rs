@@ -17,7 +17,7 @@ use anyhow::Result;
 
 use super::compaction;
 use super::external::install_external_skill_packs;
-use super::memory::{migrate_legacy_layout, seed_gitleaks_hook, seed_harness_memory};
+use super::memory::{seed_gitleaks_hook, seed_harness_memory};
 use crate::verbs::skill::{deploy, discover, inject_agents_md, update};
 use crate::{assets, env_detect, ui};
 
@@ -77,7 +77,7 @@ pub(crate) fn harness_global(
     // 3. Optional: re-pull registered skills from their sources (network).
     if pull {
         ui::step("re-pull registered skills (network)");
-        let _ = update::update_skills(env, &env.xdg_config.join("8sync/skills.toml"), None);
+        let _ = update::update_skills(env, &crate::brand::config_dir(&env.home).join("skills.toml"), None);
     }
 
     // 4. Optional: stamp the per-project layer into every git repo under DIR.
@@ -85,21 +85,18 @@ pub(crate) fn harness_global(
         let root = sweep_root(env, dir);
         ui::step(&format!("sweep projects under {}", root.display()));
         let all = find_git_repos(&root, 4);
-        for r in &all {
-            let _ = migrate_legacy_layout(r); // legacy agents/ → su-code/ before detection
-        }
         let (repos, skipped): (Vec<_>, Vec<_>) =
             all.into_iter().partition(|r| is_omp_project(r));
         if repos.is_empty() {
-            ui::warn(&format!("no omp projects (su-code/ or AGENTS.md/CLAUDE.md) found under {}", root.display()));
+            ui::warn(&format!("no omp projects (agents/ or AGENTS.md/CLAUDE.md) found under {}", root.display()));
         }
         let (mut ok, mut failed) = (0usize, 0usize);
         for repo in &repos {
             match stamp_project(env, repo, force) {
-                Ok(mirrored) => {
+                Ok(_) => {
                     ok += 1;
                     let name = repo.strip_prefix(&root).unwrap_or(repo);
-                    ui::ok(&format!("{} ({} skill(s) synced)", name.display(), mirrored));
+                    ui::ok(&format!("{}", name.display()));
                 }
                 Err(e) => {
                     failed += 1;
@@ -110,7 +107,7 @@ pub(crate) fn harness_global(
         if !skipped.is_empty() {
             ui::skip(
                 &format!("{} repo(s) not using omp", skipped.len()),
-                "no su-code/ or AGENTS.md/CLAUDE.md — onboard one with `cd <repo> && 8sync harness`",
+                "no agents/ or AGENTS.md/CLAUDE.md — onboard one with `cd <repo> && 8sync harness`",
             );
         }
         ui::info(&format!(
@@ -132,12 +129,12 @@ pub(crate) fn harness_global(
     Ok(())
 }
 
-/// An omp project = a repo already carrying the agent-memory layer: an `su-code/`
+/// An omp project = a repo already carrying the agent-memory layer: an `agents/`
 /// dir or an `AGENTS.md`/`CLAUDE.md` at the root. The sweep only stamps these —
 /// it never injects into repos that don't use omp (onboard those by running
 /// `8sync harness` inside them once).
 fn is_omp_project(repo: &Path) -> bool {
-    repo.join("su-code").is_dir() || repo.join("AGENTS.md").is_file() || repo.join("CLAUDE.md").is_file()
+    repo.join("agents").is_dir() || repo.join("AGENTS.md").is_file() || repo.join("CLAUDE.md").is_file()
 }
 
 /// Resolve the sweep root: explicit DIR > `~/Projects` (if present) > cwd.
@@ -187,19 +184,18 @@ fn find_git_repos(root: &Path, max_depth: usize) -> Vec<PathBuf> {
 }
 
 /// Per-project layer for one repo (the light, additive subset of bare
-/// `8sync harness`): mirror skills, inject force-load into AGENTS.md/CLAUDE.md,
-/// seed su-code/ memory, install the gitleaks hook. Returns mirrored-skill count.
-fn stamp_project(env: &env_detect::Env, root: &Path, force: bool) -> Result<usize> {
-    let mirrored = deploy::mirror_global_to_local(&env.home, root, force)?;
-    for d in discover::list_installed_skill_dirs(&root.join("su-code/skills")).unwrap_or_default() {
+/// `8sync harness`): normalize any project-local skills, inject force-load
+/// into AGENTS.md/CLAUDE.md, seed agents/ memory, install the gitleaks hook.
+fn stamp_project(env: &env_detect::Env, root: &Path, _force: bool) -> Result<usize> {
+    for d in discover::list_installed_skill_dirs(&root.join(".omp/skills")).unwrap_or_default() {
         deploy::ensure_skill_layout(&d);
     }
     inject_agents_md(&env.home, root)?;
     seed_harness_memory(root)?;
     seed_gitleaks_hook(root);
     // Redeploy the /auto command + engine to the project so a swept repo's
-    // `.omp/commands/auto.md` (precedence over global) points at su-code/, not
-    // a stale agents/ copy from an older binary.
+    // `.omp/commands/auto.md` (precedence over global) points at the current
+    // agents/ memory layout, not a stale copy from an older binary.
     deploy::ensure_engine(&env.home, Some(root))?;
-    Ok(mirrored)
+    Ok(0)
 }

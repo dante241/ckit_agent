@@ -131,6 +131,7 @@ pub fn run(a: Args) -> Result<()> {
         ui::info("would install paru (AUR helper) if missing");
         ui::info("would install codegraph (curl) if missing");
         ui::info("would write: configs + skills");
+        ui::info("would seed ~/.omp/agent/models.yml (team 9router catalog, placeholder key) + config.yml (memory+compaction+mcp+modelRoles) if absent");
         ui::info("would patch PATH in zsh/bash + ~/.config/fish/conf.d/8sync-path.fish");
         ui::info("would register codegraph as a global+local skill");
     } else {
@@ -144,6 +145,20 @@ pub fn run(a: Args) -> Result<()> {
         try_step("codegraph",  yolo, &mut failures, install_codegraph)?;
         try_step("path-bootstrap", yolo, &mut failures, || { ensure_path_in_shells(); Ok(()) })?;
         try_step("configs",    yolo, &mut failures, || install_configs(&env))?;
+        try_step("omp-models", yolo, &mut failures, || {
+            let p = env.home.join(".omp/agent/models.yml");
+            match crate::verbs::harness::gateway::seed_default(&p)? {
+                true  => ui::ok(&format!("seeded team model catalog → {} (set key: 8sync harness gateway key <KEY>)", p.display())),
+                false => ui::skip(&p.display().to_string(), "models.yml present — left as-is"),
+            }
+            Ok(())
+        })?;
+        try_step("omp-config", yolo, &mut failures, || {
+            crate::verbs::skill::deploy::ensure_omp_memory_config(&env.home)?;
+            crate::verbs::skill::deploy::ensure_omp_model_roles(&env.home)?;
+            let _ = crate::verbs::skill::deploy::ensure_mcp_tools_visible(&env.home);
+            Ok(())
+        })?;
         try_step("skills",     yolo, &mut failures, || install_skills(&env))?;
         try_step("codegraph-skill", yolo, &mut failures, || register_codegraph_skill(&env))?;
     }
@@ -297,7 +312,7 @@ pub fn run(a: Args) -> Result<()> {
 fn finish_msg() {
     ui::header("Done — next steps");
     println!("  · 8sync doctor               — verify");
-    println!("  · cd <project> && 8sync .    — seed su-code/ + start omp --continue");
+    println!("  · cd <project> && 8sync .    — seed agents/ + start omp --continue");
 }
 
 /// Print final summary: log path (if any) + list of failures (if any).
@@ -475,7 +490,7 @@ fn register_codegraph_skill(env: &env_detect::Env) -> Result<()> {
     // SKILL.md tree is shipped from embedded assets via `install_skills`
     // (no upstream README synthesis). Here we just append a registry entry to
     // skills.toml so `8sync skill list` shows codegraph as an always-on skill.
-    let toml_path = env.xdg_config.join("8sync/skills.toml");
+    let toml_path = crate::brand::config_dir(&env.home).join("skills.toml");
     if let Some(parent) = toml_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -495,11 +510,12 @@ fn register_codegraph_skill(env: &env_detect::Env) -> Result<()> {
 }
 
 fn install_configs(env: &env_detect::Env) -> Result<()> {
-    ui::step("Configs (8sync/{global,skills}.toml)");
+    let cfg = crate::brand::config_dir(&env.home);
+    ui::step(&format!("Configs ({}/{{global,skills}}.toml)", crate::brand::NS));
     let pairs = [
-        ("configs/global.toml", env.xdg_config.join("8sync/global.toml")),
-        ("configs/skills.toml", env.xdg_config.join("8sync/skills.toml")),
-        ("configs/models.toml", env.xdg_config.join("8sync/models.toml")),
+        ("configs/global.toml", cfg.join("global.toml")),
+        ("configs/skills.toml", cfg.join("skills.toml")),
+        ("configs/models.toml", cfg.join("models.toml")),
     ];
     for (asset, target) in &pairs {
         let changed = assets::install(asset, target, false)?;
@@ -525,15 +541,16 @@ fn install_terminal_config(env: &env_detect::Env) -> Result<()> {
     let kitty_dir = env.xdg_config.join("kitty");
     std::fs::create_dir_all(&kitty_dir)?;
 
-    // Wallpaper → ~/.config/8sync/wallpaper.png (bundled asset preferred, else URL).
-    let wp = env.xdg_config.join("8sync/wallpaper.png");
+    // Wallpaper → ~/.config/<NS>/wallpaper.png (bundled asset preferred, else URL).
+    let cfg = crate::brand::config_dir(&env.home);
+    let wp = cfg.join("wallpaper.png");
     let wp_ready = deploy_wallpaper(env, &wp);
 
-    // Glass conf → ~/.config/kitty/8sync.conf. Honor a `8sync bg set` choice
-    // (recorded in ~/.config/8sync/wallpaper) when it still exists; else bake the
+    // Glass conf → ~/.config/kitty/<NS>.conf. Honor a `<CMD> bg set` choice
+    // (recorded in ~/.config/<NS>/wallpaper) when it still exists; else bake the
     // deployed wallpaper.png so a fresh setup is never a silent no-op.
-    let conf_path = kitty_dir.join("8sync.conf");
-    let bg_choice = std::fs::read_to_string(env.xdg_config.join("8sync/wallpaper"))
+    let conf_path = kitty_dir.join(crate::brand::ns_file("conf"));
+    let bg_choice = std::fs::read_to_string(cfg.join("wallpaper"))
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && std::path::Path::new(s).exists());
@@ -629,7 +646,7 @@ fn is_valid_image(p: &std::path::Path) -> bool {
 
 /// `[ui].wallpaper_url` from the deployed global.toml, else the embedded default.
 fn wallpaper_url(env: &env_detect::Env) -> Option<String> {
-    let s = std::fs::read_to_string(env.xdg_config.join("8sync/global.toml"))
+    let s = std::fs::read_to_string(crate::brand::config_dir(&env.home).join("global.toml"))
         .ok()
         .or_else(|| assets::read("configs/global.toml"))?;
     let v: toml::Value = s.parse().ok()?;

@@ -1,10 +1,10 @@
 name: Release
 
-# Build native 8sync binaries on real macOS / Windows / Linux runners and
+# Build native ckit binaries on real macOS / Windows / Linux runners and
 # publish them to a GitHub Release when a vX.Y.Z tag is pushed.
 #
 # Asset names follow the scheme consumed by install.sh / install.ps1:
-#   8sync-${tag}-${os}-${arch}[.exe]
+#   ckit-${tag}-${os}-${arch}[.exe]
 # where ${tag} is the pushed tag (e.g. v0.46.2).
 
 on:
@@ -84,27 +84,27 @@ jobs:
 
       - name: Build (native)
         if: ${{ !matrix.cross }}
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin ckit
 
       - name: Build (cross)
         if: ${{ matrix.cross }}
-        run: cross build --release --locked --target ${{ matrix.target }}
+        run: cross build --release --locked --target ${{ matrix.target }} --bin ckit
 
       - name: Compute asset name
         shell: bash
         run: |
           version="${{ github.event.inputs.tag || github.ref_name }}"
-          echo "ASSET=8sync-${version}-${{ matrix.label }}${{ matrix.ext }}" >> "$GITHUB_ENV"
+          echo "ASSET=ckit-${version}-${{ matrix.label }}${{ matrix.ext }}" >> "$GITHUB_ENV"
 
       - name: Package binary (unix)
         if: ${{ runner.os != 'Windows' }}
         shell: bash
-        run: cp "target/${{ matrix.target }}/release/8sync" "$ASSET"
+        run: cp "target/${{ matrix.target }}/release/ckit" "$ASSET"
 
       - name: Package binary (windows)
         if: ${{ runner.os == 'Windows' }}
         shell: bash
-        run: cp "target/${{ matrix.target }}/release/8sync.exe" "$ASSET"
+        run: cp "target/${{ matrix.target }}/release/ckit.exe" "$ASSET"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

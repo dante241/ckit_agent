@@ -19,7 +19,7 @@ Gate: review/test FAIL → fix → re-run. KHÔNG ship khi fail.
 Spawn ĐỒNG THỜI `task` subagent `agent: reviewer`. Số agent = số phần tử `config.workflow.review_dimensions`; nhúng **tên dimension thật** vào prompt mỗi agent (vd "dimension: security"), KHÔNG ghi chữ `config.workflow.review_dimensions` vào prompt. Dimension mặc định (`["security","correctness","convention"]`):
 - **security**: injection (query tham số hoá?), XSS/escape output, CSRF/permission check, type cast, secret leak.
 - **correctness**: symbol/method tồn tại (serena `mcp__serena_find_symbol`), logic, runtime, config key/DB column đúng.
-- **convention**: `AGENTS.md` + `su-code/DECISIONS.md`/`PREFERENCES.md`, naming, tách file, error-handling.
+- **convention**: `AGENTS.md` + `agents/DECISIONS.md`/`PREFERENCES.md`, naming, tách file, error-handling.
 
 Scope = file phase này đụng (từ PLAN). Barrier → gộp findings.
 Có lỗi → fix (main thread hoặc spawn) → re-review tới sạch. Phase nhỏ → 1 reviewer tổng hợp cũng được.
@@ -74,12 +74,12 @@ Nhiều component độc lập → spawn `Tester` song song (1 component/agent).
 ## Step 4 — Nếu là phase CUỐI: chống drift + archive
 
 BẮT BUỘC khi feature hoàn tất:
-- [ ] `su-code/KNOWLEDGE.md` — append nghiệp vụ/gotcha mới học (`validated:`/`failure:`). Lớn → spawn `task` (`agent: task`).
-- [ ] `su-code/DECISIONS.md` — append quyết định kiến trúc feature chốt.
+- [ ] `agents/KNOWLEDGE.md` — append nghiệp vụ/gotcha mới học (`validated:`/`failure:`). Lớn → spawn `task` (`agent: task`).
+- [ ] `agents/DECISIONS.md` — append quyết định kiến trúc feature chốt.
 - [ ] `PROJECT.md` Validated — tick UC đã ship.
 - [ ] `REQUIREMENTS.md` — rà UC thực tế bỏ/đổi, cập nhật intent.
 - [ ] `CHANGELOG.md` (Unreleased) — thêm dòng feature (convention su-code).
-- [ ] Archive: `mv su-code/planning/<slug> su-code/planning/_archive/` + clear `su-code/planning/ACTIVE.md` (dòng slug về trống) + `config.active_feature = ""`.
+- [ ] Archive: `mv agents/planning/<slug> agents/planning/_archive/` + clear `agents/planning/ACTIVE.md` (dòng slug về trống) + `config.active_feature = ""`.
 
 ## Sau ship
 

@@ -73,8 +73,8 @@ impl ModelConfig {
     /// Load user config, else the embedded default, else an empty config (omp
     /// decides everything — graceful when nothing is configured).
     pub fn load() -> Self {
-        if let Some(dir) = dirs::config_dir() {
-            let p = dir.join(crate::brand::NS).join("models.toml");
+        if let Some(home) = dirs::home_dir() {
+            let p = crate::brand::config_dir(&home).join("models.toml");
             if let Ok(s) = std::fs::read_to_string(&p) {
                 if let Ok(c) = toml::from_str::<ModelConfig>(&s) {
                     return c;

@@ -11,6 +11,10 @@ pub(crate) enum Source {
     Git { url: String, name: String, git_ref: Option<String> },
     Path { src: PathBuf, name: String },
     Builtin { name: String },
+    /// A bundled skill+rule collection under `assets/packs/<name>/` — every
+    /// `skills/<sub>/SKILL.md` plus `rules/*.md`, installed project-local
+    /// (domain packs like `vtiger-php` are project-scoped, not global).
+    Pack { name: String },
 }
 
 pub(crate) fn parse_spec(spec: &str) -> Result<Source> {
@@ -25,6 +29,12 @@ pub(crate) fn parse_spec(spec: &str) -> Result<Source> {
     };
     let with_name = |default: String| name_override.clone().unwrap_or(default);
 
+    if let Some(rest) = core.strip_prefix("pack:") {
+        if name_override.is_some() {
+            return Err(anyhow!("`pack:<name>` doesn't support `#alias` — a pack installs multiple sub-skills under their own names"));
+        }
+        return Ok(Source::Pack { name: rest.to_string() });
+    }
     if let Some(rest) = core.strip_prefix("builtin:") {
         return Ok(Source::Builtin { name: with_name(rest.to_string()) });
     }

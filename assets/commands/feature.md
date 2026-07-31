@@ -1,7 +1,7 @@
 ---
 name: feature
 argument-hint: '[new <slug> | plan | go | ship | status | switch <slug> | list] [--auto]'
-description: Large multi-phase feature scopes (GSD). Drives the `feature` skill — scaffold a planning tree (su-code/planning/<slug>/), plan a phase (Goal+AC), execute it via the engine_* loop, and verify against the AC matrix. Cross-session, switchable. Small/single-concern work → /auto.
+description: Large multi-phase feature scopes (GSD). Drives the `feature` skill — scaffold a planning tree (agents/planning/<slug>/), plan a phase (Goal+AC), execute it via the engine_* loop, and verify against the AC matrix. Cross-session, switchable. Small/single-concern work → /auto.
 ---
 
 # /feature — large-scope GSD framework
@@ -19,11 +19,11 @@ Read the bundled skill and its rules BEFORE acting:
   (the always-applied rules), then the reference for the specific subcommand
   (`new`/`plan`/`execute`/`ship`/`auto`).
 Then ground on state (except for `new`, which creates it):
-- `su-code/planning/ACTIVE.md` line 1 → active slug; `su-code/planning/<slug>/STATE.md`
-  frontmatter (`status`/`active_phase`/`next_action`); `su-code/planning/config.json`
+- `agents/planning/ACTIVE.md` line 1 → active slug; `agents/planning/<slug>/STATE.md`
+  frontmatter (`status`/`active_phase`/`next_action`); `agents/planning/config.json`
   (`workflow.*`, `paths.*`). Obey `~/.omp/agent/APPEND_SYSTEM.md` (code-intel first;
   always-on skills). Explore with **codegraph / codebase-memory-mcp / serena** — never
-  grep/Read-all; `headroom_compress` any tool output > ~50 lines.
+  grep/Read-all; `headroom_compress` any tool output > ~300 lines.
 
 ## 1. Dispatch (`$ARGUMENTS` first word)
 | word | do |
@@ -48,12 +48,12 @@ phase.
 ## Guardrails
 Work must belong to the `active_phase` (stop + ask if it drifts; `--auto` → SKIP+NEEDS-CONFIRM).
 Verify-gate before every commit (`engine_verify` enforces it; `engine_advance` refuses
-unverified tasks). Scope edits to the change + `su-code/` memory. NO `git push` / PR unless
+unverified tasks). Scope edits to the change + `agents/` memory. NO `git push` / PR unless
 asked. Every AC maps to ≥1 UC in REQUIREMENTS; every task maps to ≥1 AC — no orphan work.
 
 ## Model + context budget
 Use the models in `~/.config/8sync/models.toml` (view/edit: `8sync harness model`); route per
 task class. When context nears the limit (auto-compacts at 50%), write a handoff into the
-active feature's `su-code/planning/<slug>/STATE.md` (< 100 lines, digest) BEFORE it fires.
+active feature's `agents/planning/<slug>/STATE.md` (< 100 lines, digest) BEFORE it fires.
 
 Begin: load the skill, ground on ACTIVE + STATE + config, then act on `$ARGUMENTS`.

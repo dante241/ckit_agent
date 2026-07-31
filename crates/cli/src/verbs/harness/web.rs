@@ -112,7 +112,7 @@ fn api_routes() -> Router<Arc<Ctx>> {
 async fn api_state(State(_ctx): State<Arc<Ctx>>) -> Result<Json<serde_json::Value>, ApiErr> {
     let root = detect_current_project_root().unwrap_or_default();
     let profile = std::env::var("OMP_PROFILE").unwrap_or_else(|_| "default".to_string());
-    let state_md = std::fs::read_to_string(root.join("su-code/STATE.md")).unwrap_or_default();
+    let state_md = std::fs::read_to_string(root.join("agents/STATE.md")).unwrap_or_default();
     Ok(Json(serde_json::json!({
         "project": root.display().to_string(),
         "profile": profile,
@@ -123,10 +123,10 @@ async fn api_state(State(_ctx): State<Arc<Ctx>>) -> Result<Json<serde_json::Valu
 async fn api_skills(State(ctx): State<Arc<Ctx>>) -> Result<Json<Vec<serde_json::Value>>, ApiErr> {
     let root = detect_current_project_root().unwrap_or_default();
     let reg_g = discover::read_registry(&crate::brand::config_dir(&ctx.home).join("skills.toml"));
-    let proj_man = root.join("su-code/skills.toml");
+    let proj_man = root.join("agents/skills.toml");
     let reg_p = if proj_man.exists() { discover::read_registry(&proj_man) } else { Default::default() };
     let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for base in [ctx.home.join(".omp/skills"), root.join("su-code/skills")] {
+    for base in [ctx.home.join(".omp/skills"), root.join(".omp/skills")] {
         if let Ok(entries) = std::fs::read_dir(&base) {
             for e in entries.flatten() {
                 if let Some(n) = e.file_name().to_str() {
@@ -148,7 +148,7 @@ async fn api_skills(State(ctx): State<Arc<Ctx>>) -> Result<Json<Vec<serde_json::
             "tier": tier,
             "source": entry.map(|e| e.src.clone()).unwrap_or_default(),
             "global": ctx.home.join(format!(".omp/skills/{}", name)).exists(),
-            "local": root.join(format!("su-code/skills/{}", name)).exists(),
+            "local": root.join(format!(".omp/skills/{}", name)).exists(),
         }));
     }
     Ok(Json(out))
@@ -168,7 +168,7 @@ async fn api_skill_toggle(
         return Err((StatusCode::BAD_REQUEST, "`when` must be always|on-demand|off".into()));
     }
     let root = detect_current_project_root().ok_or((StatusCode::NOT_FOUND, "not in a project".into()))?;
-    let path = root.join("su-code/skills.toml");
+    let path = root.join("agents/skills.toml");
     let mut reg = discover::read_registry(&path);
     let reg_g = discover::read_registry(&crate::brand::config_dir(&ctx.home).join("skills.toml"));
     if body.when == "off" {
@@ -195,7 +195,7 @@ async fn api_memory_get(
     if !MEMORY_ALLOWLIST.contains(&file.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "file not in allowlist".into()));
     }
-    let content = std::fs::read_to_string(root.join(format!("su-code/{}.md", file)))
+    let content = std::fs::read_to_string(root.join(format!("agents/{}.md", file)))
         .map_err(|_| (StatusCode::NOT_FOUND, "file missing".into()))?;
     Ok(Json(serde_json::json!({ "file": file, "content": content })))
 }
@@ -213,7 +213,7 @@ async fn api_memory_set(
         return Err((StatusCode::BAD_REQUEST, "file not in allowlist".into()));
     }
     let root = detect_current_project_root().ok_or((StatusCode::NOT_FOUND, "not in a project".into()))?;
-    let target = root.join(format!("su-code/{}.md", file));
+    let target = root.join(format!("agents/{}.md", file));
     if let Some(p) = target.parent() {
         std::fs::create_dir_all(p).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
@@ -862,14 +862,14 @@ async fn api_rule_delete(
 }
 // ---- Workflow viz (react-flow) + export → omp extension tool ----
 //
-// Workflows are stored as react-flow node/edge JSON in <root>/su-code/workflows/.
+// Workflows are stored as react-flow node/edge JSON in <root>/agents/workflows/.
 // `export` generates a STANDALONE omp extension <root>/.omp/extensions/<name>.ts
 // (NOT appended to the harness-managed 8sync-workflow.ts, which is redeployed
 // verbatim) that registers a model-callable `<name>_run` tool dispatching the
 // steps as followUp messages.
 
 fn workflows_dir(root: &std::path::Path) -> std::path::PathBuf {
-    root.join("su-code/workflows")
+    root.join("agents/workflows")
 }
 
 fn validate_wf_name(name: &str) -> Result<(), ApiErr> {
@@ -1092,13 +1092,11 @@ fn topo_order(nodes: &[serde_json::Value], edges: &[serde_json::Value]) -> Vec<u
 
 // ---- Adaptive model config (models.toml) ----
 
-/// Resolve `~/.config/8sync/models.toml` the same way `ModelConfig::load()`
-/// does (XDG config dir), falling back to `<home>/.config` if XDG is absent.
+/// Resolve `~/.config/<NS>/models.toml` the same way `ModelConfig::load()` does
+/// — via `brand::config_dir` so the base is `~/.config` on every OS (not
+/// macOS's `~/Library/Application Support`).
 fn models_toml_path(home: &std::path::Path) -> std::path::PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| home.join(".config"))
-        .join(crate::brand::NS)
-        .join("models.toml")
+    crate::brand::config_dir(home).join("models.toml")
 }
 
 /// The `/api/models` JSON shape: config path + parsed roles/tasks + the fixed
@@ -1331,8 +1329,8 @@ async fn api_workflow_templates(State(_ctx): State<Arc<Ctx>>) -> Json<Vec<serde_
 // same binary + slug scheme `harness up` already indexes against.
 
 /// codebase-memory-mcp's project slug: strip the leading `/`, replace the rest
-/// with `-` (e.g. `/home/alexdev/Projects/tools/su-code` →
-/// `home-alexdev-Projects-tools-su-code`). Matches `list_projects` output.
+/// with `-` (e.g. `/home/alexdev/Projects/tools/ckit` →
+/// `home-alexdev-Projects-tools-ckit`). Matches `list_projects` output.
 fn cbm_project_slug(root: &std::path::Path) -> String {
     root.display().to_string().trim_start_matches('/').replace('/', "-")
 }
@@ -1486,7 +1484,7 @@ struct KnowledgeApplyBody {
 }
 
 /// `POST /api/knowledge/apply` — save the selected entries into the target
-/// project's `su-code/REFERENCES.md` (deduped by URL).
+/// project's `agents/REFERENCES.md` (deduped by URL).
 async fn api_knowledge_apply(
     State(_ctx): State<Arc<Ctx>>,
     Json(body): Json<KnowledgeApplyBody>,
@@ -1531,13 +1529,13 @@ struct CreateProjectBody {
     /// command line like `npx -y pkg` or a remote URL).
     #[serde(default)]
     mcp: Vec<McpPick>,
-    /// Curated knowledge entries → project `su-code/REFERENCES.md`.
+    /// Curated knowledge entries → project `agents/REFERENCES.md`.
     #[serde(default)]
     knowledge: Vec<serde_json::Value>,
 }
 
 /// `POST /api/projects/create` — scaffold a brand-new 8sync project: create the
-/// dir + `git init` + seed AGENTS.md/su-code memory/skills block, then apply the
+/// dir + `git init` + seed AGENTS.md/agents memory/skills block, then apply the
 /// selected skills (`8sync skill add`), MCP servers (project `.omp/mcp.json`),
 /// and knowledge (REFERENCES.md), and activate it in the dashboard.
 async fn api_project_create(
@@ -1564,14 +1562,14 @@ async fn api_project_create(
     crate::verbs::here::scaffold_project(&env, &target)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("scaffold: {e}")))?;
 
-    // Selected skills → vendored into the project by copying the global skill
-    // dir (`~/.omp/skills/<name>` → `<proj>/su-code/skills/<name>`). `skill add`
+    // Selected skills → explicitly copied into the project's `.omp/skills/`
+    // (`~/.omp/skills/<name>` → `<proj>/.omp/skills/<name>`). `skill add`
     // would no-op for already-global skills, so copy the tree directly.
     let mut skills = Vec::new();
     for name in body.skills.iter().map(|s| s.trim().trim_start_matches("builtin:")).filter(|s| !s.is_empty()) {
         let src = ctx.home.join(".omp/skills").join(name);
         let ok = src.is_dir()
-            && crate::verbs::skill::deploy::copy_dir_recursive(&src, &target.join("su-code/skills").join(name)).is_ok();
+            && crate::verbs::skill::deploy::copy_dir_recursive(&src, &target.join(".omp/skills").join(name)).is_ok();
         skills.push(serde_json::json!({ "spec": name, "ok": ok }));
     }
 
@@ -1873,9 +1871,9 @@ mod tests {
     fn slug_roundtrip_recovers_path_with_literal_dash() {
         let home = TmpHome::new("dash");
         // Project dir whose name contains a literal '-' (the lossy case).
-        let root = home.mkdirs("Projects/tools/su-code");
+        let root = home.mkdirs("Projects/tools/ckit");
         let slug = session_slug(&home.0, Some(root.as_path())).unwrap();
-        assert_eq!(slug, "-Projects-tools-su-code");
+        assert_eq!(slug, "-Projects-tools-ckit");
         assert_eq!(slug_to_path(&home.0, &slug), Some(root));
     }
 

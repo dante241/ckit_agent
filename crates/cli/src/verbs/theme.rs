@@ -80,7 +80,7 @@ pub(crate) fn list_themes() -> Vec<String> {
 /// Active theme name from `~/.config/8sync/kitty-theme`. Defaults to
 /// `tokyo-night` when unset or pointing at a removed palette.
 pub(crate) fn active_name(env: &Env) -> String {
-    let stored = std::fs::read_to_string(env.xdg_config.join("8sync/kitty-theme"))
+    let stored = std::fs::read_to_string(crate::brand::config_dir(&env.home).join("kitty-theme"))
         .unwrap_or_default()
         .trim()
         .to_string();
@@ -100,8 +100,8 @@ pub(crate) fn deploy(env: &Env) -> Result<String> {
         .context("default theme asset missing")?;
     let kitty_dir = env.xdg_config.join("kitty");
     std::fs::create_dir_all(&kitty_dir)?;
-    std::fs::write(kitty_dir.join("8sync-theme.conf"), body)?;
-    let cfg8 = env.xdg_config.join("8sync");
+    std::fs::write(kitty_dir.join(crate::brand::ns_file("theme.conf")), body)?;
+    let cfg8 = crate::brand::config_dir(&env.home);
     std::fs::create_dir_all(&cfg8)?;
     std::fs::write(cfg8.join("kitty-theme"), &name)?;
     Ok(name)
@@ -129,8 +129,8 @@ fn set(env: &Env, name: &str) -> Result<()> {
         .with_context(|| format!("theme asset `{name}` missing"))?;
     let kitty_dir = env.xdg_config.join("kitty");
     std::fs::create_dir_all(&kitty_dir)?;
-    std::fs::write(kitty_dir.join("8sync-theme.conf"), body)?;
-    let cfg8 = env.xdg_config.join("8sync");
+    std::fs::write(kitty_dir.join(crate::brand::ns_file("theme.conf")), body)?;
+    let cfg8 = crate::brand::config_dir(&env.home);
     std::fs::create_dir_all(&cfg8)?;
     std::fs::write(cfg8.join("kitty-theme"), name)?;
     ui::ok(&format!("kitty theme → {name}"));

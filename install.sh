@@ -1,29 +1,36 @@
 #!/bin/sh
 #
-# 8sync standalone installer.
+# ckit standalone installer — PUBLIC GitHub repo (dante241x/ckit_agent).
 #
-# Downloads the prebuilt `8sync` binary from GitHub Releases — no git clone,
-# no Rust toolchain, no cargo build. Ideal for a fresh machine or quick upgrade.
+# Downloads the prebuilt `ckit` binary from the latest GitHub Release — no git
+# clone, no Rust toolchain, no cargo build, no token. Ideal for a fresh machine.
 #
-#   curl -fsSL https://raw.githubusercontent.com/8-Sync-Dev/su-code/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/dante241x/ckit_agent/main/install.sh | sh
 #
 # Upgrade:   re-run the same command (atomically replaces the old binary).
 # Uninstall: curl -fsSL .../install.sh | sh -s -- --uninstall
 #
 # Environment:
-#   SUSYNC_VERSION   release tag to install (default: latest, e.g. v0.12.1)
-#   SUSYNC_BIN_DIR   install location (default: ~/.local/bin)
+#   CKIT_GITHUB_TOKEN  optional — only to dodge GitHub's 60-req/hour anonymous
+#                      API limit on shared/CI hosts. GITHUB_TOKEN also accepted.
+#   CKIT_VERSION       release tag to install (default: latest, e.g. v0.53.0)
+#   CKIT_BIN_DIR       install location (default: ~/.local/bin)
 set -eu
 
-REPO="8-Sync-Dev/su-code"
-BIN_DIR="${SUSYNC_BIN_DIR:-$HOME/.local/bin}"
-BIN="$BIN_DIR/8sync"
+REPO="dante241x/ckit_agent"
+API="https://api.github.com/repos/$REPO"
+BIN_DIR="${CKIT_BIN_DIR:-$HOME/.local/bin}"
+BIN="$BIN_DIR/ckit"
 
 if [ "${1:-}" = "--uninstall" ]; then
   rm -f "$BIN"
-  echo "8sync uninstalled (removed $BIN)."
+  echo "ckit uninstalled (removed $BIN)."
   exit 0
 fi
+
+# Optional token — public repo needs none; only lifts the anon API rate limit.
+TOKEN="${CKIT_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}"
+auth_header() { [ -n "$TOKEN" ] && printf 'Authorization: Bearer %s' "$TOKEN" || printf ''; }
 
 # 1. Platform check — resolve os first, then arch (arm64 naming differs per-os).
 os="$(uname -s)"
@@ -31,48 +38,56 @@ arch="$(uname -m)"
 case "$os" in
   Linux) os="linux" ;;
   Darwin) os="darwin" ;;
-  *) echo "8sync: no prebuilt binary for '$os' yet — build from source: https://github.com/$REPO (scripts/bootstrap.sh)" >&2; exit 1 ;;
+  *) echo "ckit: no prebuilt binary for '$os' yet — build from source: https://github.com/$REPO (scripts/bootstrap.sh)" >&2; exit 1 ;;
 esac
 case "$arch" in
   x86_64|amd64) arch="x86_64" ;;
   aarch64|arm64)
-    # Apple Silicon reports/uses arm64; Linux uses aarch64.
     case "$os" in
       linux) arch="aarch64" ;;
       darwin) arch="arm64" ;;
     esac
     ;;
-  *) echo "8sync: no prebuilt binary for '$arch' yet — build from source: https://github.com/$REPO (scripts/bootstrap.sh)" >&2; exit 1 ;;
+  *) echo "ckit: no prebuilt binary for '$arch' yet — build from source: https://github.com/$REPO (scripts/bootstrap.sh)" >&2; exit 1 ;;
 esac
 
-# 2. Resolve the version (latest unless SUSYNC_VERSION is pinned).
-#
-# Prefer the releases/latest *web* redirect over the GitHub API: the
-# unauthenticated API is rate-limited to 60 req/hour per IP (403 once
-# exhausted — common on shared/cloud hosts and CI). The redirect
-# (github.com/<repo>/releases/latest -> .../releases/tag/vX.Y.Z) is not.
-version="${SUSYNC_VERSION:-}"
-if [ -z "$version" ]; then
-  version="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" \
-    | sed -n 's#.*/releases/tag/##p' | tr -d '\r')"
+# 2. Resolve the release JSON (latest unless CKIT_VERSION is pinned).
+version="${CKIT_VERSION:-}"
+if [ -n "$version" ]; then
+  case "$version" in v*) ;; *) version="v$version" ;; esac
+  rel_url="$API/releases/tags/$version"
+else
+  rel_url="$API/releases/latest"
 fi
-if [ -z "$version" ]; then
-  version="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-    | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1)"
+h="$(auth_header)"
+if [ -n "$h" ]; then
+  release_json="$(curl -fsSL -H "$h" -H "Accept: application/vnd.github+json" -H "User-Agent: ckit-installer" "$rel_url")" \
+    || { echo "ckit: could not query release ($rel_url)." >&2; exit 1; }
+else
+  release_json="$(curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: ckit-installer" "$rel_url")" \
+    || { echo "ckit: could not query release ($rel_url)." >&2; exit 1; }
 fi
-[ -n "$version" ] || { echo "8sync: could not resolve latest version; set SUSYNC_VERSION (e.g. SUSYNC_VERSION=v0.12.1)." >&2; exit 1; }
-# Release tags are vX.Y.Z; accept a bare X.Y.Z in SUSYNC_VERSION too.
-case "$version" in v*) ;; *) version="v$version" ;; esac
 
-# 3. Download the release asset to a temp file, then atomically replace.
-asset="8sync-${version}-${os}-${arch}"
-url="https://github.com/$REPO/releases/download/$version/$asset"
-echo "Installing 8sync $version ($os-$arch)..."
+tag="$(printf '%s' "$release_json" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1)"
+[ -n "$tag" ] || { echo "ckit: could not resolve release tag." >&2; exit 1; }
+asset="ckit-${tag}-${os}-${arch}"
+
+# 3. Public repo → the browser download URL needs no auth. Pull it straight out
+#    of the release JSON for the object whose name matches our platform.
+url="$(printf '%s' "$release_json" \
+  | tr ',' '\n' \
+  | grep 'browser_download_url' \
+  | sed -n 's/.*"browser_download_url": *"\([^"]*'"$asset"'\)".*/\1/p' \
+  | head -n1)"
+[ -n "$url" ] || { echo "ckit: release $tag has no asset '$asset'." >&2; exit 1; }
+
+# 4. Download the asset, then atomically replace.
+echo "Installing ckit $tag ($os-$arch)..."
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
-curl -fSL --proto '=https' --tlsv1.2 "$url" -o "$tmp" 2>/dev/null \
-  || { echo "8sync: download failed: $url" >&2; exit 1; }
-[ -s "$tmp" ] || { echo "8sync: downloaded an empty file from $url" >&2; exit 1; }
+curl -fSL -H "User-Agent: ckit-installer" "$url" -o "$tmp" 2>/dev/null \
+  || { echo "ckit: download failed: $url" >&2; exit 1; }
+[ -s "$tmp" ] || { echo "ckit: downloaded an empty file from $url" >&2; exit 1; }
 chmod 0755 "$tmp"
 mkdir -p "$BIN_DIR"
 mv -f "$tmp" "$BIN"
@@ -81,7 +96,7 @@ trap - EXIT
 echo "Installed → $BIN"
 "$BIN" --version 2>/dev/null || true
 
-# 4. PATH hint if ~/.local/bin is not yet on PATH (bash/zsh/fish).
+# 5. PATH hint if ~/.local/bin is not yet on PATH (bash/zsh/fish).
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *)
@@ -89,11 +104,11 @@ case ":$PATH:" in
     echo "$BIN_DIR is not on your PATH. Add it:"
     echo "  bash/zsh: echo 'export PATH=\"$BIN_DIR:\$PATH\"' >> ~/.bashrc   # or ~/.zshrc"
     echo "  fish:     fish_add_path -aP $BIN_DIR"
-    echo "  (\`8sync setup\` also wires PATH for bash/zsh/fish automatically.)"
+    echo "  (\`ckit setup\` also wires PATH for bash/zsh/fish automatically.)"
     ;;
 esac
 echo ""
 echo "Done. Next steps:"
-echo "  8sync setup        # full stack + config"
-echo "  8sync doctor       # verify"
-echo "  8sync up           # upgrade later (or re-run this installer)"
+echo "  ckit setup        # full stack + config"
+echo "  ckit doctor       # verify"
+echo "  ckit up           # upgrade later (or re-run this installer)"

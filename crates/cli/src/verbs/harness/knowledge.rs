@@ -1,6 +1,6 @@
 //! Curated-knowledge catalog for the dashboard — auto-fetch `sindresorhus/awesome`
 //! (the canonical "awesome list of awesome lists") and let the user browse,
-//! search, and save selected entries into a project's `su-code/REFERENCES.md`.
+//! search, and save selected entries into a project's `agents/REFERENCES.md`.
 //!
 //! The source is one big README, so we `curl` the raw markdown (project rule:
 //! no `reqwest`) and cache it under `.cache/8sync/knowledge/` with a 6h TTL,
@@ -158,13 +158,13 @@ pub(crate) fn catalog(root: &Path, search: &str, refresh: bool) -> Result<serde_
     }))
 }
 
-/// Append selected entries to `<proj>/su-code/REFERENCES.md`, grouped by category
+/// Append selected entries to `<proj>/agents/REFERENCES.md`, grouped by category
 /// and de-duplicated by URL against what's already there. Returns (added, path).
 pub(crate) fn apply_entries(
     proj: &Path,
     items: &[serde_json::Value],
 ) -> Result<(usize, PathBuf), String> {
-    let dir = proj.join("su-code");
+    let dir = proj.join("agents");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("REFERENCES.md");
     let existing = std::fs::read_to_string(&path).unwrap_or_default();

@@ -28,8 +28,8 @@ export default function (pi: HookAPI): void {
   function stateHead(): string {
     try {
       const cwd = process.cwd();
-      let state = join(cwd, "su-code/STATE.md");
-      if (!existsSync(state)) state = join(cwd, "agents/STATE.md"); // pre-migration fallback
+      let state = join(cwd, "agents/STATE.md");
+      if (!existsSync(state)) state = join(cwd, "su-code/STATE.md"); // pre-rename fallback (un-migrated project)
       if (!existsSync(state)) return "";
       const md = readFileSync(state, "utf8");
       const grab = (heading: string): string => {

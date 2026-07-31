@@ -7,7 +7,7 @@
 
 ## R1 — config.X là chỉ thị cho ORCHESTRATOR, resolve về literal trước khi dùng
 
-`config.X` (đọc từ `su-code/planning/config.json`) là tham số cho orchestrator (main thread), **KHÔNG phải chuỗi đưa cho subagent**. Subagent KHÔNG đọc được config.json và KHÔNG kế thừa context — nó chỉ thấy prompt bạn soạn. Vì vậy:
+`config.X` (đọc từ `agents/planning/config.json`) là tham số cho orchestrator (main thread), **KHÔNG phải chuỗi đưa cho subagent**. Subagent KHÔNG đọc được config.json và KHÔNG kế thừa context — nó chỉ thấy prompt bạn soạn. Vì vậy:
 - **Vai/role** → orchestrator tự chọn `agent: <role>` khi spawn `task` (explore/plan/reviewer/Tester/task). Subagent không cần biết role của chính nó; model do omp chọn qua `~/.config/8sync/models.toml`.
 - **Tham số nội dung** (workflow.review_dimensions, tier, convention, ticket…) → nhúng **giá trị thật** vào prompt (vd "review dimension: security"). TUYỆT ĐỐI không viết chữ `config.workflow.review_dimensions` vào prompt subagent.
 - Thiếu key → dùng default rồi cảnh báo user.
@@ -15,8 +15,8 @@
 ## R3 — Load skill repo theo cột [skill:] (2 lớp, BẮT BUỘC)
 
 Subagent KHÔNG tự biết skill nào áp dụng và KHÔNG đọc được session context. Với MỖI skill ghi ở cột `[skill:]` của task:
-1. **Orchestrator đọc `su-code/skills/<skill>/SKILL.md`** (project-local) hoặc `~/.omp/skills/<skill>/SKILL.md` (global) + references liên quan TRƯỚC khi code/spawn — KHÔNG mirror file có sẵn rồi suy đoán convention (mirror dễ trật; chỉ đọc SKILL.md mới biết anti-pattern thật).
-2. **Khi spawn**, prompt subagent phải: (a) nhúng **literal luật cốt lõi + anti-pattern** của skill; (b) ra lệnh subagent **Read `su-code/skills/<skill>/SKILL.md` (hoặc `~/.omp/skills/<skill>/SKILL.md`) TRƯỚC khi code** và tuân theo. Hai lớp bù nhau.
+1. **Orchestrator đọc `.omp/skills/<skill>/SKILL.md`** (project-local) hoặc `~/.omp/skills/<skill>/SKILL.md` (global) + references liên quan TRƯỚC khi code/spawn — KHÔNG mirror file có sẵn rồi suy đoán convention (mirror dễ trật; chỉ đọc SKILL.md mới biết anti-pattern thật).
+2. **Khi spawn**, prompt subagent phải: (a) nhúng **literal luật cốt lõi + anti-pattern** của skill; (b) ra lệnh subagent **Read `.omp/skills/<skill>/SKILL.md` (hoặc `~/.omp/skills/<skill>/SKILL.md`) TRƯỚC khi code** và tuân theo. Hai lớp bù nhau.
 
 Task ghi `[skill: —]` mà vẫn là task code → DỪNG, xác minh thật sự không skill nào chi phối (đa số task code có ≥1 skill).
 
@@ -33,10 +33,10 @@ Mỗi phase có 🎯 Goal + ✅ Acceptance Criteria (AC-NN, đo được) trong 
 
 ## R7 — Neo vào codebase (brownfield)
 
-- Tổng thể: `AGENTS.md` + `su-code/PROJECT.md` — KHÔNG mô tả lại.
-- Nghiệp vụ/kiến trúc: `su-code/KNOWLEDGE.md` + codebase-memory-mcp (`mcp__codebase_memory_mcp_get_architecture`, `_search_graph`) — tra trước khi code module.
-- Convention + quyết định: `AGENTS.md` + `su-code/DECISIONS.md` + `su-code/PREFERENCES.md`.
-- Không mô tả lại thứ đã có trong các nguồn trên; trích dẫn (vd "theo `su-code/DECISIONS.md` đã chốt X").
+- Tổng thể: `AGENTS.md` + `agents/PROJECT.md` — KHÔNG mô tả lại.
+- Nghiệp vụ/kiến trúc: `agents/KNOWLEDGE.md` + codebase-memory-mcp (`mcp__codebase_memory_mcp_get_architecture`, `_search_graph`) — tra trước khi code module.
+- Convention + quyết định: `AGENTS.md` + `agents/DECISIONS.md` + `agents/PREFERENCES.md`.
+- Không mô tả lại thứ đã có trong các nguồn trên; trích dẫn (vd "theo `agents/DECISIONS.md` đã chốt X").
 
 ## R8 — Commit model riêng của feature
 
@@ -58,4 +58,4 @@ Mọi thao tác TÌM/HIỂU/ĐỊNH VỊ code (không phải sắp EDIT ngay) �
 - (a) **Chỉ thị literal**: "Dùng `codegraph query/explore/callers/impact \"<query>\"` (CLI) hoặc codebase-memory-mcp (`mcp__codebase_memory_mcp_search_graph`/`_trace_path`/`_get_architecture`) / serena (`mcp__serena_find_symbol`) để tìm/hiểu/định vị code TRƯỚC — KHÔNG grep/Read thô để khảo sát. Chỉ Read file khi sắp sửa đổi nó. Kết quả dài (>50 dòng) sắp đưa vào báo cáo cuối → nén qua `mcp__headroom_compress`, không dump thô."
 - (b) Nếu subagent type có quyền đọc skill (đa số có tool Read) → thêm: "Đọc `~/.omp/skills/codegraph/SKILL.md` nếu cần chi tiết cách dùng."
 
-Vi phạm (subagent grep/Read tràn lan để survey thay vì code-intel, hoặc dump log thô >50 dòng vào báo cáo) = lệch quy tắc dự án, không phải style nit — sửa ngay khi phát hiện, không đợi review pass mới bắt.
+Vi phạm (subagent grep/Read tràn lan để survey thay vì code-intel, hoặc dump log thô >300 dòng vào báo cáo) = lệch quy tắc dự án, không phải style nit — sửa ngay khi phát hiện, không đợi review pass mới bắt.

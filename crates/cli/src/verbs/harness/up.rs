@@ -48,7 +48,7 @@ fn refresh_once(env: &env_detect::Env, pull: bool, commit: bool) -> Result<()> {
     };
     if pull {
         ui::step("re-pull registered skills (--pull)");
-        let registry = env.xdg_config.join("8sync/skills.toml");
+        let registry = crate::brand::config_dir(&env.home).join("skills.toml");
         let _ = crate::verbs::skill::update::update_skills(env, &registry, None);
     }
     inject_agents_md(&env.home, &root)?;
@@ -79,7 +79,7 @@ fn refresh_once(env: &env_detect::Env, pull: bool, commit: bool) -> Result<()> {
 /// code) and commit them, so learnings persist to git in the same pass. No-op
 /// when nothing changed; best-effort — warns, never bails.
 fn commit_memory(root: &Path) {
-    let candidates = ["su-code", "agents", "AGENTS.md", "CLAUDE.md", "CHANGELOG.md", ".gitignore"];
+    let candidates = ["agents", "AGENTS.md", "CLAUDE.md", "CHANGELOG.md", ".gitignore"];
     let present: Vec<&str> = candidates
         .into_iter()
         .filter(|p| root.join(p).exists())

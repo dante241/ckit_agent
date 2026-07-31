@@ -52,8 +52,8 @@ pub fn run() -> Result<()> {
 
     // Configs present?
     for path in [
-        env.xdg_config.join("8sync/global.toml"),
-        env.xdg_config.join("8sync/skills.toml"),
+        crate::brand::config_dir(&env.home).join("global.toml"),
+        crate::brand::config_dir(&env.home).join("skills.toml"),
         env.home.join(".omp/skills/00-force-load.md"),
     ] {
         if path.exists() {
@@ -136,12 +136,12 @@ fn check_portability() {
     let durable = [
         "AGENTS.md",
         "CHANGELOG.md",
-        "su-code/PROJECT.md",
-        "su-code/KNOWLEDGE.md",
-        "su-code/DECISIONS.md",
-        "su-code/STATE.md",
-        "su-code/PREFERENCES.md",
-        "su-code/NOTES.md",
+        "agents/PROJECT.md",
+        "agents/KNOWLEDGE.md",
+        "agents/DECISIONS.md",
+        "agents/STATE.md",
+        "agents/PREFERENCES.md",
+        "agents/NOTES.md",
     ];
     let mut present = false;
     let mut ignored_any = false;

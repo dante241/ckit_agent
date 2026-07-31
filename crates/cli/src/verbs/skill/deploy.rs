@@ -1,10 +1,9 @@
-//! Bundled-skill deployment (embedded assets → ~/.omp/skills), project mirror,
-//! and codegraph bootstrap. The building blocks `8sync harness init` composes.
+//! Bundled-skill deployment (embedded assets → ~/.omp/skills) and codegraph
+//! bootstrap. The building blocks `8sync harness init` composes.
 use anyhow::Result;
 use std::path::Path;
 use std::process::Command;
 
-use super::discover::list_installed_skill_dirs;
 use crate::{assets, env_detect, ui};
 
 /// Deploy every bundled skill tree under `assets/skills/<name>/` into
@@ -53,7 +52,8 @@ pub(crate) fn cleanup_legacy_gs(home: &Path, root: Option<&Path>) {
     let _ = std::fs::remove_dir_all(home.join(".omp/skills/gs"));
     if let Some(r) = root {
         let _ = std::fs::remove_file(r.join(".omp/commands/gs.md"));
-        let _ = std::fs::remove_dir_all(r.join("su-code/skills/gs"));
+        let _ = std::fs::remove_dir_all(r.join(".omp/skills/gs"));
+        let _ = std::fs::remove_dir_all(r.join("su-code/skills/gs")); // pre-rename legacy location
     }
 }
 
@@ -67,59 +67,6 @@ pub(crate) fn ensure_skill_layout(dir: &Path) {
             let _ = std::fs::create_dir_all(&p);
         }
     }
-}
-
-/// For every skill dir under `~/.omp/skills/`, create or refresh a copy under
-/// `<root>/su-code/skills/<name>/`. Returns the number of skills processed.
-pub(crate) fn mirror_global_to_local(home: &Path, root: &Path, force: bool) -> Result<usize> {
-    let global_dir = home.join(".omp/skills");
-    let local_dir = root.join("su-code/skills");
-    std::fs::create_dir_all(&local_dir)?;
-    let globals = list_installed_skill_dirs(&global_dir).unwrap_or_default();
-    let mut count = 0usize;
-    for g in &globals {
-        let name = match g.file_name().and_then(|s| s.to_str()) {
-            Some(n) => n,
-            None => continue,
-        };
-        let local_target = local_dir.join(name);
-
-        // Self-mirror guard: if the global skill is a symlink that resolves to
-        // local_target (e.g. `path:` install with cwd == project root), refusing
-        // to remove+copy would otherwise WIPE the source. Skip cleanly.
-        let g_canon = std::fs::canonicalize(g).ok();
-        let l_canon = std::fs::canonicalize(&local_target).ok();
-        if let (Some(gc), Some(lc)) = (g_canon.as_ref(), l_canon.as_ref()) {
-            if gc == lc {
-                ui::skip(
-                    &local_target.display().to_string(),
-                    "global symlink resolves here (skipped — already source-of-truth)",
-                );
-                count += 1;
-                continue;
-            }
-        }
-
-        // Additive by default: never clobber an existing (maybe customized) local
-        // skill — only vendor missing ones. `--force` re-mirrors everything.
-        let existed = local_target.exists();
-        if existed && !force {
-            ui::skip(&local_target.display().to_string(), "exists (use --force to refresh)");
-            count += 1;
-            continue;
-        }
-        if existed {
-            let _ = std::fs::remove_dir_all(&local_target);
-        }
-        copy_dir_recursive(g, &local_target)?;
-        ui::ok(&format!(
-            "{} → {}",
-            if existed { "refreshed" } else { "vendored " },
-            local_target.display()
-        ));
-        count += 1;
-    }
-    Ok(count)
 }
 
 /// Recursively copy `src` into `dst`. Skips `.git/` (vendor copies should not
@@ -171,7 +118,7 @@ pub(crate) fn ensure_codegraph(env: &env_detect::Env) -> Result<()> {
         ui::skip("codegraph", &format!("present ({})", v));
     }
 
-    let toml_path = env.xdg_config.join("8sync/skills.toml");
+    let toml_path = crate::brand::config_dir(&env.home).join("skills.toml");
     if let Some(parent) = toml_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -415,6 +362,34 @@ pub(crate) fn ensure_omp_memory_config(home: &Path) -> Result<()> {
         ui::ok("compaction@50% + idle enabled (anti-forget)");
     }
     if changed { std::fs::write(&cfg, s)?; }
+    Ok(())
+}
+
+/// Seed the team-default model-role routing into `~/.omp/agent/config.yml` so a
+/// fresh machine's omp knows which provider/model to use per role (default/plan/
+/// advisor/tiny/commit). Roles point ONLY at the 9router providers that
+/// `gateway::seed_default` seeds into `models.yml`, so there are no dangling
+/// references. Key-presence idempotent: if the file already has a `modelRoles:`
+/// block (user-configured), it is left untouched.
+pub(crate) fn ensure_omp_model_roles(home: &Path) -> Result<()> {
+    let cfg = home.join(".omp/agent/config.yml");
+    if let Some(p) = cfg.parent() { std::fs::create_dir_all(p)?; }
+    let mut s = std::fs::read_to_string(&cfg).unwrap_or_default();
+    if s.lines().any(|l| l.starts_with("modelRoles:")) {
+        ui::skip("modelRoles", "already set (user-configured)");
+        return Ok(());
+    }
+    if !s.is_empty() && !s.ends_with('\n') { s.push('\n'); }
+    s.push_str(
+        "modelRoles:\n  \
+         default: 9router-cc/cc/claude-opus-4-8:medium\n  \
+         plan: 9router-cc/cc/claude-opus-4-8:high\n  \
+         advisor: 9router-cx/cx/gpt-5.4-mini:high\n  \
+         tiny: 9router-cx/cx/gpt-5.4-mini:medium\n  \
+         commit: 9router-cx/cx/gpt-5.4-mini:medium\n",
+    );
+    std::fs::write(&cfg, s)?;
+    ui::ok("modelRoles seeded (9router: opus for default/plan, gpt-5.4-mini for advisor/tiny/commit)");
     Ok(())
 }
 
@@ -901,7 +876,7 @@ pub(crate) fn ensure_omp_capabilities_snapshot(home: &Path) -> Result<()> {
     Ok(())
 }
 /// Best-effort: ensure the `feynman` research CLI (companion-inc/feynman) is
-/// available so the 20 feynman research skills registered in su-code/skills.toml
+/// available so the 20 feynman research skills registered in agents/skills.toml
 /// (deep-research, alpha-research, literature-review, …) are functional rather
 /// than inert — they shell out to `feynman`/`alpha`. A failed install is
 /// non-fatal (skills still list; the user can `npx @companion-ai/feynman`
@@ -1059,8 +1034,23 @@ pub(crate) fn migrate_namespace(home: &Path) {
         return;
     }
     // 1. Config namespace: ~/.config/8sync → ~/.config/<NS>, kitty conf filename.
-    if let Some(cfg) = dirs::config_dir() {
-        rename_if_new_absent(&cfg.join("8sync"), &cfg.join(crate::brand::NS));
+    //    Base is `~/.config` (`brand::config_dir`), NOT `dirs::config_dir()` —
+    //    on macOS the latter is `~/Library/Application Support`, where an earlier
+    //    build wrongly wrote config; step 1b recovers it into the XDG dir.
+    {
+        let cfg = crate::brand::config_dir(home).parent().map(Path::to_path_buf)
+            .unwrap_or_else(|| home.join(".config"));
+        // 1a. macOS recovery: pull any config an older build left under
+        // `~/Library/Application Support/{8sync,<NS>}` into `~/.config/<NS>`.
+        // File-level merge (not dir-rename): the target dir may already exist
+        // partially (e.g. a stray models.toml), which would make a dir-rename
+        // silently skip and strand global/skills.toml.
+        let dst = cfg.join(crate::brand::NS);
+        if let Some(mac) = dirs::config_dir().filter(|d| d != &cfg) {
+            merge_dir_if_new_absent(&mac.join("8sync"), &dst);
+            merge_dir_if_new_absent(&mac.join(crate::brand::NS), &dst);
+        }
+        merge_dir_if_new_absent(&cfg.join("8sync"), &dst);
         rename_if_new_absent(
             &cfg.join("kitty").join("8sync.conf"),
             &cfg.join("kitty").join(format!("{}.conf", crate::brand::NS)),
@@ -1090,5 +1080,27 @@ pub(crate) fn migrate_namespace(home: &Path) {
 fn rename_if_new_absent(old: &Path, new: &Path) {
     if old.exists() && !new.exists() {
         let _ = std::fs::rename(old, new);
+    }
+}
+
+/// Migrate every top-level file from `old` dir into `new`, moving only entries
+/// the destination lacks — so a partially-populated `new` (e.g. a stray
+/// models.toml) never blocks recovery of the rest, and never clobbers config
+/// the current build already wrote. Skips `*.bak`. Best-effort; leaves `old`.
+fn merge_dir_if_new_absent(old: &Path, new: &Path) {
+    let Ok(entries) = std::fs::read_dir(old) else { return };
+    let _ = std::fs::create_dir_all(new);
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            continue;
+        }
+        let name = entry.file_name();
+        if name.to_string_lossy().ends_with(".bak") {
+            continue;
+        }
+        let dest = new.join(&name);
+        if !dest.exists() {
+            let _ = std::fs::rename(entry.path(), &dest);
+        }
     }
 }
