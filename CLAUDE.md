@@ -72,7 +72,6 @@ KHÔNG đọc body mỗi phiên (giữ prefix gọn, tiết kiệm KV-cache). Kh
 - `test-driven-development` — `~/.omp/skills/test-driven-development/SKILL.md`
 - `token-bench` — `~/.omp/skills/token-bench/SKILL.md`
 - `using-agent-skills` — `~/.omp/skills/using-agent-skills/SKILL.md`
-- `zai-vision` — `~/.omp/skills/zai-vision/SKILL.md`
 
 ### Quy tắc bất biến
 

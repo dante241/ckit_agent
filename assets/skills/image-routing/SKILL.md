@@ -14,8 +14,8 @@ Two directions, one rule: **pick the modality that fits the content.**
 
 **Can I see pixels?**
 - **Vision model (Opus-class): yes.** Use images for STRUCTURE/overview (below).
-- **Text-only (GLM-5.2 — the 8sync default): no.** You cannot read PNGs at all. Read text;
-  route any real incoming image through the **`zai-vision` MCP** (`~/.omp/skills/zai-vision/SKILL.md`)
+- **Text-only models: no.** You cannot read PNGs at all. Read text; route real images
+  through model-native vision when available or omp/Claude built-in image/inspect tools
   to get TEXT back, then act.
 
 ## Honest token economics (read before assuming image is cheaper)
@@ -59,7 +59,7 @@ Two directions, one rule: **pick the modality that fits the content.**
 ## Examples
 
 Review a UI: `8sync shot http://localhost:3000/login` → one PNG instead of `LoginScreen.tsx` +
-styles (~8k tok). GLM: pass the PNG to zai-vision → text.
+styles (~8k tok). Text-only model: pass the PNG through model-native/built-in vision → text.
 
 Grok the architecture (vision model): boot `8sync harness web`, then
 `8sync shot 'http://127.0.0.1:8731/codegraph?shot=1' -o /tmp/cg.png` — **`?shot=1` = canvas-only**

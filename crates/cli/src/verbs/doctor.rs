@@ -214,6 +214,7 @@ fn check_ai_engines(home: &std::path::Path) {
     }
     let mcp = std::fs::read_to_string(home.join(".omp/agent/mcp.json")).unwrap_or_default();
     for (bin, what) in [
+        ("codegraph", "local indexed code MCP (serve --mcp)"),
         ("codebase-memory-mcp", "semantic graph (search_graph/trace_path/cypher)"),
         ("headroom", "output compression (>50-line dumps)"),
     ] {
@@ -227,14 +228,6 @@ fn check_ai_engines(home: &std::path::Path) {
             ui::warn(&format!("  {} MISSING — run `8sync harness` (auto-installs + registers)", bin));
         }
     }
-    // Z.AI vision MCP — bridges GLM-5.2 (text-only) with GLM-5V via the same key.
-    let zai_registered = mcp.contains("\"zai-vision\"");
-    let zai_bin = which::which("zai-mcp-server").is_ok() || which::which("bunx").is_ok();
-    if zai_bin && zai_registered {
-        ui::ok("  zai-vision MCP ON — GLM-5V reads images for text-only GLM-5.2 (ui_to_artifact · extract_text · diagnose_error · ui_diff_check)");
-    } else {
-        ui::warn("  zai-vision MCP OFF — `8sync harness` auto-installs @z_ai/mcp-server (vision for GLM-5.2)");
-    }
     let cfg = std::fs::read_to_string(home.join(".omp/agent/config.yml")).unwrap_or_default();
     if cfg.contains("backend: mnemopi") {
         ui::ok("  mnemopi memory ON — recall/retain across sessions (`/memory view`)");
@@ -242,11 +235,11 @@ fn check_ai_engines(home: &std::path::Path) {
         ui::warn("  mnemopi memory OFF — `8sync harness` enables deep project recall (API-only)");
     }
     if env_detect::omp_major().is_some_and(|m| m >= 17) {
-        ui::ok("  STEP-0 MCP tools mounted as xd:// devices (omp ≥17 tools.xdev) — serena/cbm/headroom/zai callable");
+        ui::ok("  STEP-0 MCP tools mounted as xd:// devices (omp ≥17 tools.xdev) — codegraph/serena/cbm/headroom callable");
     } else if cfg.contains("discoveryDefaultServers") {
         ui::ok("  STEP-0 MCP servers always visible (mcp.discoveryDefaultServers)");
     } else {
-        ui::warn("  MCP tools HIDDEN behind search_tool_bm25 (fix: run `8sync harness global`) — serena/cbm never get called");
+        ui::warn("  MCP tools HIDDEN behind search_tool_bm25 (fix: run `8sync harness global`) — codegraph/serena/cbm never get called");
     }
     if mcp.contains("\"serena\"") && which::which("uvx").is_ok() {
         ui::ok("  serena registered + runnable via uvx — LSP symbol intel (mcp__serena_find_symbol/…)");

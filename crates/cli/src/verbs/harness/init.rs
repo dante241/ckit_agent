@@ -61,6 +61,7 @@ pub(crate) fn harness_init(env: &env_detect::Env, _force: bool) -> Result<()> {
     // 3. codegraph binary (auto curl installer if missing).
     p.step("ensure codegraph binary");
     deploy::ensure_codegraph(env)?;
+    deploy::ensure_codegraph_mcp(env)?;
     deploy::ensure_codebase_memory_mcp(env)?;
     deploy::ensure_headroom_mcp(env)?;
     let _ = deploy::ensure_omp_memory_config(&env.home);
@@ -68,7 +69,7 @@ pub(crate) fn harness_init(env: &env_detect::Env, _force: bool) -> Result<()> {
     let _ = deploy::ensure_append_system(&env.home);
     let _ = deploy::ensure_mcp_spec(&env.home);
     let _ = deploy::ensure_serena_mcp(env);
-    let _ = deploy::ensure_zai_vision_mcp(env);
+    let _ = deploy::deregister_zai_vision_mcp(&env.home);
     let _ = deploy::ensure_omp_capabilities_snapshot(&env.home);
     deploy::ensure_feynman_cli();
     let _ = deploy::ensure_workflow_extension(&env.home, None);

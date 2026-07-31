@@ -28,8 +28,7 @@ Nhỏ + dùng cho MỌI task: codegraph → karpathy → ponytail → 8sync-cli.
 - **`assp-skill`** — brand DNA 8 Sync Dev + ASSP validate-before-build. Mở khi: UI copy, landing/pricing, email/error, greenlight feature mới.
 - **`impeccable`** — **design system CHUẨN; BẮT BUỘC mở body NGAY khi có việc UI/design/redesign/audit** (chạy `scripts/context.mjs`, kèm `references/house/*`).
 - **`taste-skill`** — anti-slop frontend taste. Mở khi: landing/portfolio/redesign.
-- **`image-routing`** — image-vs-text routing. Mở khi: xử lý ảnh/diff/PDF.
-- **`zai-vision`** — GLM-5.2 text-only → GLM-5V bridge qua MCP `zai-vision` (npm `@z_ai/mcp-server`, auto-set-up bởi `8sync harness`). Mở NGAY SAU `image-routing` khi bảng đó chọn "image": OCR screenshot, chẩn đoán lỗi từ ảnh, hiểu diagram/chart, UI→code, visual regression, video. Skill có bảng full combination case (browser/shot/pdf-img/diff-img/codegraph/serena/headroom/retain) + ví dụ THẬT đã chạy kiểm chứng.
+- **`image-routing`** — image-vs-text routing. Mở khi: xử lý ảnh/diff/PDF; ưu tiên model-native vision hoặc built-in image/inspect tools, không đăng ký MCP vision riêng.
 - **`locate-anything`** — visual grounding (NVIDIA LocateAnything-3B via `8sync locate`). Mở khi: cần TỌA ĐỘ chính xác của UI element (để click), box vị trí object/text trong ảnh — grounding chứ không phải caption. Bổ trợ `browser` + `8sync shot`. Non-commercial license.
 
 On-demand (đọc khi task khớp description): `code-review-and-quality`, `senior-security`, `senior-frontend`, `full-flow`, `last30days`; `encore-deploy` (chỉ khi project dùng Encore); `social-growth` (opt-in — `8sync skill add builtin:social-growth`). **Research** (ported từ `companion-inc/feynman` sang omp-native tools — xem `assets/skills/<name>/SKILL.md`): `deep-research`, `literature-review`, `autoresearch`, `ml-training-recipe`, `paper-code-audit`, `paper-writing`, `research-review`, `source-comparison`, `watch`, `replication`, `jobs`, `session-log`, `eli5`, `session-search`, `preview`, `docker`, `modal-compute`, `runpod-compute`, `alpha-research` (CLI thật, cần `feynman` — `ensure_feynman_cli()` tự cài).
@@ -47,7 +46,7 @@ If inside a project (cwd có `.git` / `Cargo.toml` / `package.json` / …) — �
 | Refactor / impact analysis | **codegraph (callers/callees) → karpathy → project-local** |
 | User-facing copy / UI text / landing / pricing / new product feature | **karpathy → assp → impeccable + taste** |
 | Frontend design / redesign / UI build / audit | **karpathy → impeccable → taste** (+ assp for any copy) |
-| Review UI / PDF / diff | karpathy → **image-routing** → **zai-vision** (nếu cần đọc pixel) before fetching |
+| Review UI / PDF / diff | karpathy → **image-routing** → model-native/built-in image tools (nếu cần đọc pixel) before fetching |
 | Inside an 8sync repo | CORE always-on (đọc ngay) + specialist/on-demand khi khớp + `su-code/*.md` (STATE đầu phiên) |
 | Simple one-liner question | codegraph if codebase-related, else karpathy |
 

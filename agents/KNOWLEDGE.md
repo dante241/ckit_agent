@@ -51,3 +51,9 @@ _empty_
 - Repo dante241/ckit_agent chuyển PUBLIC. Public GitHub release: tải qua `browser_download_url` KHÔNG cần auth (khác private phải dùng releases/assets/{id}+octet-stream). Bỏ yêu cầu token ở selfup.rs + install.sh/ps1.
 - Token giờ OPTIONAL: chỉ thêm header nếu có env, để né rate-limit API anon 60 req/h. Helper api_curl_args(url, &Option<token>) thêm -H auth khi Some.
 - Audit public repo assets/: gateway/9router sạch; sample VCS URLs in vtiger-php pack were placeholder-sanitized before public push; crm.domain.com/IP examples are placeholders/examples.
+
+## validated: STEP-0 MCP default + remove zai-vision (2026-07-31)
+- `setup.rs` Stage A now registers all STEP-0 MCPs (`codegraph`, `codebase-memory-mcp`, `headroom`, `serena`) in one `step0-mcps` try_step (trước chỉ có `codegraph`), rồi `deregister_zai_vision_mcp` để dọn máy cũ. `harness init`/`global` đã có sẵn chuỗi này.
+- `zai-vision` removal: xoá bundled skill asset `assets/skills/zai-vision/`, gỡ khỏi force-load/image-routing/locate/APPEND_SYSTEM/root docs/doctor text; image understanding route qua model-native hoặc built-in image/inspect tools. `deregister_zai_vision_mcp` giờ cũng `remove_dir_all(~/.omp/skills/zai-vision)`.
+- `ensure_mcp_tools_visible`: giữ 2 hằng số legacy exact-match — `LEGACY_PIN` (không zai) và `LEGACY_PIN_WITH_ZAI` — để migrate sạch cả 2 đời config user. Đây là match duy nhất còn lại của "zai" trong scan, đúng chủ đích cleanup.
+- validated: `cargo check -q` + `cargo build -q` exit 0; stale-ref scan chỉ còn cleanup literal.

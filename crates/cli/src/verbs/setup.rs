@@ -130,6 +130,7 @@ pub fn run(a: Args) -> Result<()> {
         ui::info("would install omp (curl) if missing");
         ui::info("would install paru (AUR helper) if missing");
         ui::info("would install codegraph (curl) if missing");
+        ui::info("would register STEP-0 MCPs (codegraph · codebase-memory · headroom · serena) and remove legacy zai-vision");
         ui::info("would write: configs + skills");
         ui::info("would seed ~/.omp/agent/models.yml (team 9router catalog, placeholder key) + config.yml (memory+compaction+mcp+modelRoles) if absent");
         ui::info("would patch PATH in zsh/bash + ~/.config/fish/conf.d/8sync-path.fish");
@@ -143,6 +144,14 @@ pub fn run(a: Args) -> Result<()> {
             try_step("paru",   yolo, &mut failures, install_aur_helper)?;
         }
         try_step("codegraph",  yolo, &mut failures, install_codegraph)?;
+        try_step("step0-mcps", yolo, &mut failures, || {
+            crate::verbs::skill::deploy::ensure_codegraph_mcp(&env)?;
+            crate::verbs::skill::deploy::ensure_codebase_memory_mcp(&env)?;
+            crate::verbs::skill::deploy::ensure_headroom_mcp(&env)?;
+            let _ = crate::verbs::skill::deploy::ensure_serena_mcp(&env);
+            let _ = crate::verbs::skill::deploy::deregister_zai_vision_mcp(&env.home);
+            Ok(())
+        })?;
         try_step("path-bootstrap", yolo, &mut failures, || { ensure_path_in_shells(); Ok(()) })?;
         try_step("configs",    yolo, &mut failures, || install_configs(&env))?;
         try_step("omp-models", yolo, &mut failures, || {

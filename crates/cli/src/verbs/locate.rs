@@ -3,7 +3,7 @@
 //! port with prebuilt GGUFs — no Python at inference time). Turns an image + a
 //! text description into labeled boxes, so the agent gets exact pixel coordinates
 //! (GUI element grounding → click points, OCR/text localization, object detection)
-//! instead of eyeballing a screenshot. Complements `8sync shot` and zai-vision.
+//! instead of eyeballing a screenshot. Complements `8sync shot` and built-in vision tools.
 //!
 //! Setup (`--setup`) clones + cmake-builds the CLI and downloads the q8_0 GGUF.
 //! The model is under NVIDIA's non-commercial / research license.

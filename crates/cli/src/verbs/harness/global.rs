@@ -3,7 +3,7 @@
 //! needed for the rule layer):
 //!   ~/.omp/skills + 00-force-load.md        → skill library, read every session
 //!   ~/.omp/agent/APPEND_SYSTEM.md           → appended to EVERY omp system prompt
-//!   MCP servers (cbm · headroom · serena · zai-vision) + recall hook + capabilities
+//!   MCP servers (codegraph · cbm · headroom · serena) + recall hook + capabilities
 //! plus the Anthropic token-optimizer defaults:
 //!   compaction 50% (only if unset) · headroom compress >50-line outputs ·
 //!   byte-stable APPEND_SYSTEM writes (identical ⇒ skip) so the system prefix
@@ -36,6 +36,7 @@ pub(crate) fn global_pass(env: &env_detect::Env) -> Result<()> {
     }
     deploy::install_bundled_global(env)?;
     deploy::ensure_codegraph(env)?;
+    deploy::ensure_codegraph_mcp(env)?;
     deploy::ensure_codebase_memory_mcp(env)?;
     deploy::ensure_headroom_mcp(env)?;
     let _ = deploy::ensure_omp_memory_config(&env.home);
@@ -44,7 +45,7 @@ pub(crate) fn global_pass(env: &env_detect::Env) -> Result<()> {
     let _ = deploy::ensure_append_system(&env.home);
     let _ = deploy::ensure_mcp_spec(&env.home);
     let _ = deploy::ensure_serena_mcp(env);
-    let _ = deploy::ensure_zai_vision_mcp(env);
+    let _ = deploy::deregister_zai_vision_mcp(&env.home);
     let _ = deploy::ensure_omp_capabilities_snapshot(&env.home);
     deploy::ensure_feynman_cli();
     let _ = install_external_skill_packs(env); // best-effort; skips packs already present
@@ -120,8 +121,8 @@ pub(crate) fn harness_global(
     // 5. Summary — what now applies to every omp session on this machine.
     ui::ok("omp rules are now GLOBAL — every omp session in every project gets:");
     ui::info("  • ~/.omp/agent/APPEND_SYSTEM.md appended to EVERY system prompt (code-intel-first, never compacted)");
-    ui::info("  • skills @ ~/.omp/skills + 00-force-load.md · MCP: codebase-memory · headroom · serena · zai-vision");
-    ui::info("  • STEP-0 MCP tools always in the tool set (omp ≥17: xd:// devices via tools.xdev) — serena/cbm/headroom/zai callable");
+    ui::info("  • skills @ ~/.omp/skills + 00-force-load.md · MCP: codegraph · codebase-memory · headroom · serena");
+    ui::info("  • STEP-0 MCP tools always in the tool set (omp ≥17: xd:// devices via tools.xdev) — codegraph/serena/cbm/headroom callable");
     ui::info("  • token optimizer: headroom compress >50-line outputs · compaction 50% · stable prefix → Anthropic prompt-cache hits");
     if sweep.is_none() {
         ui::info("stamp the per-project layer everywhere: `8sync harness global --sweep` (default ~/Projects)");

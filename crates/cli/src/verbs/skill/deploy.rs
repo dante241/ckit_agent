@@ -13,7 +13,7 @@ pub(crate) fn install_bundled_global(env: &env_detect::Env) -> Result<()> {
     let skills_dir = env.home.join(".omp/skills");
     // (asset prefix, target subdir name). always-on first (read order), then
     // on-demand specialists. Encore/full-flow are on-demand + tech-gated.
-    let bundled: [(&str, &str); 18] = [
+    let bundled: [(&str, &str); 17] = [
         ("skills/codegraph",               "codegraph"),
         ("skills/karpathy",                "karpathy-guidelines"),
         ("skills/ponytail",                "ponytail"),
@@ -22,7 +22,6 @@ pub(crate) fn install_bundled_global(env: &env_detect::Env) -> Result<()> {
         ("skills/taste-skill",             "taste-skill"),
         ("skills/8sync-cli",               "8sync-cli"),
         ("skills/image-routing",           "image-routing"),
-        ("skills/zai-vision",              "zai-vision"),
         ("skills/locate-anything",         "locate-anything"),
         ("skills/code-review-and-quality", "code-review-and-quality"),
         ("skills/senior-security",         "senior-security"),
@@ -133,6 +132,17 @@ pub(crate) fn ensure_codegraph(env: &env_detect::Env) -> Result<()> {
         ui::ok(&format!("registered 'codegraph' → {}", toml_path.display()));
     }
     Ok(())
+}
+
+/// Register CodeGraph's local MCP server with omp. The same `codegraph` binary
+/// serves MCP over stdio with `codegraph serve --mcp`; project indexes still live
+/// per-repo in `.codegraph/` and are initialized by `ensure_codegraph_init`.
+pub(crate) fn ensure_codegraph_mcp(env: &env_detect::Env) -> Result<()> {
+    if which::which("codegraph").is_err() {
+        ui::warn("codegraph binary not on PATH — skipping codegraph MCP registration");
+        return deregister_omp_mcp(&env.home, "codegraph");
+    }
+    register_omp_mcp(&env.home, "codegraph", "codegraph", &["serve", "--mcp"], &[])
 }
 
 /// If `<root>/.codegraph/` is missing and the `codegraph` binary is on PATH,
@@ -410,19 +420,24 @@ pub(crate) fn ensure_mcp_tools_visible(home: &Path) -> Result<()> {
     // (absent from omp's schema) — writing it is dead weight omp strips on rewrite,
     // which is exactly the churn that made STEP-0 look like it kept "regressing".
     if env_detect::omp_major().is_some_and(|m| m >= 17) {
-        ui::ok("STEP-0 MCP tools mounted as xd:// devices (omp ≥17 tools.xdev) — serena/cbm/headroom/zai callable, no config key needed");
+        ui::ok("STEP-0 MCP tools mounted as xd:// devices (omp ≥17 tools.xdev) — codegraph/serena/cbm/headroom callable, no config key needed");
         return Ok(());
     }
-    const SERVERS: &[&str] = &["codebase-memory-mcp", "headroom", "serena", "zai-vision"];
+    const SERVERS: &[&str] = &["codegraph", "codebase-memory-mcp", "headroom", "serena"];
     // The exact block written by the earlier essentialOverride approach. MCP names
     // in essentialOverride are filtered out by omp (builtins only) AND clobber the
     // builtin essential defaults — remove it, but ONLY this byte-exact 8sync block.
-    const LEGACY_PIN: &str = "tools:\n  essentialOverride:\n    - mcp__codebase_memory_mcp_search_graph\n    - mcp__codebase_memory_mcp_trace_path\n    - mcp__codebase_memory_mcp_get_architecture\n    - mcp__codebase_memory_mcp_get_code_snippet\n    - mcp__serena_find_symbol\n    - mcp__serena_find_referencing_symbols\n    - mcp__serena_get_symbols_overview\n    - mcp__headroom_compress\n    - mcp__zai_vision_extract_text_from_screenshot\n    - mcp__zai_vision_analyze_image\n";
+    const LEGACY_PIN: &str = "tools:\n  essentialOverride:\n    - mcp__codebase_memory_mcp_search_graph\n    - mcp__codebase_memory_mcp_trace_path\n    - mcp__codebase_memory_mcp_get_architecture\n    - mcp__codebase_memory_mcp_get_code_snippet\n    - mcp__serena_find_symbol\n    - mcp__serena_find_referencing_symbols\n    - mcp__serena_get_symbols_overview\n    - mcp__headroom_compress\n";
+    const LEGACY_PIN_WITH_ZAI: &str = "tools:\n  essentialOverride:\n    - mcp__codebase_memory_mcp_search_graph\n    - mcp__codebase_memory_mcp_trace_path\n    - mcp__codebase_memory_mcp_get_architecture\n    - mcp__codebase_memory_mcp_get_code_snippet\n    - mcp__serena_find_symbol\n    - mcp__serena_find_referencing_symbols\n    - mcp__serena_get_symbols_overview\n    - mcp__headroom_compress\n    - mcp__zai_vision_extract_text_from_screenshot\n    - mcp__zai_vision_analyze_image\n";
     let cfg = home.join(".omp/agent/config.yml");
     if let Some(p) = cfg.parent() { std::fs::create_dir_all(p)?; }
     let mut s = std::fs::read_to_string(&cfg).unwrap_or_default();
     let mut changed = false;
-    if s.contains(LEGACY_PIN) {
+    if s.contains(LEGACY_PIN_WITH_ZAI) {
+        s = s.replace(LEGACY_PIN_WITH_ZAI, "");
+        changed = true;
+        ui::info("migrated: dropped inert tools.essentialOverride MCP pin (builtins-only setting)");
+    } else if s.contains(LEGACY_PIN) {
         s = s.replace(LEGACY_PIN, "");
         changed = true;
         ui::info("migrated: dropped inert tools.essentialOverride MCP pin (builtins-only setting)");
@@ -457,7 +472,7 @@ pub(crate) fn ensure_mcp_tools_visible(home: &Path) -> Result<()> {
         s.push_str(&format!("\nmcp:\n  discoveryDefaultServers:\n{list}"));
     }
     std::fs::write(&cfg, s)?;
-    ui::ok("STEP-0 MCP servers always visible (mcp.discoveryDefaultServers) — serena/cbm/headroom/zai callable, no search_tool_bm25 hop");
+    ui::ok("STEP-0 MCP servers always visible (mcp.discoveryDefaultServers) — codegraph/serena/cbm/headroom callable, no search_tool_bm25 hop");
     Ok(())
 }
 
@@ -554,75 +569,12 @@ pub(crate) fn ensure_serena_mcp(env: &env_detect::Env) -> Result<()> {
     }
 }
 
-/// Resolve the Z.AI API key for the vision MCP. Prefer an explicit env var
-/// (`Z_AI_API_KEY` / `ZAI_API_KEY` / `ZHIPUAI_API_KEY`); otherwise pull it from
-/// omp's auth-broker via `omp token zai` — the SAME key that auths `zai/glm-5.2`.
-/// Returns None only when neither source yields a plausible key; the caller then
-/// still registers the server (tools discovered) but without auth.
-fn resolve_zai_api_key() -> Option<String> {
-    for var in ["Z_AI_API_KEY", "ZAI_API_KEY", "ZHIPUAI_API_KEY"] {
-        if let Ok(v) = std::env::var(var) {
-            if v.len() >= 12 {
-                return Some(v);
-            }
-        }
-    }
-    // omp auth-broker holds the provider key (provider id `zai`, matching the
-    // `zai/glm-5.2` model role). `omp token zai` prints just the key on stdout.
-    if let Ok(out) = Command::new("omp").args(["token", "zai"]).output() {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if s.len() >= 12 && !s.contains(' ') && !s.contains('\n') {
-                return Some(s);
-            }
-        }
-    }
-    None
-}
-
-/// Ensure the **Z.AI vision MCP** (`@z_ai/mcp-server`) is installed + registered.
-/// GLM-5.2 is text-only; this MCP exposes GLM-5V-Turbo as model-callable tools
-/// (`ui_to_artifact`, `extract_text_from_screenshot`, `diagnose_error_screenshot`,
-/// `understand_technical_diagram`, `analyze_data_visualization`, `ui_diff_check`,
-/// `analyze_image`, `analyze_video`) authed by the SAME Z.AI key. Closing the loop:
-/// `8sync shot <url>` (browser capture) → zai-vision tool → text → GLM-5.2 acts.
-/// Defaults `Z_AI_VISION_MODEL` to `glm-4.6v-flash` — the ONLY vision model this
-/// setup verified working end-to-end through the real MCP tool call on a stock
-/// Z.AI account with no vision resource package (it's the free-tier vision model
-/// per Z.AI's pricing page; paid ones like glm-4.6v/glm-5v-turbo 400 with
-/// "1113 insufficient balance" until a vision package is purchased). Installs via
-/// `bun add -g` (fast stdio binary on PATH); falls back to `bunx`. Never bails.
-pub(crate) fn ensure_zai_vision_mcp(env: &env_detect::Env) -> Result<()> {
-    // 1. Install the package so `zai-mcp-server` is on PATH (preferred over a
-    //    per-connect `bunx` cold-start). bun is omnipresent in the omp stack.
-    if which::which("zai-mcp-server").is_err() && which::which("bun").is_ok() {
-        ui::step("z.ai vision MCP (missing — installing @z_ai/mcp-server via bun)");
-        let _ = Command::new("bun").args(["add", "-g", "@z_ai/mcp-server"]).status();
-    }
-    let (command, args): (String, Vec<String>) = if which::which("zai-mcp-server").is_ok() {
-        ("zai-mcp-server".to_string(), Vec::new())
-    } else if which::which("bunx").is_ok() {
-        ("bunx".to_string(), vec!["@z_ai/mcp-server".to_string()])
-    } else {
-        ui::warn("z.ai vision MCP: needs `bun` (https://bun.sh) — skipped; GLM-5.2 stays text-only");
-        return deregister_omp_mcp(&env.home, "zai-vision");
-    };
-    // 2. Auth: same Z.AI key that auths `zai/glm-5.2`. Declared at fn scope so the
-    //    borrow in env_vars outlives the register_omp_mcp call.
-    let key = resolve_zai_api_key();
-    let key_str = key.clone().unwrap_or_default();
-    let mut env_vars: Vec<(&str, &str)> = vec![("Z_AI_MODE", "ZAI"), ("Z_AI_VISION_MODEL", "glm-4.6v-flash")];
-    if key.is_some() {
-        env_vars.push(("Z_AI_API_KEY", key_str.as_str()));
-    } else {
-        ui::warn("z.ai vision MCP: no Z_AI_API_KEY (env nor `omp token zai`) — registered WITHOUT auth; set it in ~/.omp/agent/mcp.json");
-    }
-    // 3. Register. omp's stringMap takes no ${VAR} expansion, so the key is
-    //    inlined into mcp.json (user-private, never committed; gitignored).
-    let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    register_omp_mcp(&env.home, "zai-vision", &command, &args_ref, &env_vars)?;
-    ui::ok("z.ai vision MCP (GLM-5V) bridges GLM-5.2's text-only gap — ui_to_artifact · extract_text_from_screenshot · diagnose_error_screenshot · ui_diff_check · analyze_image");
-    Ok(())
+/// Remove the legacy Z.AI vision MCP entry + bundled skill directory. ckit no
+/// longer registers this MCP by default; image tasks should use built-in image
+/// tools or specialist skills.
+pub(crate) fn deregister_zai_vision_mcp(home: &Path) -> Result<()> {
+    let _ = std::fs::remove_dir_all(home.join(".omp/skills/zai-vision"));
+    deregister_omp_mcp(home, "zai-vision")
 }
 
 /// Exact tool catalogs for the MCP servers `8sync harness` auto-registers.
@@ -634,6 +586,17 @@ pub(crate) fn ensure_zai_vision_mcp(env: &env_detect::Env) -> Result<()> {
 /// prevents). Unknown/user-added servers get no catalog — the snapshot says so.
 fn known_mcp_tool_catalog(server: &str) -> &'static [(&'static str, &'static str)] {
     match server {
+        "codegraph" => &[
+            ("codegraph_explore", "primary: relevant source + call paths + blast radius in one call"),
+            ("codegraph_search", "search symbols/files in the local .codegraph index"),
+            ("codegraph_context", "context bundle for a symbol/query"),
+            ("codegraph_callers", "who calls this symbol"),
+            ("codegraph_callees", "what this symbol calls"),
+            ("codegraph_impact", "blast radius / impacted symbols"),
+            ("codegraph_node", "read one indexed node/symbol"),
+            ("codegraph_status", "index status and pending sync"),
+            ("codegraph_files", "indexed files list"),
+        ],
         "codebase-memory-mcp" => &[
             ("search_graph", "BM25 / name-pattern / semantic search over functions, classes, routes"),
             ("query_graph", "raw Cypher against the knowledge graph (complex joins, aggregations)"),
@@ -679,16 +642,6 @@ fn known_mcp_tool_catalog(server: &str) -> &'static [(&'static str, &'static str
             ("rename_memory", "rename/move a serena memory"),
             ("delete_memory", "delete a serena memory (only when explicitly asked)"),
             ("onboarding", "first-run project onboarding instructions"),
-        ],
-        "zai-vision" => &[
-            ("ui_to_artifact", "UI screenshot -> frontend code / AI prompt / design spec / description"),
-            ("extract_text_from_screenshot", "OCR: code, terminal output, logs, docs (language hint optional)"),
-            ("diagnose_error_screenshot", "root-cause an error/stack-trace screenshot -> fix"),
-            ("understand_technical_diagram", "architecture/flowchart/UML/ER/sequence diagrams -> text"),
-            ("analyze_data_visualization", "charts/graphs -> trends, anomalies, business read"),
-            ("ui_diff_check", "visual regression: compare expected vs actual UI screenshots"),
-            ("analyze_image", "general-purpose FALLBACK when no specialized tool above fits"),
-            ("analyze_video", "video content understanding (uses `video_source` not `image_source`)"),
         ],
         _ => &[],
     }
@@ -803,8 +756,9 @@ pub(crate) fn ensure_omp_capabilities_snapshot(home: &Path) -> Result<()> {
          read the image (modality-fit — structure beats its adjacency-list text). NEVER \
          image-ify source code / exact config / line-numbered data — text is cheaper AND \
          lossless (Claude bills images per 28x28 patch, pay-per-pixel; the 10x/90% figure \
-         needs a dedicated OCR encoder, not a screenshot). GLM-5.2 is text-only → images \
-         via zai-vision. Full table: `~/.omp/skills/image-routing/SKILL.md`.\n",
+         needs a dedicated OCR encoder, not a screenshot). Text-only models read images \
+         through model-native vision when available or built-in image/inspect tools. Full table: \
+         `~/.omp/skills/image-routing/SKILL.md`.\n",
     );
     out.push_str("\n## omp built-in tools (from `omp --help`)\n\n");
     if builtin_tools.is_empty() {
