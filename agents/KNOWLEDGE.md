@@ -52,6 +52,12 @@ _empty_
 - Token giờ OPTIONAL: chỉ thêm header nếu có env, để né rate-limit API anon 60 req/h. Helper api_curl_args(url, &Option<token>) thêm -H auth khi Some.
 - Audit public repo assets/: gateway/9router sạch; sample VCS URLs in vtiger-php pack were placeholder-sanitized before public push; crm.domain.com/IP examples are placeholders/examples.
 
+## validated: setup Stage A/B phải gate bằng is_cachyos_or_arch, KHÔNG phải os()==Linux (2026-07-31)
+- **Bug thực tế trên Ubuntu VM:** `ckit setup` fail `sudo: pacman: command not found` vì bước `paru` (AUR helper) guard bằng `platform::os() == Os::Linux` → chạy cho MỌI distro Linux, nhưng `install_aur_helper` gọi `pkg::pacman_install_safe(["git","base-devel"])` chỉ có trên Arch.
+- **Fix:** đổi guard bước `paru` sang `env.is_cachyos_or_arch()` (setup.rs ~143). Stage B (profiles) cũng sai cùng kiểu: `os() != Linux` → Ubuntu không skip; đổi sang `!env.is_cachyos_or_arch()` (setup.rs ~176). `is_cachyos_or_arch()` = os_id ∈ {cachyos, arch, manjaro, endeavouros} (env_detect.rs:35).
+- `install_core_pkg` (gh) đã đúng: `pkg_manager()` trả None trên Ubuntu → chỉ warn "install gh manually", không fail.
+- validated: `cargo build -q` exit 0. Ubuntu setup không còn đụng pacman; Stage A core (omp/codegraph/MCP/skills/config) chạy tiếp bình thường.
+
 ## validated: STEP-0 MCP default + remove zai-vision (2026-07-31)
 - `setup.rs` Stage A now registers all STEP-0 MCPs (`codegraph`, `codebase-memory-mcp`, `headroom`, `serena`) in one `step0-mcps` try_step (trước chỉ có `codegraph`), rồi `deregister_zai_vision_mcp` để dọn máy cũ. `harness init`/`global` đã có sẵn chuỗi này.
 - `zai-vision` removal: xoá bundled skill asset `assets/skills/zai-vision/`, gỡ khỏi force-load/image-routing/locate/APPEND_SYSTEM/root docs/doctor text; image understanding route qua model-native hoặc built-in image/inspect tools. `deregister_zai_vision_mcp` giờ cũng `remove_dir_all(~/.omp/skills/zai-vision)`.

@@ -140,7 +140,9 @@ pub fn run(a: Args) -> Result<()> {
             platform::install_core_pkg("gh", "github-cli", "gh", "GitHub.cli")
         })?;
         try_step("omp",        yolo, &mut failures, install_omp)?;
-        if platform::os() == platform::Os::Linux {
+        // paru is an AUR helper — Arch/CachyOS only (needs pacman + makepkg).
+        // On Debian/Ubuntu/other distros this step would `pacman: not found`.
+        if env.is_cachyos_or_arch() {
             try_step("paru",   yolo, &mut failures, install_aur_helper)?;
         }
         try_step("codegraph",  yolo, &mut failures, install_codegraph)?;
@@ -171,10 +173,11 @@ pub fn run(a: Args) -> Result<()> {
         try_step("skills",     yolo, &mut failures, || install_skills(&env))?;
         try_step("codegraph-skill", yolo, &mut failures, || register_codegraph_skill(&env))?;
     }
-    // Stage B profiles are Arch/Linux packages (pacman/AUR) — skip on other OSes.
-    if platform::os() != platform::Os::Linux {
+    // Stage B profiles are Arch-specific packages (pacman/AUR: fcitx5,
+    // cloudflare-warp-bin, lianli, …) — skip on non-Arch Linux and other OSes.
+    if !env.is_cachyos_or_arch() {
         ui::info(&format!(
-            "Stage B profiles are Arch/Linux-only — skipping on {}",
+            "Stage B profiles are Arch-only (pacman/AUR) — skipping on {}",
             platform::os_name()
         ));
         finish_summary(&failures, log_path.as_ref(), a.reboot, a.dry_run);
