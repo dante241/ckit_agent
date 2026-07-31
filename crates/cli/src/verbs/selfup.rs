@@ -1,5 +1,5 @@
 // Self-update: pull the prebuilt binary from the latest GitHub Release of the
-// PUBLIC repo `dante241x/ckit_agent`. Public assets download straight from the
+// PUBLIC repo `dante241/ckit_agent`. Public assets download straight from the
 // `browser_download_url`, so no token is needed. A token (CKIT_GITHUB_TOKEN /
 // GITHUB_TOKEN) is used only when present, to dodge the 60-req/hour anonymous
 // API rate limit. Also exposes a rate-limited auto-check used from main().
@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime};
 
 use crate::ui;
 
-const REPO_OWNER: &str = "dante241x";
+const REPO_OWNER: &str = "dante241";
 const REPO_NAME: &str = "ckit_agent";
 /// Per-arch asset name prefix/suffix (`ckit-<tag>-linux-x86_64`).
 const ASSET_PREFIX: &str = "ckit-";

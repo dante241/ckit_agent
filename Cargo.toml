@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 authors = ["8sync-dev <8sync.dev.1111@gmail.com>"]
-repository = "https://github.com/dante241x/ckit_agent"
+repository = "https://github.com/dante241/ckit_agent"
 
 [profile.release]
 opt-level = "z"

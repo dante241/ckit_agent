@@ -4,10 +4,10 @@
 
 .DESCRIPTION
   Downloads the prebuilt `ckit.exe` binary from the latest GitHub Release of
-  the public repo dante241x/ckit_agent. No token required.
+  the public repo dante241/ckit_agent. No token required.
 
   One-liner:
-    irm https://raw.githubusercontent.com/dante241x/ckit_agent/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/dante241/ckit_agent/main/install.ps1 | iex
 
   Upgrade:   re-run the same command (atomically replaces the old binary).
   Uninstall: download the script and run:  .\install.ps1 -Uninstall
@@ -28,7 +28,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$Repo = 'dante241x/ckit_agent'
+$Repo = 'dante241/ckit_agent'
 $Api = "https://api.github.com/repos/$Repo"
 $BinDir = if ($env:CKIT_BIN_DIR) { $env:CKIT_BIN_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\ckit' }
 $BinName = 'ckit.exe'

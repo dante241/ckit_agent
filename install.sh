@@ -1,11 +1,11 @@
 #!/bin/sh
 #
-# ckit standalone installer — PUBLIC GitHub repo (dante241x/ckit_agent).
+# ckit standalone installer — PUBLIC GitHub repo (dante241/ckit_agent).
 #
 # Downloads the prebuilt `ckit` binary from the latest GitHub Release — no git
 # clone, no Rust toolchain, no cargo build, no token. Ideal for a fresh machine.
 #
-#   curl -fsSL https://raw.githubusercontent.com/dante241x/ckit_agent/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/dante241/ckit_agent/main/install.sh | sh
 #
 # Upgrade:   re-run the same command (atomically replaces the old binary).
 # Uninstall: curl -fsSL .../install.sh | sh -s -- --uninstall
@@ -17,7 +17,7 @@
 #   CKIT_BIN_DIR       install location (default: ~/.local/bin)
 set -eu
 
-REPO="dante241x/ckit_agent"
+REPO="dante241/ckit_agent"
 API="https://api.github.com/repos/$REPO"
 BIN_DIR="${CKIT_BIN_DIR:-$HOME/.local/bin}"
 BIN="$BIN_DIR/ckit"

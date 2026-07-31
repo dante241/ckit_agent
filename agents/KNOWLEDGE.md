@@ -40,7 +40,7 @@ _empty_
 - Rust `\`-line-continuation trong string literal nuốt whitespace đầu dòng tiếp → YAML indent sạch (verified bằng rustc mini-prog).
 
 ## validated: GitHub private release + IP placeholder (2026-07-31, thay GitLab)
-- Chọn GitHub repo dante241x/ckit_agent (khỏi nuôi self-host runner; public sau khi sanitize internal refs).
+- Chọn GitHub repo dante241/ckit_agent (khỏi nuôi self-host runner; public sau khi sanitize internal refs).
 - Private repo GitHub: tải asset KHÔNG dùng browser_download_url (redirect S3, token vô hiệu). PHẢI: API `releases/assets/{id}` + header `Authorization: Bearer <token>` + `Accept: application/octet-stream`. Resolve id từ releases/latest hoặc releases/tags/<tag>.
 - Token: env CKIT_GITHUB_TOKEN | GITHUB_TOKEN (scope repo). selfup.rs + install.sh/ps1 đều cần.
 - CI: GitHub Actions release.yml (đã có sẵn, GitHub tự cấp runner 3 OS) — KHÔNG hard-code repo (dùng context). Xóa .gitlab-ci.yml.
@@ -48,6 +48,6 @@ _empty_
 - failure-avoided: đừng để default URL trong binary — ngay cả private repo, binary tải máy dev vẫn strings ra IP. Placeholder bắt buộc env là an toàn nhất.
 
 ## update: repo PUBLIC → bỏ token bắt buộc (2026-07-31)
-- Repo dante241x/ckit_agent chuyển PUBLIC. Public GitHub release: tải qua `browser_download_url` KHÔNG cần auth (khác private phải dùng releases/assets/{id}+octet-stream). Bỏ yêu cầu token ở selfup.rs + install.sh/ps1.
+- Repo dante241/ckit_agent chuyển PUBLIC. Public GitHub release: tải qua `browser_download_url` KHÔNG cần auth (khác private phải dùng releases/assets/{id}+octet-stream). Bỏ yêu cầu token ở selfup.rs + install.sh/ps1.
 - Token giờ OPTIONAL: chỉ thêm header nếu có env, để né rate-limit API anon 60 req/h. Helper api_curl_args(url, &Option<token>) thêm -H auth khi Some.
 - Audit public repo assets/: gateway/9router sạch; sample VCS URLs in vtiger-php pack were placeholder-sanitized before public push; crm.domain.com/IP examples are placeholders/examples.
