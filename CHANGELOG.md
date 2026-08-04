@@ -5,6 +5,12 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
 
 ## [Unreleased]
 
+### Changed — docs explain setup, daily use, and feature workflow
+- `docs/index.html` now separates first-time machine/project setup from daily commands,
+  explains why each common command exists, and documents starting a long task with
+  `/plan @assets/skills/feature/SKILL.md` plus the `/feature new|plan|go|ship|status`
+  flow.
+
 ## [0.1.4] — 2026-08-04
 
 ### Fixed — self-update chooses the correct platform asset and refuses bad downloads

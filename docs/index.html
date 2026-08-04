@@ -114,9 +114,9 @@
       </div>
       <nav class="nav">
         <a href="#install">Install</a>
+        <a href="#usage">Usage</a>
         <a href="#dashboard">Dashboard</a>
         <a href="#commands">Commands</a>
-        <a href="#skills">Skills</a>
         <a href="#update">Update</a>
         <a href="https://github.com/dante241/ckit_agent">GitHub</a>
       </nav>
@@ -232,14 +232,68 @@ ckit harness web --no-open      # background / headless</code></pre>
       </div>
     </section>
 
+    <!-- USAGE -->
+    <section id="usage">
+      <h2>How to use ckit</h2>
+      <p class="lede">Use it in two modes: first-time setup for a machine or project, then a small set of daily commands while you work.</p>
+
+      <div class="two">
+        <div class="card">
+          <h3><span class="dot"></span>Initial setup: machine and project</h3>
+          <table>
+            <tbody>
+              <tr><td><code>curl .../install.sh | sh</code></td><td>Install the prebuilt <code>ckit</code> binary into <code>~/.local/bin</code>.</td></tr>
+              <tr><td><code>ckit setup</code></td><td>Install the AI core: <code>omp</code>, codegraph, MCP servers, skills, GitHub CLI, and optional profiles.</td></tr>
+              <tr><td><code>ckit doctor</code></td><td>Check PATH, GitHub auth, omp, MCP tools, profiles, and stale harness state.</td></tr>
+              <tr><td><code>cd &lt;project&gt;</code></td><td>Move into the repo you want the AI to understand.</td></tr>
+              <tr><td><code>ckit harness</code></td><td>Prepare the project: skills, codegraph index, <code>AGENTS.md</code>, <code>agents/*</code> memory, hooks, and rules. Safe to re-run.</td></tr>
+              <tr><td><code>ckit .</code></td><td>Open or resume the project AI session with loaded context.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3><span class="dot"></span>Daily commands</h3>
+          <table>
+            <tbody>
+              <tr><td><code>ckit .</code></td><td>Resume the working session for the current project.</td></tr>
+              <tr><td><code>ckit ai "prompt"</code></td><td>Ask a one-shot question or request a small change.</td></tr>
+              <tr><td><code>ckit find &lt;kw&gt;</code></td><td>Search code and open the selected hit in your editor.</td></tr>
+              <tr><td><code>ckit run dev|test|build</code></td><td>Run the project command using the detected recipe.</td></tr>
+              <tr><td><code>ckit note "msg"</code></td><td>Save a thought to project memory for the next AI session.</td></tr>
+              <tr><td><code>ckit ship "msg"</code></td><td>Commit, push, and open a GitHub PR when the work is ready.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="codeblock" style="margin-top:16px;">
+        <span class="lbl">feature workflow</span>
+<pre><code># Long task or multi-day feature
+ckit .
+/plan @assets/skills/feature/SKILL.md build the customer portal
+
+# Inside the omp session, the feature flow is:
+/feature new customer-portal     # create agents/planning/customer-portal/ and set it active
+/feature plan                    # write phase context, goals, AC, and the implementation plan
+/feature go                      # execute the current phase through the verify-gated engine
+/feature ship                    # review against AC, write verification, close the phase
+/feature status                  # see the active feature state
+
+# Deterministic helper outside omp
+ckit feature list
+ckit feature switch customer-portal</code></pre>
+      </div>
+      <p class="lede" style="margin-top:14px;">Use <code>/auto</code> for small bugs or one-pass work. Use the feature workflow when the work spans many files, phases, or days and needs acceptance criteria tracked in <code>agents/planning/&lt;slug&gt;/</code>.</p>
+    </section>
+
     <!-- COMMANDS -->
     <section id="commands">
-      <h2>Core commands</h2>
+      <h2>Command reference</h2>
       <p class="lede">Every verb has <code>-h</code> / <code>--help</code> with an EXAMPLES block. Run <code>ckit</code> or <code>ckit help</code> for the cheatsheet.</p>
 
       <div class="two">
         <div>
-          <h3 style="font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:0 0 6px;">Vibe loop (daily)</h3>
+          <h3 style="font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:0 0 6px;">Daily loop</h3>
           <table>
             <tbody>
               <tr><td><code>ckit .</code></td><td>Open/attach a session (kitty 3-pane + <code>omp --continue</code> inside abduco)</td></tr>
@@ -263,7 +317,7 @@ ckit harness web --no-open      # background / headless</code></pre>
               <tr><td><code>ckit harness web</code></td><td><b>Local dashboard</b> — agent-team CRUD</td></tr>
               <tr><td><code>ckit harness gateway</code></td><td>Deploy/verify omp model-gateway</td></tr>
               <tr><td><code>ckit harness add-local-model</code></td><td>Serve a local GGUF model (mistral.rs) as an omp provider</td></tr>
-              <tr><td><code>ckit locate</code></td><td>Visual grounding — bounding boxes + click points from an image</td></tr>
+              <tr><td><code>ckit locate</code></td><td>Visual grounding: bounding boxes + click points from an image</td></tr>
               <tr><td><code>ckit skill</code></td><td>List + add skills (see below)</td></tr>
               <tr><td><code>ckit theme | bg</code></td><td>Kitty palette / wallpaper live swap</td></tr>
               <tr><td><code>ckit bt | clean</code></td><td>Bluetooth / disk cleanup + report</td></tr>

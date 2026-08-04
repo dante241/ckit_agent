@@ -1,38 +1,36 @@
 # STATE (8sync managed — live plan; rewrite ở MỖI phase-boundary, đọc đầu phiên)
 
 ## Goal
-Ship hotfix `v0.1.4` for `ckit up` downloading the wrong release asset on macOS.
+Add practical public docs for setup, daily use, and long-feature workflow without rewriting published `v0.1.4`.
 
 ## Definition of Done
-- [x] Local `~/.local/bin/ckit` restored to an executable Darwin arm64 binary after the bad Linux asset install.
-- [x] `ckit up` resolves release asset suffix by runtime OS/arch instead of hard-coded `-linux-x86_64`.
-- [x] Downloaded temp asset is chmodded, executed with `--version`, and only renamed into place when it is executable on this machine and reports the expected version.
-- [x] CLI help/prose for `ckit up` uses `ckit`, not legacy `8sync`.
-- [x] Build/test/install local hotfix binary.
-- [x] Commit and tag `v0.1.4`.
+- [x] `docs/index.html` separates first-time machine/project setup from daily commands.
+- [x] Docs explain the purpose of each common setup and daily command.
+- [x] Docs show long-task entrypoint `/plan @assets/skills/feature/SKILL.md <task>` and the `/feature new|plan|go|ship|status` loop.
+- [x] Stale STATE hash corrected in a normal follow-up commit path; published `v0.1.4` tag is not moved.
+- [x] Static HTML parse, stale-name scan, changelog contamination scan, and browser DOM checks pass.
 
 ## Checklist
-- [x] Restore local binary from `target/release/ckit`.
-- [x] Patch `crates/cli/src/verbs/selfup.rs` platform suffix selection.
-- [x] Patch `crates/cli/src/verbs/selfup.rs` temp binary guard before rename.
-- [x] Add regression tests for platform suffix and version guard.
-- [x] Patch `crates/cli/src/verbs/up.rs` user-facing rebrand leftovers.
-- [x] Bump workspace/Cargo.lock to `0.1.4` and document changelog.
-- [x] Run cargo checks/tests/build and install local hotfix.
-- [x] Commit + tag.
+- [x] Add `Usage` nav item and practical usage section.
+- [x] Add setup table: install, setup, doctor, project harness, session start.
+- [x] Add daily table: session, one-shot AI, find, run, note, ship.
+- [x] Add feature workflow command block.
+- [x] Repair `CHANGELOG.md` contamination from malformed edit.
+- [x] Update `agents/STATE.md` with published `40cff7a` hash and no tag rewrite.
+- [ ] Commit docs follow-up normally.
 
 ## Current step
-DONE — hotfix commit `2cd26ca` created and local annotated tag `v0.1.4` created.
+Ready to commit docs follow-up.
 
 ## Next
-Push commit and tag when ready: `git push origin HEAD && git push origin v0.1.4`.
+Commit changed docs/state/knowledge/changelog as a normal commit. Do not amend `40cff7a`; do not move `v0.1.4`.
 
 ## Assumptions (auto-decided — user can correct)
-- `v0.1.3` was already pushed and must not be moved; use new hotfix tag `v0.1.4`.
-- The correct Darwin arm64 release asset name is `ckit-v0.1.4-darwin-arm64`, matching `.github/workflows/release.yml` and `install.sh`.
+- The published release commit/tag are immutable for this task.
+- `assets/skills/feature/SKILL.md` remains the correct path to reference in the `/plan` command.
 
 ## Open questions / blockers
 - none.
 
 ## Handoff (compaction)
-Root cause confirmed: `selfup.rs` hard-coded the Linux x86_64 asset, so macOS arm64 could install an ELF binary and break `ckit`. Hotfix source now maps OS/arch to release suffix, chmods/verifies downloaded temp binaries before rename, restores local `~/.local/bin/ckit` as Mach-O arm64 `ckit 0.1.4`, and validates top-level/root/up/theme/bg help has zero `8sync`/`sync8` hits.
+Docs follow-up is implemented and verified locally. Commit as a new normal commit on top of published `40cff7a`. Verification run: Python HTMLParser + content asserts, grep scans for changelog contamination and stale user-facing names, browser open/run checking `#usage`, setup/daily labels, `/plan @assets/skills/feature/SKILL.md`, `/feature new customer-portal`, and nav link list.

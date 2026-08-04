@@ -76,3 +76,8 @@ _empty_
 - Guard pattern: after curl download, set Unix mode `0755`, run the temp file with `--version`, require exact `ckit <expected_version>`, and only then `rename` over `~/.local/bin/ckit`. This protects against wrong-OS, non-executable, and wrong-version assets.
 - Recovery pattern: if `~/.local/bin/ckit` is bricked but repo build exists, run `install -m755 target/release/ckit ~/.local/bin/ckit` first, then rebuild/install the hotfix.
 - validated: `cargo test -q selfup`, `cargo check -q`, `cargo build --release -q`, local install to `~/.local/bin/ckit`, `ckit --version` (`ckit 0.1.4`), `file` (`Mach-O 64-bit executable arm64`), and generated help scans for top-level/root/up/theme/bg all exit clean with zero legacy `8sync`/`sync8` hits.
+
+## validated: docs should separate setup, daily loop, and feature workflow (2026-08-04)
+- Public docs need a practical usage section before the command reference: initial machine/project setup (`install.sh`, `ckit setup`, `ckit doctor`, `ckit harness`, `ckit .`), daily commands (`ckit .`, `ckit ai`, `ckit find`, `ckit run`, `ckit note`, `ckit ship`), and long-task feature flow.
+- Feature docs entrypoint for long work: start in omp with `/plan @assets/skills/feature/SKILL.md <task>`, then use `/feature new <slug>`, `/feature plan`, `/feature go`, `/feature ship`, and `/feature status`. Keep `ckit feature list|switch` as deterministic helpers outside omp.
+- validated: static docs check used Python `HTMLParser` plus required-content asserts; stale user-facing scan for `sync8|Sync8|8-Sync-Dev/su-code` passed; browser DOM check on `file://.../docs/index.html` found `How to use ckit`, setup/daily sections, `/plan @assets/skills/feature/SKILL.md`, `/feature new customer-portal`, and the new `Usage` nav link.
