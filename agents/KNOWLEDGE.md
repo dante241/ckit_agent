@@ -69,3 +69,10 @@ _empty_
 - Public rebrand scan must include shipped install paths, not only README/docs/runtime help. `scripts/alexdev-install.sh` is user-facing and must use `ckit`, `~/.config/ckit/profiles`, `dante241/ckit_agent` installer URL, `ckit setup --profile alexdev`, and `ckit doctor`.
 - Keep `assets/skills/8sync-cli/` as the stable skill ID unless also updating asset dir/frontmatter, `deploy.rs` bundled mapping, and `inject.rs` rank/core matching together. For this release, only render prose/commands; do not introduce `ckit-cli`.
 - validated: `cargo check -q`, `cargo build -q`, `bash -n scripts/alexdev-install.sh`, `cargo run -q -- --version` (`ckit 0.1.3`), and raw shipped-file stale scan all exit 0.
+
+## validated: ckit self-update must verify temp assets before rename (2026-08-04)
+- Failure: `ckit up` on Darwin arm64 installed `ckit-v0.1.3-linux-x86_64` because `selfup.rs` hard-coded `ASSET_SUFFIX = "-linux-x86_64"`; shell then returned `zsh: exec format error: ckit`.
+- Fix pattern: choose release asset by `std::env::consts::{OS, ARCH}` using the same suffixes as `install.sh`/release workflow: Linux `x86_64`/`aarch64`, Darwin `x86_64`/`arm64`, Windows `x86_64.exe`.
+- Guard pattern: after curl download, set Unix mode `0755`, run the temp file with `--version`, require exact `ckit <expected_version>`, and only then `rename` over `~/.local/bin/ckit`. This protects against wrong-OS, non-executable, and wrong-version assets.
+- Recovery pattern: if `~/.local/bin/ckit` is bricked but repo build exists, run `install -m755 target/release/ckit ~/.local/bin/ckit` first, then rebuild/install the hotfix.
+- validated: `cargo test -q selfup`, `cargo check -q`, `cargo build --release -q`, local install to `~/.local/bin/ckit`, `ckit --version` (`ckit 0.1.4`), `file` (`Mach-O 64-bit executable arm64`), and generated help scans for top-level/root/up/theme/bg all exit clean with zero legacy `8sync`/`sync8` hits.

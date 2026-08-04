@@ -5,6 +5,17 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
 
 ## [Unreleased]
 
+## [0.1.4] — 2026-08-04
+
+### Fixed — self-update chooses the correct platform asset and refuses bad downloads
+- `ckit up` no longer hard-codes the Linux x86_64 release asset. It now resolves
+  the same platform suffixes as `install.sh` (`linux-x86_64`, `linux-aarch64`,
+  `darwin-x86_64`, `darwin-arm64`, `windows-x86_64.exe`).
+- The updater now chmods the downloaded temp asset, runs temp `ckit --version`,
+  and only renames it over `~/.local/bin/ckit` when the asset is executable on
+  the current machine and reports the expected version. This prevents a wrong-OS
+  or wrong-version release asset from bricking the installed command.
+
 ## [0.1.3] — 2026-08-04
 
 ### Added — Lark (larksuite) to the `apps-personal` profile

@@ -1,5 +1,5 @@
-// 8sync — vibe coding harness for CachyOS + omp
-// Org: 8-Sync-Dev
+// ckit — vibe coding harness for CachyOS + omp
+// Repo: dante241/ckit_agent
 
 mod ui;
 mod env_detect;
@@ -30,19 +30,19 @@ struct Cli {
 
 const HELP_AFTER: &str = "\
 QUICK START
-  8sync                             show this overview (any time)
-  8sync flow                        same as above but ordered by workflow
-  8sync setup                       install harness, then ask y/N per profile
-  8sync setup --community           install harness + dev-stack + bluetooth, no prompts
-  8sync .                           seed agents/* context and run `omp --continue`
-  8sync ai \"add dark mode toggle\"   one-shot AI prompt (or resume with `8sync ai`)
-  8sync find \"useAuth\"              rg + fzf preview, open at file:line
-  8sync ship \"feat: dark mode\"      commit + push + open a GitHub PR
-  8sync sec on                      enable WARP VPN + ufw firewall
-  8sync bt fix                      troubleshoot bluetooth (unblock + restart + power on)
+  ckit                              show this overview (any time)
+  ckit flow                         same as above but ordered by workflow
+  ckit setup                        install harness, then ask y/N per profile
+  ckit setup --community            install harness + dev-stack + bluetooth, no prompts
+  ckit .                            seed agents/* context and run `omp --continue`
+  ckit ai \"add dark mode toggle\"    one-shot AI prompt (or resume with `ckit ai`)
+  ckit find \"useAuth\"               rg + fzf preview, open at file:line
+  ckit ship \"feat: dark mode\"       commit + push + open a GitHub PR
+  ckit sec on                       enable WARP VPN + ufw firewall
+  ckit bt fix                       troubleshoot bluetooth (unblock + restart + power on)
 
 Every verb supports -h / --help for detailed help with examples:
-  8sync setup -h    8sync ai -h    8sync bt -h    8sync find -h
+  ckit setup -h     ckit ai -h     ckit bt -h     ckit find -h
 ";
 
 #[derive(Subcommand)]
@@ -50,7 +50,7 @@ enum Cmd {
     /// Install harness (gh + omp + configs + skills) then prompt per personal profile
     Setup(verbs::setup::Args),
 
-    /// Full update: 8sync + omp + system pkgs (pacman/AUR) + rustup + flatpak. See `8sync up -h`.
+    /// Full update: ckit + omp + system pkgs (pacman/AUR) + rustup + flatpak. See `ckit up -h`.
     #[command(alias = "update")]
     Up(verbs::up::Args),
 
@@ -85,10 +85,10 @@ enum Cmd {
     /// Manage skill library (list/add/sync)
     Skill(verbs::skill::Args),
 
-    /// Switch kitty color palette (live): 8sync theme [list | set <name> | show]
+    /// Switch kitty color palette (live): ckit theme [list | set <name> | show]
     Theme(verbs::theme::Args),
 
-    /// Manage kitty wallpaper: 8sync bg [show | get | set | list | add] (live swap, inline preview)
+    /// Manage kitty wallpaper: ckit bg [show | get | set | list | add] (live swap, inline preview)
     Bg(verbs::bg::Args),
 
     /// Stand up / refresh the agent harness (init = deploy skills+codegraph+AGENTS.md+memory; up = refresh)
@@ -108,7 +108,7 @@ enum Cmd {
     /// Visual grounding: image + prompt → labeled boxes (LocateAnything-3B). `--setup` first.
     Locate(verbs::locate::Args),
 
-    /// Show overview cheatsheet (alias of `8sync` with no args)
+    /// Show overview cheatsheet (alias of `ckit` with no args)
     Help,
 
     /// Workflow-ordered help (lifecycle commands in chronological order)

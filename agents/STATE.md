@@ -1,38 +1,38 @@
 # STATE (8sync managed — live plan; rewrite ở MỖI phase-boundary, đọc đầu phiên)
 
 ## Goal
-Commit and tag release `v0.1.3` for the public `8sync` → `ckit` rebrand cleanup.
+Ship hotfix `v0.1.4` for `ckit up` downloading the wrong release asset on macOS.
 
 ## Definition of Done
-- [x] Shipped docs/install paths no longer show legacy `sync8`, `8-Sync-Dev/su-code`, or `8sync` command examples where raw text is user-facing.
-- [x] `scripts/alexdev-install.sh` installs and invokes `ckit` and writes profile overrides under `~/.config/ckit/profiles`.
-- [x] Workspace version and `Cargo.lock` package version bumped to `0.1.3`; CLI reports `ckit 0.1.3`.
-- [x] `CHANGELOG.md` has `0.1.3` release heading and explicit rebrand/installer fix bullets.
-- [x] `cargo check -q`, `cargo build -q`, `bash -n scripts/alexdev-install.sh`, runtime version, and shipped stale-string scan pass.
-- [x] Commit release changes and create tag `v0.1.3`.
+- [x] Local `~/.local/bin/ckit` restored to an executable Darwin arm64 binary after the bad Linux asset install.
+- [x] `ckit up` resolves release asset suffix by runtime OS/arch instead of hard-coded `-linux-x86_64`.
+- [x] Downloaded temp asset is chmodded, executed with `--version`, and only renamed into place when it is executable on this machine and reports the expected version.
+- [x] CLI help/prose for `ckit up` uses `ckit`, not legacy `8sync`.
+- [x] Build/test/install local hotfix binary.
+- [x] Commit and tag `v0.1.4`.
 
 ## Checklist
-- [x] Update root/flow help repository and installer URLs.
-- [x] Update `docs/index.html` header/footer branding.
-- [x] Update `scripts/alexdev-install.sh` from `8sync` to `ckit` user-facing install flow.
-- [x] Keep bundled skill ID `8sync-cli` stable; do not half-rename to `ckit-cli`.
-- [x] Bump release metadata to `0.1.3`.
-- [x] Update `CHANGELOG.md` and `agents/KNOWLEDGE.md`.
+- [x] Restore local binary from `target/release/ckit`.
+- [x] Patch `crates/cli/src/verbs/selfup.rs` platform suffix selection.
+- [x] Patch `crates/cli/src/verbs/selfup.rs` temp binary guard before rename.
+- [x] Add regression tests for platform suffix and version guard.
+- [x] Patch `crates/cli/src/verbs/up.rs` user-facing rebrand leftovers.
+- [x] Bump workspace/Cargo.lock to `0.1.4` and document changelog.
+- [x] Run cargo checks/tests/build and install local hotfix.
 - [x] Commit + tag.
 
 ## Current step
-DONE — local release commit created and local annotated tag `v0.1.3` points at it.
+DONE — hotfix commit `2cd26ca` created and local annotated tag `v0.1.4` created.
 
 ## Next
-Push commit and tag when ready: `git push origin HEAD && git push origin v0.1.3`.
+Push commit and tag when ready: `git push origin HEAD && git push origin v0.1.4`.
 
 ## Assumptions (auto-decided — user can correct)
-- `v0.1.2` is an existing release identity and must not be moved.
-- `v0.1.3` is the correct new patch tag for this update.
-- `8sync-cli` remains the stable skill directory/frontmatter/mapping ID; only prose/commands are rebranded.
+- `v0.1.3` was already pushed and must not be moved; use new hotfix tag `v0.1.4`.
+- The correct Darwin arm64 release asset name is `ckit-v0.1.4-darwin-arm64`, matching `.github/workflows/release.yml` and `install.sh`.
 
 ## Open questions / blockers
 - none.
 
 ## Handoff (compaction)
-Release changes are committed locally and tagged locally as `v0.1.3`; `.serena/memories/` remains untracked and intentionally excluded.
+Root cause confirmed: `selfup.rs` hard-coded the Linux x86_64 asset, so macOS arm64 could install an ELF binary and break `ckit`. Hotfix source now maps OS/arch to release suffix, chmods/verifies downloaded temp binaries before rename, restores local `~/.local/bin/ckit` as Mach-O arm64 `ckit 0.1.4`, and validates top-level/root/up/theme/bg help has zero `8sync`/`sync8` hits.
