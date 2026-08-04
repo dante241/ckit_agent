@@ -5,6 +5,17 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
 
 ## [Unreleased]
 
+### Fixed — `ckit setup` no longer loses `models.yml` when codegraph fails (Windows)
+- On Windows the `codegraph` install could fail, and because it was a hard step
+  in strict `ckit setup` it aborted the run **before** `models.yml` was seeded —
+  leaving both `models.yml` and `codegraph` missing. `install_codegraph` is now
+  **best-effort** (warns, never aborts), and Stage A seeds local config (PATH,
+  configs, `models.yml`, `config.yml`) **before** the fallible tool installs, so
+  the omp config always lands. Retry codegraph any time with `ckit harness`.
+- The fish PATH-bootstrap file now follows the active brand namespace via
+  `brand::ns_file` (`ckit-path.fish`), matching every UI message; a stale
+  legacy `8sync-path.fish` from an older build is removed.
+
 ### Changed — docs restructure install by platform + daily use centred on omp
 - `docs/index.html` splits Quick start into side-by-side **macOS/Linux** vs
   **Windows (PowerShell)** cards, reframes daily use around opening `omp`

@@ -126,39 +126,24 @@ pub fn run(a: Args) -> Result<()> {
     // ── Stage A: Harness (always run) ────────────────────────────
     ui::step("Stage A — coding harness");
     if a.dry_run {
-        ui::info("would install: github-cli");
         let (omp_via, cg_via) = if platform::os() == platform::Os::Windows {
             ("bun/npm", "bun/npm")
         } else {
             ("curl", "curl")
         };
+        // Local config first (always lands), then external tools, then MCPs + skills.
+        ui::info(&format!("would patch PATH in zsh/bash + ~/.config/fish/conf.d/{}", crate::brand::ns_file("path.fish")));
+        ui::info("would write: configs (helix/kitty/ckit)");
+        ui::info("would seed ~/.omp/agent/models.yml (team 9router catalog, placeholder key) + config.yml (memory+compaction+mcp+modelRoles) if absent");
+        ui::info("would install: github-cli");
         ui::info(&format!("would install omp ({omp_via}) if missing"));
         ui::info("would install paru (AUR helper) if missing");
-        ui::info(&format!("would install codegraph ({cg_via}) if missing"));
+        ui::info(&format!("would install codegraph ({cg_via}) if missing — best-effort, never aborts setup"));
         ui::info("would register STEP-0 MCPs (codegraph · codebase-memory · headroom · serena) and remove legacy zai-vision");
-        ui::info("would write: configs + skills");
-        ui::info("would seed ~/.omp/agent/models.yml (team 9router catalog, placeholder key) + config.yml (memory+compaction+mcp+modelRoles) if absent");
-        ui::info("would patch PATH in zsh/bash + ~/.config/fish/conf.d/8sync-path.fish");
-        ui::info("would register codegraph as a global+local skill");
+        ui::info("would write skills + register codegraph as a global+local skill");
     } else {
-        try_step("gh cli", yolo, &mut failures, || {
-            platform::install_core_pkg("gh", "github-cli", "gh", "GitHub.cli")
-        })?;
-        try_step("omp",        yolo, &mut failures, install_omp)?;
-        // paru is an AUR helper — Arch/CachyOS only (needs pacman + makepkg).
-        // On Debian/Ubuntu/other distros this step would `pacman: not found`.
-        if env.is_cachyos_or_arch() {
-            try_step("paru",   yolo, &mut failures, install_aur_helper)?;
-        }
-        try_step("codegraph",  yolo, &mut failures, install_codegraph)?;
-        try_step("step0-mcps", yolo, &mut failures, || {
-            crate::verbs::skill::deploy::ensure_codegraph_mcp(&env)?;
-            crate::verbs::skill::deploy::ensure_codebase_memory_mcp(&env)?;
-            crate::verbs::skill::deploy::ensure_headroom_mcp(&env)?;
-            let _ = crate::verbs::skill::deploy::ensure_serena_mcp(&env);
-            let _ = crate::verbs::skill::deploy::deregister_zai_vision_mcp(&env.home);
-            Ok(())
-        })?;
+        // Local config first — these write files with NO external-tool dependency,
+        // so they always land even if a later tool install (gh/omp/codegraph) fails.
         try_step("path-bootstrap", yolo, &mut failures, || { ensure_path_in_shells(); Ok(()) })?;
         try_step("configs",    yolo, &mut failures, || install_configs(&env))?;
         try_step("omp-models", yolo, &mut failures, || {
@@ -173,6 +158,27 @@ pub fn run(a: Args) -> Result<()> {
             crate::verbs::skill::deploy::ensure_omp_memory_config(&env.home)?;
             crate::verbs::skill::deploy::ensure_omp_model_roles(&env.home)?;
             let _ = crate::verbs::skill::deploy::ensure_mcp_tools_visible(&env.home);
+            Ok(())
+        })?;
+        // External tools next — omp is essential (fatal if it can't install);
+        // codegraph is best-effort (see install_codegraph).
+        try_step("gh cli", yolo, &mut failures, || {
+            platform::install_core_pkg("gh", "github-cli", "gh", "GitHub.cli")
+        })?;
+        try_step("omp",        yolo, &mut failures, install_omp)?;
+        // paru is an AUR helper — Arch/CachyOS only (needs pacman + makepkg).
+        if env.is_cachyos_or_arch() {
+            try_step("paru",   yolo, &mut failures, install_aur_helper)?;
+        }
+        try_step("codegraph",  yolo, &mut failures, install_codegraph)?;
+        // MCP registration runs AFTER installs (each ensure_* installs its binary,
+        // then registers only when present — never leaves a broken entry).
+        try_step("step0-mcps", yolo, &mut failures, || {
+            crate::verbs::skill::deploy::ensure_codegraph_mcp(&env)?;
+            crate::verbs::skill::deploy::ensure_codebase_memory_mcp(&env)?;
+            crate::verbs::skill::deploy::ensure_headroom_mcp(&env)?;
+            let _ = crate::verbs::skill::deploy::ensure_serena_mcp(&env);
+            let _ = crate::verbs::skill::deploy::deregister_zai_vision_mcp(&env.home);
             Ok(())
         })?;
         try_step("skills",     yolo, &mut failures, || install_skills(&env))?;
@@ -418,18 +424,27 @@ fn install_codegraph() -> Result<()> {
         ui::skip("codegraph", &format!("present ({})", v));
         return Ok(());
     }
-    // Windows has no POSIX `sh` for the curl|sh bundle installer; codegraph
-    // ships on npm (`@colbymchenry/codegraph`), so install it via bun/npm.
+    // Best-effort: codegraph is an OPTIONAL code-intelligence tool. A failed
+    // install must never abort `ckit setup` — otherwise later steps (models.yml,
+    // configs, skills) never run. Warn and continue; retry later via `ckit harness`.
     if platform::os() == platform::Os::Windows {
-        return crate::verbs::skill::deploy::install_node_pkg("codegraph", "@colbymchenry/codegraph");
-    }
-    pkg::run_loud(
+        // No POSIX `sh`; codegraph ships on npm. Its native deps (better-sqlite3,
+        // tree-sitter) may need VS Build Tools on a bare Windows box.
+        match crate::verbs::skill::deploy::install_node_pkg("codegraph", "@colbymchenry/codegraph") {
+            Ok(()) => ui::ok("codegraph installed"),
+            Err(e) => ui::warn(&format!(
+                "codegraph not installed ({e}) — continuing. Retry later with `ckit harness` (needs bun/npm on PATH)."
+            )),
+        }
+    } else if let Err(e) = pkg::run_loud(
         "sh",
         &[
             "-c",
             "curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh",
         ],
-    )?;
+    ) {
+        ui::warn(&format!("codegraph installer failed ({e}) — continuing. Retry with `ckit harness`."));
+    }
     ensure_path_in_shells();
     Ok(())
 }
@@ -488,9 +503,16 @@ fn ensure_path_in_shells() {
         ui::warn(&format!("could not create {}: {}", fish_dir.display(), e));
         return;
     }
-    let fish_file = fish_dir.join("8sync-path.fish");
+    // Namespace artifact — follows the active brand (`<ns>-path.fish`) so the
+    // written file matches every UI message (which renders `8sync`→ the active
+    // namespace). Remove a stale legacy-namespace file from an older build.
+    let fish_file = fish_dir.join(crate::brand::ns_file("path.fish"));
+    let legacy_fish = fish_dir.join("8sync-path.fish");
+    if legacy_fish != fish_file && legacy_fish.exists() {
+        let _ = std::fs::remove_file(&legacy_fish);
+    }
     let mut fish_body = String::new();
-    fish_body.push_str("# 8sync: PATH bootstrap — regenerated by `8sync setup`. Do not edit.\n");
+    fish_body.push_str(&format!("# {}: PATH bootstrap — regenerated by `{} setup`. Do not edit.\n", crate::brand::NS, crate::brand::CMD));
     fish_body.push_str("if status is-interactive\n");
     fish_body.push_str("    fish_add_path --path \\\n");
     let entries: Vec<String> = dirs

@@ -1,28 +1,27 @@
 # STATE (8sync managed — live plan; rewrite ở MỖI phase-boundary, đọc đầu phiên)
 
 ## Goal
-Document post-install config (omp config files, gateway key + endpoint URL, MCP `/mcp list` verify, Claude→Mnemopi migration) and confirm the deployed gateway runs.
+Fix Windows `ckit setup`: `models.yml` and `codegraph` missing after install.
 
 ## Definition of Done
-- [x] Docs + README `Configure & verify`: `config.yml`, `models.yml`, `models.toml`, `mcp.json`.
-- [x] Gateway **key AND endpoint URL** documented: `ckit harness gateway key <KEY>` + `url <URL>` + `verify` (no live key/IP in docs).
-- [x] `/mcp list` block shows the 4 servers; wording split macOS/Linux (all four) vs Windows (codebase-memory-mcp may skip).
-- [x] Claude Code migration via `omp --from-claude`; example path generic (`<your-project>`).
-- [x] Confirmed live gateway healthy (`ckit harness gateway verify` → HTTP 200).
-- [x] HTML parses; browser DOM confirms `#configure` renders.
+- [x] Root cause: strict setup aborted at the `codegraph` step (its install can fail on Windows) BEFORE `models.yml` was seeded.
+- [x] `install_codegraph` best-effort (warn, never abort) on all platforms.
+- [x] Stage A reordered: local config (PATH, configs, `models.yml`, `config.yml`) seeds BEFORE fallible tool installs; MCP registration stays after installs.
+- [x] Fixed fish PATH file brand mismatch: `brand::ns_file("path.fish")` (`ckit-path.fish`) + remove stale `8sync-path.fish`; fish comment uses `brand::CMD`/`NS`.
+- [x] `cargo build`/`test` (20) pass; `ckit setup --dry-run` shows local-first order + consistent `ckit-path.fish`.
 
 ## Current step
-DONE — docs/README updated, gateway verified healthy, ready to commit.
+DONE — Windows setup robustness fix implemented, host-verified. Ready to commit.
 
 ## Next
-_none — awaiting further instructions._
+Consider a patch release (0.1.6) so `ckit up`/install ships the fix to Windows users.
 
 ## Assumptions (auto-decided — user can correct)
-- The provided key + endpoint already in `~/.omp/agent/models.yml` are correct (verify → HTTP 200); no value change needed, only documentation.
-- Gateway endpoint is set via `ckit harness gateway url`, not hand-editing models.yml.
+- codegraph is optional; its install failing must not abort setup. omp remains fatal (essential engine).
+- Namespace artifacts follow `brand::ns_file`; the zsh/bash idempotency marker string is left unchanged to avoid duplicate PATH blocks on existing machines.
 
 ## Open questions / blockers
-- none.
+- The exact codegraph-on-Windows failure cause is unconfirmed (no Windows host here); handled generically (best-effort + retry via `ckit harness`).
 
 ## Handoff (compaction)
-Configure & verify section (docs + README) now covers gateway key + URL + verify, MCP `/mcp list` (Windows caveat), and `omp --from-claude`. Live gateway verified HTTP 200. No `sk-` key or `<host>:<port>` committed. CHANGELOG/KNOWLEDGE updated. SECURITY NOTE: the live 9router `sk-` key + endpoint surfaced in tool reads this session — advise the user to rotate the key (`ckit harness gateway key <NEW_KEY>`).
+setup.rs: codegraph best-effort + Stage A local-config-first reorder + fish file via ns_file (ckit-path.fish) with legacy cleanup. Root cause of "Windows thiếu models.yml + codegraph": codegraph step bailed before models.yml seed. cargo build/test green; dry-run verified. CHANGELOG/KNOWLEDGE updated. Not yet released — suggest 0.1.6.
