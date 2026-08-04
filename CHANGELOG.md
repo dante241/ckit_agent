@@ -10,6 +10,22 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
   explains why each common command exists, and documents starting a long task with
   `/plan @assets/skills/feature/SKILL.md` plus the `/feature new|plan|go|ship|status`
   flow.
+- `assets/skills/feature/SKILL.md` and `ckit feature -h` now use the public
+  `ckit feature` command name for deterministic feature helpers.
+
+### Fixed — `ckit setup` / `ckit harness` install the AI core on native Windows
+- `install_omp` and `install_codegraph` no longer shell out to POSIX `sh` on
+  Windows (which aborted `ckit setup` before it did anything). They now install
+  the npm packages `@oh-my-pi/pi-coding-agent` (omp) and `@colbymchenry/codegraph`
+  via `bun add -g` / `npm install -g`, resolved through `which` so `npm.cmd` is
+  found. Shared helper `deploy::install_node_pkg`.
+- `ensure_codegraph` (harness path) and `ensure_uv` gained matching Windows
+  branches (npm for codegraph; uv's PowerShell installer for headroom/serena).
+- `ensure_codebase_memory_mcp` now registers the MCP server only when the binary
+  is actually present and purges any stale entry otherwise, so a skipped/failed
+  install no longer leaves omp with a broken MCP command (Windows + any host).
+- Docs (`README.md`, `docs/index.html`) document the Windows path: `install.ps1`
+  one-liner + the `bun`/`npm`/`winget`/`uv` prerequisites for `ckit setup`.
 
 ## [0.1.4] — 2026-08-04
 

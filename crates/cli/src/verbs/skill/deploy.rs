@@ -101,16 +101,25 @@ pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 /// separately from embedded assets.
 pub(crate) fn ensure_codegraph(env: &env_detect::Env) -> Result<()> {
     if which::which("codegraph").is_err() {
-        ui::step("codegraph (binary missing — running upstream curl installer)");
-        let url = "https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh";
-        let st = Command::new("sh")
-            .arg("-c")
-            .arg(format!("curl -fsSL {} | sh", url))
-            .status();
-        match st {
-            Ok(s) if s.success() => ui::ok("codegraph installed"),
-            Ok(s) => ui::warn(&format!("codegraph installer exited {} — skill SKILL.md was still deployed", s)),
-            Err(e) => ui::warn(&format!("could not run installer: {} — continuing", e)),
+        ui::step("codegraph (binary missing — running upstream installer)");
+        // Windows has no POSIX `sh` for the curl|sh bundle installer; codegraph
+        // ships on npm (`@colbymchenry/codegraph`), so install it via bun/npm.
+        if crate::platform::os() == crate::platform::Os::Windows {
+            match install_node_pkg("codegraph", "@colbymchenry/codegraph") {
+                Ok(()) => ui::ok("codegraph installed"),
+                Err(e) => ui::warn(&format!("{} — skill SKILL.md was still deployed", e)),
+            }
+        } else {
+            let url = "https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh";
+            let st = Command::new("sh")
+                .arg("-c")
+                .arg(format!("curl -fsSL {} | sh", url))
+                .status();
+            match st {
+                Ok(s) if s.success() => ui::ok("codegraph installed"),
+                Ok(s) => ui::warn(&format!("codegraph installer exited {} — skill SKILL.md was still deployed", s)),
+                Err(e) => ui::warn(&format!("could not run installer: {} — continuing", e)),
+            }
         }
     } else {
         let v = env_detect::cmd_version("codegraph", &["--version"]).unwrap_or_default();
@@ -173,6 +182,12 @@ pub(crate) fn ensure_codegraph_init(root: &Path) {
 pub(crate) fn ensure_codebase_memory_mcp(env: &env_detect::Env) -> Result<()> {
     if which::which("codebase-memory-mcp").is_err() {
         ui::step("codebase-memory-mcp (binary missing — upstream installer, binary-only)");
+        // The upstream installer is a POSIX `curl | bash` script; Windows has no
+        // `sh`, so skip it there rather than shelling out to a missing tool.
+        if crate::platform::os() == crate::platform::Os::Windows {
+            ui::warn("codebase-memory-mcp has no Windows installer yet — skipping MCP registration");
+            return deregister_omp_mcp(&env.home, "codebase-memory-mcp");
+        }
         let url = "https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh";
         let st = Command::new("sh")
             .arg("-c")
@@ -187,12 +202,16 @@ pub(crate) fn ensure_codebase_memory_mcp(env: &env_detect::Env) -> Result<()> {
         let v = env_detect::cmd_version("codebase-memory-mcp", &["--version"]).unwrap_or_default();
         ui::skip("codebase-memory-mcp", &format!("present ({})", v));
     }
-    if which::which("codebase-memory-mcp").is_ok() {
-        // Self-index on every MCP connect — no manual reindex needed thereafter.
-        let _ = Command::new("codebase-memory-mcp")
-            .args(["config", "set", "auto_index", "true"])
-            .status();
+    // Only register when the binary actually resolved — otherwise omp would get
+    // a broken MCP entry pointing at a missing command. Purge any stale entry.
+    if which::which("codebase-memory-mcp").is_err() {
+        ui::warn("codebase-memory-mcp not on PATH — skipping MCP registration");
+        return deregister_omp_mcp(&env.home, "codebase-memory-mcp");
     }
+    // Self-index on every MCP connect — no manual reindex needed thereafter.
+    let _ = Command::new("codebase-memory-mcp")
+        .args(["config", "set", "auto_index", "true"])
+        .status();
     register_omp_mcp(&env.home, "codebase-memory-mcp", "codebase-memory-mcp", &[], &[])
 }
 
@@ -258,11 +277,43 @@ fn ensure_uv() -> bool {
         return true;
     }
     ui::step("uv (missing — bootstrapping Astral uv: powers headroom + serena)");
-    let _ = Command::new("sh")
-        .arg("-c")
-        .arg("curl -fsSL https://astral.sh/uv/install.sh | sh")
-        .status();
+    if crate::platform::os() == crate::platform::Os::Windows {
+        // No POSIX `sh` on Windows — use uv's PowerShell installer instead.
+        let _ = Command::new("powershell")
+            .args(["-NoProfile", "-Command", "irm https://astral.sh/uv/install.ps1 | iex"])
+            .status();
+    } else {
+        let _ = Command::new("sh")
+            .arg("-c")
+            .arg("curl -fsSL https://astral.sh/uv/install.sh | sh")
+            .status();
+    }
     which::which("uv").is_ok()
+}
+
+/// Install an npm-distributed CLI on Windows, where the upstream `curl | sh`
+/// installers don't run. Prefers `bun` (how omp itself self-updates), falls
+/// back to `npm`, else errors with an actionable hint. Resolves the tool via
+/// `which` because `std::process::Command` on Windows won't find `npm.cmd`
+/// from the bare name `npm`.
+pub(crate) fn install_node_pkg(bin: &str, pkg_name: &str) -> Result<()> {
+    if let Ok(bun) = which::which("bun") {
+        let st = Command::new(bun).args(["add", "-g", pkg_name]).status()?;
+        if !st.success() {
+            anyhow::bail!("`bun add -g {pkg_name}` failed");
+        }
+    } else if let Ok(npm) = which::which("npm") {
+        let st = Command::new(npm).args(["install", "-g", pkg_name]).status()?;
+        if !st.success() {
+            anyhow::bail!("`npm install -g {pkg_name}` failed");
+        }
+    } else {
+        anyhow::bail!(
+            "cannot install {bin} ({pkg_name}): no `bun` or `npm` on PATH. \
+             Install Bun (https://bun.sh) or Node.js, then re-run."
+        );
+    }
+    Ok(())
 }
 
 /// Remove a stale MCP server from omp's `mcp.json` (e.g. a tool whose binary
@@ -314,8 +365,10 @@ pub(crate) fn ensure_headroom_mcp(env: &env_detect::Env) -> Result<()> {
                 .args(["tool", "install", "headroom-ai[mcp]"])
                 .status();
         }
-        // Fallback for boxes with pipx/pip but no uv (e.g. curl bootstrap blocked).
-        if which::which("headroom").is_err() {
+        // Fallback for boxes with pipx/pip but no uv (e.g. curl bootstrap
+        // blocked). POSIX-shell only — skipped on Windows (no `sh`; uv's
+        // PowerShell installer above is the path there).
+        if which::which("headroom").is_err() && crate::platform::os() != crate::platform::Os::Windows {
             let cmd = "if command -v pipx >/dev/null 2>&1; then pipx install 'headroom-ai[mcp]'; \
 elif command -v pip >/dev/null 2>&1; then pip install --user 'headroom-ai[mcp]' \
 || pip install --user --break-system-packages 'headroom-ai[mcp]'; fi";

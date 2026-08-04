@@ -1,36 +1,35 @@
 # STATE (8sync managed — live plan; rewrite ở MỖI phase-boundary, đọc đầu phiên)
 
 ## Goal
-Add practical public docs for setup, daily use, and long-feature workflow without rewriting published `v0.1.4`.
+Make native-Windows install actually work (`ckit setup`/`ckit harness`) and document the Windows path.
 
 ## Definition of Done
-- [x] `docs/index.html` separates first-time machine/project setup from daily commands.
-- [x] Docs explain the purpose of each common setup and daily command.
-- [x] Docs show long-task entrypoint `/plan @assets/skills/feature/SKILL.md <task>` and the `/feature new|plan|go|ship|status` loop.
-- [x] Stale STATE hash corrected in a normal follow-up commit path; published `v0.1.4` tag is not moved.
-- [x] Static HTML parse, stale-name scan, changelog contamination scan, and browser DOM checks pass.
+- [x] `ckit setup` no longer aborts on Windows: omp + codegraph install via bun/npm instead of POSIX `sh`.
+- [x] `ensure_codebase_memory_mcp` registers the MCP only when the binary is present (no broken omp entry).
+- [x] `ensure_codegraph`/`ensure_uv`/headroom fallback have Windows-safe branches.
+- [x] `README.md` + `docs/index.html` document the Windows install path and prerequisites.
+- [x] `cargo build/check/test` + `ckit setup --dry-run` pass on host.
 
 ## Checklist
-- [x] Add `Usage` nav item and practical usage section.
-- [x] Add setup table: install, setup, doctor, project harness, session start.
-- [x] Add daily table: session, one-shot AI, find, run, note, ship.
-- [x] Add feature workflow command block.
-- [x] Repair `CHANGELOG.md` contamination from malformed edit.
-- [x] Update `agents/STATE.md` with published `40cff7a` hash and no tag rewrite.
-- [ ] Commit docs follow-up normally.
+- [x] setup.rs `install_omp`/`install_codegraph` → `deploy::install_node_pkg` (bun/npm) on Windows.
+- [x] deploy.rs `ensure_codegraph` npm branch; `ensure_uv` PowerShell branch; headroom pip-fallback gated off Windows.
+- [x] deploy.rs `ensure_codebase_memory_mcp` binary-gated registration + stale-entry cleanup.
+- [x] Dry-run text is platform-accurate (bun/npm vs curl).
+- [x] README + docs Windows section with bun/npm/winget/uv prerequisites.
+- [x] CHANGELOG + KNOWLEDGE updated.
 
 ## Current step
-Ready to commit docs follow-up.
+DONE — Windows install path implemented and host-verified.
 
 ## Next
-Commit changed docs/state/knowledge/changelog as a normal commit. Do not amend `40cff7a`; do not move `v0.1.4`.
+Optional: push; real Windows compile is CI's `windows-latest` runner in `release.yml`.
 
 ## Assumptions (auto-decided — user can correct)
-- The published release commit/tag are immutable for this task.
-- `assets/skills/feature/SKILL.md` remains the correct path to reference in the `/plan` command.
+- omp (`@oh-my-pi/pi-coding-agent`) and codegraph (`@colbymchenry/codegraph`) are installable from npm on Windows via bun/npm.
+- `bun add -g` is the correct global-install form (verified via `bun add --help`).
 
 ## Open questions / blockers
-- none.
+- `cargo check --target x86_64-pc-windows-msvc` can't run on this mac (no MSVC/Windows-SDK C toolchain for `zstd-sys`); CI covers the real Windows build.
 
 ## Handoff (compaction)
-Docs follow-up is implemented and verified locally. Commit as a new normal commit on top of published `40cff7a`. Verification run: Python HTMLParser + content asserts, grep scans for changelog contamination and stale user-facing names, browser open/run checking `#usage`, setup/daily labels, `/plan @assets/skills/feature/SKILL.md`, `/feature new customer-portal`, and nav link list.
+Windows install blockers fixed in setup.rs + deploy.rs via runtime `platform::os()==Windows` branches (not cfg-gated, so host build type-checks them). Docs updated. Verified: cargo build/check/test EXIT 0, dry-run clean.

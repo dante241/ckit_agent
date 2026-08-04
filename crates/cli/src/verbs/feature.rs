@@ -1,4 +1,4 @@
-//! `8sync feature` — deterministic ops for the large-scope GSD feature framework.
+//! `ckit feature` — deterministic ops for the large-scope GSD feature framework.
 //!
 //! Owns the on-disk planning tree + the cross-feature ACTIVE switch under
 //! `<project>/agents/planning/`. The AI-judgement steps (`plan`/`go`/`ship`)
@@ -25,11 +25,11 @@ const PLANNING_REL: &str = "agents/planning";
 #[command(
     after_help = indoc::indoc! {"
         EXAMPLES
-          8sync feature new zalo-group   scaffold agents/planning/zalo-group/ (+ activate)
-          8sync feature list             list features (★ = active) + archived
-          8sync feature switch other     flip the active feature
-          8sync feature status           show the active feature's STATE position
-          8sync feature                  (no arg) same as status
+          ckit feature new zalo-group    scaffold agents/planning/zalo-group/ (+ activate)
+          ckit feature list              list features (★ = active) + archived
+          ckit feature switch other      flip the active feature
+          ckit feature status            show the active feature's STATE position
+          ckit feature                   (no arg) same as status
 
         Large multi-phase scopes only. Small/single-concern work → `/auto`.
         The reasoning steps run in an omp session:

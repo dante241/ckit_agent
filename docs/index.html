@@ -176,9 +176,11 @@ ckit .                          # open a session (kitty 3-pane + omp)
 ckit harness web                # → http://127.0.0.1:8731</code></pre>
       </div>
       <p class="lede" style="margin-top:14px;">
-        <b>Windows</b> (PowerShell): <code>irm https://raw.githubusercontent.com/dante241/ckit_agent/main/install.ps1 | iex</code>.
+        <b>Windows</b> (PowerShell): <code>irm https://raw.githubusercontent.com/dante241/ckit_agent/main/install.ps1 | iex</code>
+        installs <code>ckit.exe</code> and patches your user PATH. Then <code>ckit setup</code> installs the AI core —
+        it needs <b>bun</b> (or Node <code>npm</code>) on PATH for <code>omp</code> + <code>codegraph</code>, <b>winget</b> for <code>gh</code>,
+        and optional <b>uv</b> for the headroom/serena MCP servers. Arch-only profiles are skipped off-Linux.
         Build from source: <code>git clone … &amp;&amp; bash scripts/bootstrap.sh</code>.
-        Common setup flags: <code>--dry-run</code>, <code>--no-profile</code>, <code>--community</code>, <code>--profile &lt;name&gt;</code>.
       </p>
     </section>
 

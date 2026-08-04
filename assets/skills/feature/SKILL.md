@@ -25,7 +25,7 @@ description: "Quản lý feature LỚN nhiều phase, nhiều ngày, xuyên sess
                            Có thể kèm subcommand: `/feature plan --auto`, `/feature go --auto`.
 ```
 
-> **Deterministic ops cũng có ở verb `8sync feature`** (nhanh, không cần model): `8sync feature new|switch|status|list`.
+> **Deterministic ops cũng có ở verb `ckit feature`** (nhanh, không cần model): `ckit feature new|switch|status|list`.
 > Còn `plan`/`go`/`ship` cần model phán đoán → chạy trong 1 session omp qua `/feature`.
 
 ## Dispatch (đọc STATE → biết đang đâu)
@@ -76,7 +76,7 @@ Chi tiết luật + cách spawn subagent discuss: `references/auto.md`.
 - **Cập nhật:** task xong → STATE.Log + next_action · phase xong → ROADMAP tick + STATE.progress · feature xong → `agents/KNOWLEDGE.md` + `agents/DECISIONS.md`.
 - **Parallel:** `config.workflow.parallelization === false` → TẮT mọi swarm, chạy tuần tự main thread (debug/máy yếu). Khi `true`: việc độc lập + khác file + ≥`config.workflow.min_parallel_tasks` → spawn `task` subagent đồng thời; dưới ngưỡng → main thread.
 - **Commit:** commit **atomic mỗi task xong** qua `engine_advance {commit:true}` trong `go` (verify-gate enforce trước). Conventional Commits, tiếng Anh, `<type>: M<x> - T<n> <desc>`, no AI ref. Feature branch + ticket là **TUỲ CHỌN** (STATE `branch`/`ticket` có thể trống). **KHÔNG `git push`/PR trừ khi user yêu cầu**. Chi tiết: `references/execute.md` §Commit + R8.
-- **Model:** su-code sở hữu chọn model qua `~/.config/8sync/models.toml` (xem/sửa: `8sync harness model`) + role của `task` subagent. Skill NEVER hardcode tên model; chỉ chọn `agent: <role>` (explore/plan/reviewer/Tester/task) đúng vai.
+- **Model:** ckit sở hữu chọn model qua `~/.config/ckit/models.toml` (xem/sửa: `ckit harness model`) + role của `task` subagent. Skill NEVER hardcode tên model; chỉ chọn `agent: <role>` (explore/plan/reviewer/Tester/task) đúng vai.
 
 ## Neo vào codebase (brownfield) — R7
 

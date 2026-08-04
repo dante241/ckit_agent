@@ -127,9 +127,14 @@ pub fn run(a: Args) -> Result<()> {
     ui::step("Stage A — coding harness");
     if a.dry_run {
         ui::info("would install: github-cli");
-        ui::info("would install omp (curl) if missing");
+        let (omp_via, cg_via) = if platform::os() == platform::Os::Windows {
+            ("bun/npm", "bun/npm")
+        } else {
+            ("curl", "curl")
+        };
+        ui::info(&format!("would install omp ({omp_via}) if missing"));
         ui::info("would install paru (AUR helper) if missing");
-        ui::info("would install codegraph (curl) if missing");
+        ui::info(&format!("would install codegraph ({cg_via}) if missing"));
         ui::info("would register STEP-0 MCPs (codegraph · codebase-memory · headroom · serena) and remove legacy zai-vision");
         ui::info("would write: configs + skills");
         ui::info("would seed ~/.omp/agent/models.yml (team 9router catalog, placeholder key) + config.yml (memory+compaction+mcp+modelRoles) if absent");
@@ -381,6 +386,11 @@ fn install_omp() -> Result<()> {
         ui::skip("omp", &format!("present ({})", v));
         return Ok(());
     }
+    // Windows has no POSIX `sh` for the curl|sh installer. omp ships on npm
+    // (`@oh-my-pi/pi-coding-agent`, binary `omp`), so install it via bun/npm.
+    if platform::os() == platform::Os::Windows {
+        return crate::verbs::skill::deploy::install_node_pkg("omp", "@oh-my-pi/pi-coding-agent");
+    }
     pkg::run_loud("sh", &["-c", "curl -fsSL https://omp.sh/install | sh"])?;
     Ok(())
 }
@@ -407,6 +417,11 @@ fn install_codegraph() -> Result<()> {
         let v = env_detect::cmd_version("codegraph", &["--version"]).unwrap_or_default();
         ui::skip("codegraph", &format!("present ({})", v));
         return Ok(());
+    }
+    // Windows has no POSIX `sh` for the curl|sh bundle installer; codegraph
+    // ships on npm (`@colbymchenry/codegraph`), so install it via bun/npm.
+    if platform::os() == platform::Os::Windows {
+        return crate::verbs::skill::deploy::install_node_pkg("codegraph", "@colbymchenry/codegraph");
     }
     pkg::run_loud(
         "sh",

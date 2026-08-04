@@ -120,6 +120,11 @@ if (-not $already) {
 
 Write-Host ""
 Write-Host "Done. Next steps:"
-Write-Host "  ckit setup        # full stack + config"
+Write-Host "  ckit setup        # install the AI core (omp + codegraph + MCP servers)"
 Write-Host "  ckit doctor       # verify"
 Write-Host "  ckit up           # upgrade later (or re-run this installer)"
+Write-Host ""
+Write-Host "Before 'ckit setup' on Windows, make sure these are on PATH:"
+Write-Host "  - bun (https://bun.sh) or Node.js npm   # installs omp + codegraph"
+Write-Host "  - winget (built into Windows 10/11)      # installs GitHub CLI (gh)"
+Write-Host "  - uv (optional, https://astral.sh/uv)    # headroom + serena MCP servers"

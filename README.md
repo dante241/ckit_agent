@@ -52,10 +52,29 @@ No git, rustup, or cargo needed. `install.sh` resolves the latest release and do
 curl -fsSL https://raw.githubusercontent.com/dante241/ckit_agent/main/install.sh | sh
 ```
 
-On **Windows** (PowerShell), use `install.ps1`:
+On **Windows** (PowerShell) the binary comes from `install.ps1`, which installs
+`ckit.exe` into `%LOCALAPPDATA%\Programs\ckit` and adds it to your user PATH:
 
 ```powershell
 irm https://raw.githubusercontent.com/dante241/ckit_agent/main/install.ps1 | iex
+```
+
+Then run `ckit setup` to install the AI core. On Windows it needs a couple of
+tools on PATH first (all cross-platform, no Arch/pacman involved):
+
+- **`bun`** (recommended, https://bun.sh) **or Node.js `npm`** — required for
+  `omp` (`@oh-my-pi/pi-coding-agent`) and `codegraph` (`@colbymchenry/codegraph`);
+  `ckit setup` installs both via `bun add -g` / `npm install -g`.
+- **`winget`** (ships with Windows 10/11) — used for GitHub CLI (`gh`), needed by
+  `ckit ship`.
+- **`uv`** (optional, https://astral.sh/uv) — powers the `headroom` + `serena`
+  MCP servers; `ckit setup` bootstraps it via uv's PowerShell installer if
+  missing. Skipped cleanly if unavailable (those MCP servers are just left out).
+
+```powershell
+# with bun or Node installed:
+ckit setup      # installs omp + codegraph + MCP servers; Arch-only profiles are skipped
+ckit doctor     # verify
 ```
 
 - **Upgrade**: run the exact same command again, or `ckit up`.
