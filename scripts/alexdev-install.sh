@@ -2,21 +2,21 @@
 # alexdev one-shot bootstrap — idempotent.
 #
 # Thiết lập cả môi trường coding cá nhân trong 1 lệnh:
-#   · 8sync binary (prebuilt, không cần sudo)
+#   · ckit binary (prebuilt, không cần sudo)
 #   · alexdev profile → kitty + fan/LED (CoolerControl/OpenRGB/Lian Li)
 #                       + Cloudflare WARP + fcitx5/Unikey
 #   · Unikey auto-config (IM env vars + fcitx5 profile + restart)
 #                       → gõ tiếng Việt sẵn luôn, không cần làm tay
 #
 # Check → đã cài thì skip, chưa cài thì cài. Chạy lại bao nhiêu lần cũng OK.
-# AI harness đã custom trên omp — `8sync .` chỉ wrap `omp --continue` tại path.
+# AI harness đã custom trên omp — `ckit .` chỉ wrap `omp --continue` tại path.
 #
 # Chạy trong terminal của bạn (cần sudo password cho pacman/paru/yay):
 #   bash scripts/alexdev-install.sh
 set -uo pipefail
 
 export PATH="$HOME/.local/bin:$PATH"
-ALEXDEV_OVERRIDE_DIR="$HOME/.config/8sync/profiles"
+ALEXDEV_OVERRIDE_DIR="$HOME/.config/ckit/profiles"
 
 c()    { printf '\033[1;36m%s\033[0m\n' "$*"; }
 ok()   { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
@@ -24,11 +24,11 @@ wn()   { printf '  \033[1;33m→\033[0m %s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # ─────────────────────────────────────────────────────────────
-c "1/5  8sync binary"
+c "1/5  ckit binary"
 # ─────────────────────────────────────────────────────────────
-if have 8sync; then ok "8sync $(8sync --version 2>/dev/null) — skip"; else
-  wn "tải prebuilt 8sync…"
-  curl -fsSL https://raw.githubusercontent.com/8-Sync-Dev/su-code/main/install.sh | sh
+if have ckit; then ok "ckit $(ckit --version 2>/dev/null) — skip"; else
+  wn "tải prebuilt ckit…"
+  curl -fsSL https://raw.githubusercontent.com/dante241/ckit_agent/main/install.sh | sh
 fi
 
 # ─────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ c "3/5  apply alexdev profile (pacman/paru/yay — sudo)"
 # ─────────────────────────────────────────────────────────────
 # Stage A harness (omp/gh/paru/codegraph/skills/PATH) + bundle đã trim.
 # Idempotent (pacman --needed); log tại ~/.cache/8sync/.
-8sync setup --profile alexdev
+ckit setup --profile alexdev
 
 # ─────────────────────────────────────────────────────────────
 c "4/5  Unikey auto-config (không cần sudo)"
@@ -131,7 +131,7 @@ have fcitx5 && ok "fcitx5 present"                          || wn "fcitx5: MISSI
 pgrep -x fcitx5 >/dev/null && ok "fcitx5 running"          || wn "fcitx5 not running"
 grep -q '^Name=unikey$' "$FCITX_PROFILE" 2>/dev/null && ok "Unikey configured" || wn "Unikey not configured"
 [ -f "$ENV_FILE" ] && ok "IM env vars file present"        || wn "IM env vars MISSING"
-8sync doctor 2>/dev/null || true
+ckit doctor 2>/dev/null || true
 
 echo
 c "Done."

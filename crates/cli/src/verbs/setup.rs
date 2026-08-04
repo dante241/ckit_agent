@@ -323,8 +323,8 @@ pub fn run(a: Args) -> Result<()> {
 
 fn finish_msg() {
     ui::header("Done — next steps");
-    println!("  · 8sync doctor               — verify");
-    println!("  · cd <project> && 8sync .    — seed agents/ + start omp --continue");
+    println!("{}", crate::brand::render("  · 8sync doctor               — verify"));
+    println!("{}", crate::brand::render("  · cd <project> && 8sync .    — seed agents/ + start omp --continue"));
 }
 
 /// Print final summary: log path (if any) + list of failures (if any).

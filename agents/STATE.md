@@ -1,33 +1,38 @@
 # STATE (8sync managed — live plan; rewrite ở MỖI phase-boundary, đọc đầu phiên)
 
 ## Goal
-Hoàn tất task #11: `ckit setup`/`ckit harness` đăng ký codegraph MCP + STEP-0 MCPs mặc định và bỏ `zai-vision` khỏi harness mặc định.
+Commit and tag release `v0.1.3` for the public `8sync` → `ckit` rebrand cleanup.
 
 ## Definition of Done
-- [x] `setup` Stage A đăng ký `codegraph`, `codebase-memory-mcp`, `headroom`, `serena` MCP.
-- [x] `setup`/`harness` gỡ legacy MCP entry `zai-vision`.
-- [x] Bundled skill/docs không còn hướng dẫn dùng `zai-vision` mặc định; image routing chuyển sang model-native/built-in image tools + `locate-anything`.
-- [x] `cargo check -q` + `cargo build -q` pass (exit 0).
-- [x] Scan stale refs chỉ còn intentional legacy cleanup string `zai-vision`.
+- [x] Shipped docs/install paths no longer show legacy `sync8`, `8-Sync-Dev/su-code`, or `8sync` command examples where raw text is user-facing.
+- [x] `scripts/alexdev-install.sh` installs and invokes `ckit` and writes profile overrides under `~/.config/ckit/profiles`.
+- [x] Workspace version and `Cargo.lock` package version bumped to `0.1.3`; CLI reports `ckit 0.1.3`.
+- [x] `CHANGELOG.md` has `0.1.3` release heading and explicit rebrand/installer fix bullets.
+- [x] `cargo check -q`, `cargo build -q`, `bash -n scripts/alexdev-install.sh`, runtime version, and shipped stale-string scan pass.
+- [x] Commit release changes and create tag `v0.1.3`.
 
 ## Checklist
-- [x] Update `crates/cli/src/verbs/setup.rs` step `step0-mcps`.
-- [x] Update `crates/cli/src/verbs/skill/deploy.rs` cleanup + capabilities/modality text.
-- [x] Remove `assets/skills/zai-vision/` bundled asset.
-- [x] Update `assets/skills/00-force-load.md`, `image-routing`, `locate-anything`, root docs, doctor text.
-- [ ] Run compile + final scan when tool classifier allows execution.
+- [x] Update root/flow help repository and installer URLs.
+- [x] Update `docs/index.html` header/footer branding.
+- [x] Update `scripts/alexdev-install.sh` from `8sync` to `ckit` user-facing install flow.
+- [x] Keep bundled skill ID `8sync-cli` stable; do not half-rename to `ckit-cli`.
+- [x] Bump release metadata to `0.1.3`.
+- [x] Update `CHANGELOG.md` and `agents/KNOWLEDGE.md`.
+- [x] Commit + tag.
 
 ## Current step
-DONE — task #11 hoàn tất: build pass, scan clean, KNOWLEDGE validated.
+DONE — local release commit created and local annotated tag `v0.1.3` points at it.
 
 ## Next
-_none — chờ chỉ đạo tiếp; cân nhắc `ckit harness audit` + commit khi user yêu cầu._
+Push commit and tag when ready: `git push origin HEAD && git push origin v0.1.3`.
 
 ## Assumptions (auto-decided — user can correct)
-- Bỏ `zai-vision` nghĩa là không bundle skill, không auto-register MCP, và cleanup legacy local config; vẫn giữ literal `"zai-vision"` trong cleanup function để xoá máy đã từng cài.
+- `v0.1.2` is an existing release identity and must not be moved.
+- `v0.1.3` is the correct new patch tag for this update.
+- `8sync-cli` remains the stable skill directory/frontmatter/mapping ID; only prose/commands are rebranded.
 
 ## Open questions / blockers
-- Tool execution classifier tạm unavailable, chưa verify được build.
+- none.
 
 ## Handoff (compaction)
-Done: source changes for task #11 are applied. In-flight: verification only. Next: run `cargo check -q` and stale-ref scan once Bash/tool execution works.
+Release changes are committed locally and tagged locally as `v0.1.3`; `.serena/memories/` remains untracked and intentionally excluded.

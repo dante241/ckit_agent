@@ -63,3 +63,9 @@ _empty_
 - `zai-vision` removal: xoá bundled skill asset `assets/skills/zai-vision/`, gỡ khỏi force-load/image-routing/locate/APPEND_SYSTEM/root docs/doctor text; image understanding route qua model-native hoặc built-in image/inspect tools. `deregister_zai_vision_mcp` giờ cũng `remove_dir_all(~/.omp/skills/zai-vision)`.
 - `ensure_mcp_tools_visible`: giữ 2 hằng số legacy exact-match — `LEGACY_PIN` (không zai) và `LEGACY_PIN_WITH_ZAI` — để migrate sạch cả 2 đời config user. Đây là match duy nhất còn lại của "zai" trong scan, đúng chủ đích cleanup.
 - validated: `cargo check -q` + `cargo build -q` exit 0; stale-ref scan chỉ còn cleanup literal.
+
+## validated: ckit 0.1.3 release rebrand cleanup (2026-08-04)
+- Release tags are immutable identities: do NOT move `v0.1.2` after publishing. For public update after `0.1.2`, bump workspace `version` + `Cargo.lock` package stanza to `0.1.3`, document it in `CHANGELOG.md`, commit, then create new tag `v0.1.3`.
+- Public rebrand scan must include shipped install paths, not only README/docs/runtime help. `scripts/alexdev-install.sh` is user-facing and must use `ckit`, `~/.config/ckit/profiles`, `dante241/ckit_agent` installer URL, `ckit setup --profile alexdev`, and `ckit doctor`.
+- Keep `assets/skills/8sync-cli/` as the stable skill ID unless also updating asset dir/frontmatter, `deploy.rs` bundled mapping, and `inject.rs` rank/core matching together. For this release, only render prose/commands; do not introduce `ckit-cli`.
+- validated: `cargo check -q`, `cargo build -q`, `bash -n scripts/alexdev-install.sh`, `cargo run -q -- --version` (`ckit 0.1.3`), and raw shipped-file stale scan all exit 0.

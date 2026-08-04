@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>8sync — terminal-first AI coding harness</title>
-  <meta name="description" content="8sync: terminal-first AI coding harness for CachyOS/Arch + Kitty + Helix + omp. Keep your normal terminal workflow; AI observes project context and executes when you ask." />
-  <meta property="og:title" content="8sync — terminal-first AI coding harness" />
-  <meta property="og:description" content="Keep your normal terminal workflow; AI agents observe project context, load su-code/* memory, execute tasks on demand." />
+  <title>ckit — terminal-first AI coding harness</title>
+  <meta name="description" content="ckit: terminal-first AI coding harness for CachyOS/Arch + Kitty + Helix + omp. Keep your normal terminal workflow; AI observes project context and executes when you ask." />
+  <meta property="og:title" content="ckit — terminal-first AI coding harness" />
+  <meta property="og:description" content="Keep your normal terminal workflow; AI agents observe project context, load agents/* memory, execute tasks on demand." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://8-sync-dev.github.io/su-code/" />
+  <meta property="og:url" content="https://dante241.github.io/ckit_agent/" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
   <style>
     :root {
@@ -108,9 +108,9 @@
     <!-- HEADER -->
     <div class="top">
       <div class="logo">
-        <span class="logo-mark">8</span>
-        <span>8sync</span>
-        <span style="color:var(--dim); font-weight:400; font-size:13px;">· 8-Sync-Dev</span>
+        <span class="logo-mark">C</span>
+        <span>ckit</span>
+        <span style="color:var(--dim); font-weight:400; font-size:13px;">· dante241/ckit_agent</span>
       </div>
       <nav class="nav">
         <a href="#install">Install</a>
@@ -118,7 +118,7 @@
         <a href="#commands">Commands</a>
         <a href="#skills">Skills</a>
         <a href="#update">Update</a>
-        <a href="https://github.com/8-Sync-Dev/su-code">GitHub</a>
+        <a href="https://github.com/dante241/ckit_agent">GitHub</a>
       </nav>
     </div>
 
@@ -127,12 +127,12 @@
       <span class="eyebrow">⚡ <b>terminal-first</b> · AI coding harness</span>
       <h1>Use the terminal as usual,<br/><span class="grad">AI observes from behind.</span></h1>
       <p class="sub">
-        You still <code>cd</code>, code, build, and test from the CLI. AI agents (omp) follow project context, load <code>su-code/*</code> memory, and execute tasks on demand.
+        You still <code>cd</code>, code, build, and test from the CLI. AI agents (omp) follow project context, load <code>agents/*</code> memory, and execute tasks on demand.
       </p>
       <div class="cta">
-        <a class="btn primary" href="https://github.com/8-Sync-Dev/su-code">View on GitHub →</a>
+        <a class="btn primary" href="https://github.com/dante241/ckit_agent">View on GitHub →</a>
         <a class="btn ghost" href="#install">Quick start</a>
-        <a class="btn ghost" href="https://github.com/orgs/8-Sync-Dev/discussions">Community</a>
+        <a class="btn ghost" href="https://github.com/dante241/ckit_agent/discussions">Community</a>
       </div>
     </header>
 
@@ -140,19 +140,19 @@
     <section class="grid" style="margin-top:40px;">
       <article class="card">
         <h3><span class="dot"></span>Terminal-first</h3>
-        <p>No separate “AI terminal”. Your existing CLI workflow stays untouched — 8sync just wraps around it.</p>
+        <p>No separate “AI terminal”. Your existing CLI workflow stays untouched — ckit just wraps around it.</p>
       </article>
       <article class="card">
         <h3><span class="dot"></span>Dashboard CRUD</h3>
-        <p><code>8sync harness web</code> opens a local page to view &amp; edit the whole agent-team: models, skills, memory, rules, engines, <b>codebase graph</b> — written straight to config.</p>
+        <p><code>ckit harness web</code> opens a local page to view &amp; edit the whole agent-team: models, skills, memory, rules, engines, <b>codebase graph</b> — written straight to config.</p>
       </article>
       <article class="card">
         <h3><span class="dot"></span>Context-aware</h3>
-        <p>Whichever project you enter, the AI picks up its context. Memory is shared via <code>AGENTS.md</code> + <code>su-code/*</code>. <code>8sync harness</code> builds it all with one command.</p>
+        <p>Whichever project you enter, the AI picks up its context. Memory is shared via <code>AGENTS.md</code> + <code>agents/*</code>. <code>ckit harness</code> builds it all with one command.</p>
       </article>
       <article class="card">
         <h3><span class="dot"></span>Skill injection</h3>
-        <p><b>37 skills</b> bundled. <code>8sync skill add &lt;github-url&gt;</code> clones into both the global <code>~/.omp/skills/</code> and the project's <code>su-code/skills/</code>.</p>
+        <p><b>37 skills</b> bundled. <code>ckit skill add &lt;github-url&gt;</code> clones into both the global <code>~/.omp/skills/</code> and the project's <code>.omp/skills/</code>.</p>
       </article>
     </section>
 
@@ -163,20 +163,20 @@
       <div class="codeblock">
         <span class="lbl">bash</span>
 <pre><code># 1. Install — one-liner, prebuilt binary (NO git/rust/cargo needed)
-curl -fsSL https://raw.githubusercontent.com/8-Sync-Dev/su-code/main/install.sh | sh
-8sync setup                      # AI core: omp + codegraph + MCP/skills + gh (y/N per profile)
-8sync doctor                     # verify
+curl -fsSL https://raw.githubusercontent.com/dante241/ckit_agent/main/install.sh | sh
+ckit setup                      # AI core: omp + codegraph + MCP/skills + gh (y/N per profile)
+ckit doctor                     # verify
 
 # 2. Enter a project → build the harness with one command (idempotent)
 cd ~/code/my-app
-8sync harness                    # skills + codegraph + AGENTS.md + memory
-8sync .                          # open a session (kitty 3-pane + omp)
+ckit harness                    # skills + codegraph + AGENTS.md + memory
+ckit .                          # open a session (kitty 3-pane + omp)
 
 # 3. Dashboard — view + CRUD the whole agent-team from the browser
-8sync harness web                # → http://127.0.0.1:8731</code></pre>
+ckit harness web                # → http://127.0.0.1:8731</code></pre>
       </div>
       <p class="lede" style="margin-top:14px;">
-        <b>Windows</b> (PowerShell): <code>irm https://raw.githubusercontent.com/8-Sync-Dev/su-code/main/install.ps1 | iex</code>.
+        <b>Windows</b> (PowerShell): <code>irm https://raw.githubusercontent.com/dante241/ckit_agent/main/install.ps1 | iex</code>.
         Build from source: <code>git clone … &amp;&amp; bash scripts/bootstrap.sh</code>.
         Common setup flags: <code>--dry-run</code>, <code>--no-profile</code>, <code>--community</code>, <code>--profile &lt;name&gt;</code>.
       </p>
@@ -184,7 +184,7 @@ cd ~/code/my-app
 
     <!-- DASHBOARD -->
     <section id="dashboard">
-      <h2>Dashboard — <code>8sync harness web</code></h2>
+      <h2>Dashboard — <code>ckit harness web</code></h2>
       <p class="lede">A local web app (axum + Vite/React, embedded in the binary) to <b>view and control the whole agent-team</b> from the browser instead of hand-editing config files. Every page reads real data; most support <b>CRUD written straight</b> to config/memory. Click any screenshot for the full-size PNG.</p>
       <figure style="margin:20px 0 0;">
         <a href="assets/dashboard-state.png"><img src="assets/dashboard-state.png" alt="State page — live plan of the current session" style="width:100%; border-radius:12px; border:1px solid var(--line); display:block;" /></a>
@@ -226,29 +226,29 @@ cd ~/code/my-app
       </div>
       <div class="codeblock" style="margin-top:18px;">
         <span class="lbl">bash</span>
-<pre><code>8sync harness web                # http://127.0.0.1:8731 (auto-opens the browser)
-8sync harness web --port 9000    # change the port
-8sync harness web --no-open      # background / headless</code></pre>
+<pre><code>ckit harness web                # http://127.0.0.1:8731 (auto-opens the browser)
+ckit harness web --port 9000    # change the port
+ckit harness web --no-open      # background / headless</code></pre>
       </div>
     </section>
 
     <!-- COMMANDS -->
     <section id="commands">
       <h2>Core commands</h2>
-      <p class="lede">Every verb has <code>-h</code> / <code>--help</code> with an EXAMPLES block. Run <code>8sync</code> or <code>8sync help</code> for the cheatsheet.</p>
+      <p class="lede">Every verb has <code>-h</code> / <code>--help</code> with an EXAMPLES block. Run <code>ckit</code> or <code>ckit help</code> for the cheatsheet.</p>
 
       <div class="two">
         <div>
           <h3 style="font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:0 0 6px;">Vibe loop (daily)</h3>
           <table>
             <tbody>
-              <tr><td><code>8sync .</code></td><td>Open/attach a session (kitty 3-pane + <code>omp --continue</code> inside abduco)</td></tr>
-              <tr><td><code>8sync ai [prompt]</code></td><td>Empty → resume; with a prompt → one-shot <code>omp -p</code></td></tr>
-              <tr><td><code>8sync find &lt;kw&gt;</code></td><td>rg/fd + fzf, opens the editor at <code>file:line</code></td></tr>
-              <tr><td><code>8sync note "msg"</code></td><td>Appends to <code>su-code/NOTES.md</code></td></tr>
-              <tr><td><code>8sync run dev|build|test|fmt|lint</code></td><td>Recipe-based project runner</td></tr>
-              <tr><td><code>8sync ship "msg"</code></td><td><code>git add -A &amp;&amp; commit &amp;&amp; push &amp;&amp; gh pr create</code></td></tr>
-              <tr><td><code>8sync feature new|switch &lt;slug&gt;</code></td><td>Large multi-phase scopes (GSD): planning tree + AC gates + <code>ACTIVE</code> switch; then <code>/feature plan|go|ship</code> in omp</td></tr>
+              <tr><td><code>ckit .</code></td><td>Open/attach a session (kitty 3-pane + <code>omp --continue</code> inside abduco)</td></tr>
+              <tr><td><code>ckit ai [prompt]</code></td><td>Empty → resume; with a prompt → one-shot <code>omp -p</code></td></tr>
+              <tr><td><code>ckit find &lt;kw&gt;</code></td><td>rg/fd + fzf, opens the editor at <code>file:line</code></td></tr>
+              <tr><td><code>ckit note "msg"</code></td><td>Appends to <code>agents/NOTES.md</code></td></tr>
+              <tr><td><code>ckit run dev|build|test|fmt|lint</code></td><td>Recipe-based project runner</td></tr>
+              <tr><td><code>ckit ship "msg"</code></td><td><code>git add -A &amp;&amp; commit &amp;&amp; push &amp;&amp; gh pr create</code></td></tr>
+              <tr><td><code>ckit feature new|switch &lt;slug&gt;</code></td><td>Large multi-phase scopes (GSD): planning tree + AC gates + <code>ACTIVE</code> switch; then <code>/feature plan|go|ship</code> in omp</td></tr>
             </tbody>
           </table>
         </div>
@@ -256,18 +256,18 @@ cd ~/code/my-app
           <h3 style="font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:0 0 6px;">Lifecycle &amp; tools</h3>
           <table>
             <tbody>
-              <tr><td><code>8sync setup</code></td><td>Install the harness + pick profiles</td></tr>
-              <tr><td><code>8sync up</code></td><td>Self-update binary + <code>omp update</code></td></tr>
-              <tr><td><code>8sync doctor</code></td><td>Comprehensive health check</td></tr>
-              <tr><td><code>8sync harness</code></td><td>Build/refresh the harness with one command (idempotent)</td></tr>
-              <tr><td><code>8sync harness web</code></td><td><b>Local dashboard</b> — agent-team CRUD</td></tr>
-              <tr><td><code>8sync harness gateway</code></td><td>Deploy/verify omp model-gateway</td></tr>
-              <tr><td><code>8sync harness add-local-model</code></td><td>Serve a local GGUF model (mistral.rs) as an omp provider</td></tr>
-              <tr><td><code>8sync locate</code></td><td>Visual grounding — bounding boxes + click points from an image</td></tr>
-              <tr><td><code>8sync skill</code></td><td>List + add skills (see below)</td></tr>
-              <tr><td><code>8sync theme | bg</code></td><td>Kitty palette / wallpaper live swap</td></tr>
-              <tr><td><code>8sync bt | clean</code></td><td>Bluetooth / disk cleanup + report</td></tr>
-              <tr><td><code>8sync sec on|off</code></td><td>WARP VPN + ufw in one go</td></tr>
+              <tr><td><code>ckit setup</code></td><td>Install the harness + pick profiles</td></tr>
+              <tr><td><code>ckit up</code></td><td>Self-update binary + <code>omp update</code></td></tr>
+              <tr><td><code>ckit doctor</code></td><td>Comprehensive health check</td></tr>
+              <tr><td><code>ckit harness</code></td><td>Build/refresh the harness with one command (idempotent)</td></tr>
+              <tr><td><code>ckit harness web</code></td><td><b>Local dashboard</b> — agent-team CRUD</td></tr>
+              <tr><td><code>ckit harness gateway</code></td><td>Deploy/verify omp model-gateway</td></tr>
+              <tr><td><code>ckit harness add-local-model</code></td><td>Serve a local GGUF model (mistral.rs) as an omp provider</td></tr>
+              <tr><td><code>ckit locate</code></td><td>Visual grounding — bounding boxes + click points from an image</td></tr>
+              <tr><td><code>ckit skill</code></td><td>List + add skills (see below)</td></tr>
+              <tr><td><code>ckit theme | bg</code></td><td>Kitty palette / wallpaper live swap</td></tr>
+              <tr><td><code>ckit bt | clean</code></td><td>Bluetooth / disk cleanup + report</td></tr>
+              <tr><td><code>ckit sec on|off</code></td><td>WARP VPN + ufw in one go</td></tr>
             </tbody>
           </table>
         </div>
@@ -277,24 +277,24 @@ cd ~/code/my-app
     <!-- SKILLS -->
     <section id="skills">
       <h2>Skill injection</h2>
-      <p class="lede">A skill is an instruction module for the AI. 8sync bundles <b>37 skills</b> (codegraph · karpathy · ponytail · assp · impeccable · taste · 8sync-cli · image-routing · feature (large-scope GSD) + 18 research skills · …); <code>8sync skill add</code> is collection-aware and pulls whole sets from GitHub.</p>
+      <p class="lede">A skill is an instruction module for the AI. ckit bundles <b>37 skills</b> (codegraph · karpathy · ponytail · assp · impeccable · taste · 8sync-cli · image-routing · feature (large-scope GSD) + 18 research skills · …); <code>ckit skill add</code> is collection-aware and pulls whole sets from GitHub.</p>
       <div class="codeblock">
         <span class="lbl">bash</span>
-<pre><code># Clone from a URL: installs into BOTH ~/.omp/skills/ (global, read by omp) and su-code/skills/ (project)
-# Also rewrites the &lt;!-- 8sync:skills:* --&gt; block in AGENTS.md
-8sync skill add https://github.com/colbymchenry/codegraph
+<pre><code># Clone from a URL: installs into BOTH ~/.omp/skills/ (global, read by omp) and .omp/skills/ (project)
+# Also rewrites the &lt;!-- ckit:skills:* --&gt; block in AGENTS.md
+ckit skill add https://github.com/colbymchenry/codegraph
 
 # Other spec forms
-8sync skill add gh:owner/repo
-8sync skill add path:/abs/local/dir
-8sync skill add builtin:karpathy
+ckit skill add gh:owner/repo
+ckit skill add path:/abs/local/dir
+ckit skill add builtin:karpathy
 
 # Idempotent: re-running = git pull --ff-only
-8sync skill add https://github.com/colbymchenry/codegraph   # → "updated"
+ckit skill add https://github.com/colbymchenry/codegraph   # → "updated"
 
 # Build / refresh the whole harness (replaces the old `skill sync`)
-8sync harness init
-8sync harness up --timer 30m</code></pre>
+ckit harness init
+ckit harness up --timer 30m</code></pre>
       </div>
     </section>
 
@@ -306,17 +306,17 @@ cd ~/code/my-app
         <div>
           <h3 style="font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:0 0 6px;">Auto (recommended)</h3>
           <div class="codeblock">
-<pre><code>8sync up</code></pre>
+<pre><code>ckit up</code></pre>
           </div>
           <p class="lede" style="margin-top:10px;">Self-updates the binary (GitHub release) + <code>omp update</code>. Never touches <code>pacman -Syu</code>.</p>
         </div>
         <div>
           <h3 style="font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:0 0 6px;">Manual (build from source)</h3>
           <div class="codeblock">
-<pre><code>cd su-code &amp;&amp; git pull
+<pre><code>cd ckit_agent &amp;&amp; git pull
 cargo build --release
-install -m755 target/release/8sync \
-  ~/.local/bin/8sync</code></pre>
+install -m755 target/release/ckit \
+  ~/.local/bin/ckit</code></pre>
           </div>
         </div>
       </div>
@@ -328,19 +328,19 @@ install -m755 target/release/8sync \
       <p class="lede">This page is <code>docs/index.html</code>, auto-deployed via GitHub Pages on every push to <code>main</code>.</p>
       <table>
         <tbody>
-          <tr><td>Source</td><td><a href="https://github.com/8-Sync-Dev/su-code/blob/main/docs/index.html">docs/index.html</a></td></tr>
-          <tr><td>Workflow</td><td><a href="https://github.com/8-Sync-Dev/su-code/blob/main/.github/workflows/pages.yml">.github/workflows/pages.yml</a></td></tr>
+          <tr><td>Source</td><td><a href="https://github.com/dante241/ckit_agent/blob/main/docs/index.html">docs/index.html</a></td></tr>
+          <tr><td>Workflow</td><td><a href="https://github.com/dante241/ckit_agent/blob/main/.github/workflows/pages.yml">.github/workflows/pages.yml</a></td></tr>
           <tr><td>Trigger</td><td>push <code>main</code> or <code>workflow_dispatch</code></td></tr>
-          <tr><td>URL</td><td><a href="https://8-sync-dev.github.io/su-code/">8-sync-dev.github.io/su-code</a></td></tr>
-          <tr><td>Full README</td><td><a href="https://github.com/8-Sync-Dev/su-code#readme">github.com/8-Sync-Dev/su-code#readme</a></td></tr>
-          <tr><td>AGENTS.md (for AI)</td><td><a href="https://github.com/8-Sync-Dev/su-code/blob/main/AGENTS.md">AGENTS.md</a></td></tr>
+          <tr><td>URL</td><td><a href="https://dante241.github.io/ckit_agent/">dante241.github.io/ckit_agent</a></td></tr>
+          <tr><td>Full README</td><td><a href="https://github.com/dante241/ckit_agent#readme">github.com/dante241/ckit_agent#readme</a></td></tr>
+          <tr><td>AGENTS.md (for AI)</td><td><a href="https://github.com/dante241/ckit_agent/blob/main/AGENTS.md">AGENTS.md</a></td></tr>
         </tbody>
       </table>
     </section>
 
     <footer>
-      <div>© 8-Sync-Dev · MIT License · built on <a href="https://omp.sh">omp</a></div>
-      <div class="tags">#8sync #omp #VibeCoding #TerminalWorkflow #RustLang #ArchLinux #CachyOS</div>
+      <div>© dante241/ckit_agent · MIT License · built on <a href="https://omp.sh">omp</a></div>
+      <div class="tags">#ckit #omp #VibeCoding #TerminalWorkflow #RustLang #ArchLinux #CachyOS</div>
     </footer>
   </main>
 </body>

@@ -52,7 +52,7 @@ const TASK_HINTS: Record<string, string> = {
 };
 
 // Deep-linkable routing: `?page=codegraph` (or `/codegraph`) selects the initial
-// page so `8sync shot http://127.0.0.1:8731/?page=codegraph` captures that view
+// page so `ckit shot http://127.0.0.1:8731/?page=codegraph` captures that view
 // (nav is in-memory, so without this a headless load always renders State).
 const ALL_PAGES: Page[] = NAV_GROUPS.flatMap((g) => g.items.map((i) => i.id));
 function pageFromUrl(): Page {
@@ -72,7 +72,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark"><LogoMark /></span>
           <span className="brand-text">
-            <span className="brand-name">8sync</span>
+            <span className="brand-name">ckit</span>
             <span className="brand-sub">harness</span>
           </span>
         </div>
@@ -401,7 +401,7 @@ function ModelsPage() {
   return (
     <Page
       title="Models"
-      sub={<>Routing config at <code>{data.path || "~/.config/8sync/models.toml"}</code>. Thinking work goes to Opus; mechanical work to GLM.</>}
+      sub={<>Routing config at <code>{data.path || "~/.config/ckit/models.toml"}</code>. Thinking work goes to Opus; mechanical work to GLM.</>}
     >
       <div className="card">
         <div className="card-title">Routing philosophy</div>
@@ -850,7 +850,7 @@ function CodegraphPage() {
   );
   if (!data) return null;
 
-  // ?shot=1 — capture mode for `8sync shot`: ONLY the package call graph,
+  // ?shot=1 — capture mode for `ckit shot`: ONLY the package call graph,
   // full viewport (big + legible for vision/locate models). Everything else
   // on this page is exact text via /api/codegraph/* — the canvas is the one
   // thing that needs pixels.

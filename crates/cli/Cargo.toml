@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "8sync — vibe coding harness for CachyOS + Kitty + Helix"
+description = "ckit — vibe coding harness for CachyOS + Kitty + Helix"
 
 [[bin]]
 name = "ckit"

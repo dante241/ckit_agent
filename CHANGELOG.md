@@ -5,6 +5,8 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-08-04
+
 ### Added — Lark (larksuite) to the `apps-personal` profile
 - `assets/profiles/apps-personal.toml` now installs Lark via AUR `larksuite-bin`
   (v7.66.11, URL larksuite.com) alongside Bitwarden. AUR bin package auto-fetches the
@@ -12,6 +14,16 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
   committed to the repo/GitHub, only the download reference. Sets `requires.aur_helper`.
   China build (Feishu) is a separate package, `feishu-bin`. Opt-in; the `alexdev`
   bundle intentionally excludes `apps-personal`.
+
+### Fixed — finish the public `8sync` → `ckit` rebrand for shipped install paths
+- User-facing docs and CLI help no longer point to the legacy `8-Sync-Dev/su-code`
+  repository or `sync8`/`8sync` command names for the rebranded binary. Root help,
+  flow help, `README.md`, `docs/index.html`, web package metadata, and install scripts
+  now use `dante241/ckit_agent` + `ckit` consistently.
+- `scripts/alexdev-install.sh` now installs and invokes `ckit`, writes the profile
+  override under `~/.config/ckit/profiles`, and calls `ckit setup --profile alexdev`
+  / `ckit doctor`. The bundled skill ID intentionally remains `8sync-cli` because
+  `deploy.rs` and `inject.rs` use it as the stable always-on skill identifier.
 
 ### Fixed — STEP-0 MCP tools were connected but NEVER called (0.09% usage) → always visible
 - Root cause (measured over 29 omp sessions / 13,854 tool calls: serena 0 · headroom 0 ·

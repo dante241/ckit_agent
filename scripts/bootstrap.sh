@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# 8sync bootstrap — build & install `8sync` from source (rustup + cargo).
+# ckit bootstrap — build & install `ckit` from source (rustup + cargo).
 #
 # Most users want the prebuilt one-liner instead (no git/rust needed):
-#   curl -fsSL https://raw.githubusercontent.com/8-Sync-Dev/su-code/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/dante241/ckit_agent/main/install.sh | sh
 #
 # Use this when you want a source build (no prebuilt for your arch, or dev work).
-# Sau đó dùng `8sync setup` cho phần còn lại.
+# Sau đó dùng `ckit setup` cho phần còn lại.
 
 set -euo pipefail
 
@@ -57,8 +57,8 @@ cat <<'EOF'
 
 ────────────────────────────────────────
  Tiếp theo:
-   8sync setup        # cài full stack + cấu hình
-   8sync doctor       # verify
-   8sync .            # mở project session đầu tiên
+   ckit setup        # cài full stack + cấu hình
+   ckit doctor       # verify
+   ckit .            # mở project session đầu tiên
 ────────────────────────────────────────
 EOF

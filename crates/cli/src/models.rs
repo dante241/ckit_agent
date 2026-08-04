@@ -116,11 +116,15 @@ impl ModelConfig {
         out
     }
 
-    /// Role flags (+ default `--model`) for resume/continue, where there is no
-    /// new prompt to classify.
+    /// Role flags for resume/continue, where there is no new prompt to classify.
+    ///
+    /// Intentionally does NOT emit `--model`: on `--continue` omp restores the
+    /// model saved in the session, and a CLI `--model` would override it every
+    /// launch — so `8sync .` would silently reset the user's in-session model
+    /// pick back to `roles.default` each time. Role flags (`--plan/--smol/--slow`)
+    /// only steer omp's own routing and are safe to pass.
     pub fn resume_flags(&self) -> Vec<String> {
         let mut out = Vec::new();
-        push_flag(&mut out, "--model", &self.roles.default);
         self.push_role_flags(&mut out);
         // Interactive dev session (`8sync .` / resume): advisor on.
         if self.advisor {
