@@ -5,6 +5,8 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
 
 ## [Unreleased]
 
+## [0.1.6] — 2026-08-04
+
 ### Fixed — `ckit setup` no longer loses `models.yml` when codegraph fails (Windows)
 - On Windows the `codegraph` install could fail, and because it was a hard step
   in strict `ckit setup` it aborted the run **before** `models.yml` was seeded —
