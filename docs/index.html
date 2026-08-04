@@ -115,6 +115,7 @@
       <nav class="nav">
         <a href="#install">Install</a>
         <a href="#usage">Usage</a>
+        <a href="#configure">Configure</a>
         <a href="#commands">Commands</a>
         <a href="#update">Update</a>
         <a href="https://github.com/dante241/ckit_agent">GitHub</a>
@@ -251,6 +252,54 @@ ckit .
 /feature new customer-portal      # long, multi-phase work with acceptance criteria</code></pre>
       </div>
       <p class="lede" style="margin-top:14px;">Use <code>/auto</code> for small bugs or one-pass work; use <code>/feature</code> when the work spans many files, phases, or days and needs acceptance criteria tracked in <code>agents/planning/&lt;slug&gt;/</code>.</p>
+    </section>
+
+    <!-- CONFIGURE -->
+    <section id="configure">
+      <h2>Configure &amp; verify</h2>
+      <p class="lede">After <code>ckit setup</code>, a few files control omp — and one command confirms the AI tooling is live.</p>
+
+      <div class="two">
+        <div class="card">
+          <h3><span class="dot"></span>Config files</h3>
+          <table>
+            <tbody>
+              <tr><td><code>~/.omp/agent/config.yml</code></td><td>omp behaviour: memory backend (<b>Mnemopi</b>, per-project), auto-compaction threshold, model roles, tool approval.</td></tr>
+              <tr><td><code>~/.omp/agent/models.yml</code></td><td>Model catalog + the gateway <b>API key</b> and <b>endpoint URL</b>. Set the values you were given with <code>ckit harness gateway key &lt;KEY&gt;</code> and <code>ckit harness gateway url &lt;URL&gt;</code>, then <code>ckit harness gateway verify</code> — don't hand-edit the substituted values.</td></tr>
+              <tr><td><code>~/.config/ckit/models.toml</code></td><td>Which model per role/task class (plan · review · debug · code · trivial) for <code>ckit ai</code>.</td></tr>
+              <tr><td><code>~/.omp/agent/mcp.json</code></td><td>The registered MCP servers — managed by <code>ckit harness</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3><span class="dot"></span>Verify MCP inside omp</h3>
+          <p style="color:var(--muted); font-size:13.5px; margin:0 0 10px;">Open a session (<code>ckit .</code>), then run <code>/mcp list</code>. On macOS/Linux all four connect; on Windows <code>codebase-memory-mcp</code> may be skipped (no installer yet):</p>
+          <div class="codeblock">
+            <span class="lbl">/mcp list</span>
+<pre><code>Configured MCP Servers
+User level (~/.omp/agent/mcp.json):
+  codebase-memory-mcp  ● connected [stdio]
+  codegraph            ● connected [stdio]
+  headroom             ● connected [stdio]
+  serena               ● connected [stdio]</code></pre>
+          </div>
+          <p style="color:var(--dim); font-size:12.5px; margin:10px 0 0;">A server missing or not connected? Re-run <code>ckit harness</code> to re-register, then <code>ckit doctor</code>. On Windows, <code>codebase-memory-mcp</code> may be skipped (no installer yet).</p>
+        </div>
+      </div>
+
+      <div class="codeblock" style="margin-top:16px;">
+        <span class="lbl">set the gateway key + endpoint · migrate old memory</span>
+<pre><code># point omp at the model gateway you were given → writes ~/.omp/agent/models.yml
+ckit harness gateway key &lt;YOUR_API_KEY&gt;
+ckit harness gateway url http://&lt;host&gt;:&lt;port&gt;/v1
+ckit harness gateway verify        # 200 = healthy
+
+# bring an existing Claude Code project into omp: imports the session, and
+# Mnemopi (omp's per-project long-term memory) recalls/retains as you work
+cd &lt;your-project&gt;
+omp --from-claude        # or: omp --from-codex</code></pre>
+      </div>
+      <p class="lede" style="margin-top:12px;">Memory lives in omp's <b>Mnemopi</b> store (set in <code>config.yml</code>, scoped per project). Inside a session the AI uses <code>recall</code>/<code>reflect</code> to read it and <code>retain</code> to save durable facts — no manual file editing needed.</p>
     </section>
 
     <!-- COMMANDS -->

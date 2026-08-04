@@ -14,6 +14,12 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
   command-table row; added a "verify the install" block (`ckit doctor`,
   `ckit --version`, `omp --version`, `codegraph --version`, `gh auth status`)
   so Install sits directly next to How-to-use.
+- Added a **Configure &amp; verify** section (docs + README): the omp config files
+  (`config.yml`, `models.yml`, `models.toml`, `mcp.json`); setting the gateway
+  **API key + endpoint URL** with `ckit harness gateway key <KEY>` /
+  `ckit harness gateway url <URL>` / `verify`; verifying MCP with `/mcp list`
+  (macOS/Linux: all four; Windows may skip codebase-memory-mcp); and migrating a
+  Claude Code project via `omp --from-claude` into per-project Mnemopi.
 
 ## [0.1.5] — 2026-08-04
 

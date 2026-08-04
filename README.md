@@ -124,7 +124,38 @@ Common flags:
 | `ckit setup --profile <name>` | Stage A + apply one specific profile |
 | `ckit setup profile list \| show <n> \| apply <n>` | Manage profiles after setup |
 
-### 4. Update
+### 4. Configure &amp; verify
+
+After `ckit setup`, a few files control omp:
+
+| File | What it holds |
+|---|---|
+| `~/.omp/agent/config.yml` | omp behaviour: memory backend (**Mnemopi**, per-project), auto-compaction, model roles, tool approval |
+| `~/.omp/agent/models.yml` | Model catalog + the gateway **API key** and **endpoint URL**. Set the values you were given with `ckit harness gateway key <YOUR_API_KEY>` and `ckit harness gateway url http://<host>:<port>/v1`, then `ckit harness gateway verify` — don't hand-edit the substituted values |
+| `~/.config/ckit/models.toml` | Which model per role/task class (plan · review · debug · code · trivial) for `ckit ai` |
+| `~/.omp/agent/mcp.json` | Registered MCP servers — managed by `ckit harness` |
+
+**Verify the MCP tooling** — open a session (`ckit .`) and run `/mcp list`. On macOS/Linux all four connect; on Windows `codebase-memory-mcp` may be skipped (no installer yet):
+
+```text
+Configured MCP Servers
+User level (~/.omp/agent/mcp.json):
+  codebase-memory-mcp  ● connected [stdio]
+  codegraph            ● connected [stdio]
+  headroom             ● connected [stdio]
+  serena               ● connected [stdio]
+```
+
+If any is missing or disconnected, re-run `ckit harness`, then `ckit doctor`. (On Windows, `codebase-memory-mcp` may be skipped — no installer yet.)
+
+**Migrate from Claude Code** — import an existing project's session; Mnemopi (omp's per-project long-term memory) then recalls/retains as you work:
+
+```bash
+cd <your-project>
+omp --from-claude        # or: omp --from-codex
+```
+
+### 5. Update
 
 ```bash
 ckit up                         # self-update the binary (GitHub release) + omp update

@@ -1,26 +1,28 @@
 # STATE (8sync managed — live plan; rewrite ở MỖI phase-boundary, đọc đầu phiên)
 
 ## Goal
-Trim `docs/index.html`: remove the Dashboard section, keep Install next to How-to-use, and add post-install verification commands.
+Document post-install config (omp config files, gateway key + endpoint URL, MCP `/mcp list` verify, Claude→Mnemopi migration) and confirm the deployed gateway runs.
 
 ## Definition of Done
-- [x] Dashboard (`ckit harness web`) removed: section, `#dashboard` nav link, feature card, and command-table row (grep `dashboard`/`harness web` = 0).
-- [x] Install (`#install`) sits directly before How-to-use (`#usage`).
-- [x] "Verify the install" block added (`ckit doctor` + `ckit`/`omp`/`codegraph --version` + `gh auth status`), no hard-coded version.
-- [x] HTML parses; browser DOM check confirms order + rendering.
+- [x] Docs + README `Configure & verify`: `config.yml`, `models.yml`, `models.toml`, `mcp.json`.
+- [x] Gateway **key AND endpoint URL** documented: `ckit harness gateway key <KEY>` + `url <URL>` + `verify` (no live key/IP in docs).
+- [x] `/mcp list` block shows the 4 servers; wording split macOS/Linux (all four) vs Windows (codebase-memory-mcp may skip).
+- [x] Claude Code migration via `omp --from-claude`; example path generic (`<your-project>`).
+- [x] Confirmed live gateway healthy (`ckit harness gateway verify` → HTTP 200).
+- [x] HTML parses; browser DOM confirms `#configure` renders.
 
 ## Current step
-DONE — docs trimmed, verified in browser, ready to commit.
+DONE — docs/README updated, gateway verified healthy, ready to commit.
 
 ## Next
 _none — awaiting further instructions._
 
 ## Assumptions (auto-decided — user can correct)
-- `ckit doctor` is the primary post-install check; per-tool `--version` calls are the manual fallback.
-- Replaced the "Dashboard CRUD" feature card with a "Code intelligence" card to keep the 4-card grid.
+- The provided key + endpoint already in `~/.omp/agent/models.yml` are correct (verify → HTTP 200); no value change needed, only documentation.
+- Gateway endpoint is set via `ckit harness gateway url`, not hand-editing models.yml.
 
 ## Open questions / blockers
 - none.
 
 ## Handoff (compaction)
-docs/index.html: dashboard fully removed (0 refs), Install→Usage adjacent, verify block present (no hard-coded version). CHANGELOG [Unreleased] + KNOWLEDGE updated. Verified via HTMLParser + browser DOM (order install,usage,commands,skills,update,docs).
+Configure & verify section (docs + README) now covers gateway key + URL + verify, MCP `/mcp list` (Windows caveat), and `omp --from-claude`. Live gateway verified HTTP 200. No `sk-` key or `<host>:<port>` committed. CHANGELOG/KNOWLEDGE updated. SECURITY NOTE: the live 9router `sk-` key + endpoint surfaced in tool reads this session — advise the user to rotate the key (`ckit harness gateway key <NEW_KEY>`).
