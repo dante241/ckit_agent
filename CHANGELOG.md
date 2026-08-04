@@ -5,6 +5,8 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
 
 ## [Unreleased]
 
+## [0.1.5] — 2026-08-04
+
 ### Changed — docs explain setup, daily use, and feature workflow
 - `docs/index.html` now separates first-time machine/project setup from daily commands,
   explains why each common command exists, and documents starting a long task with
