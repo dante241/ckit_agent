@@ -10,6 +10,10 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
   **Windows (PowerShell)** cards, reframes daily use around opening `omp`
   (`ckit .` → `/auto` / `/plan` / `/feature`), and demotes harness/`ckit` verbs
   to one-time setup + optional shell shortcuts.
+- Removed the Dashboard (`ckit harness web`) section, its nav link, and the
+  command-table row; added a "verify the install" block (`ckit doctor`,
+  `ckit --version`, `omp --version`, `codegraph --version`, `gh auth status`)
+  so Install sits directly next to How-to-use.
 
 ## [0.1.5] — 2026-08-04
 

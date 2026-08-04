@@ -115,7 +115,6 @@
       <nav class="nav">
         <a href="#install">Install</a>
         <a href="#usage">Usage</a>
-        <a href="#dashboard">Dashboard</a>
         <a href="#commands">Commands</a>
         <a href="#update">Update</a>
         <a href="https://github.com/dante241/ckit_agent">GitHub</a>
@@ -143,8 +142,8 @@
         <p>No separate “AI terminal”. Your existing CLI workflow stays untouched — ckit just wraps around it.</p>
       </article>
       <article class="card">
-        <h3><span class="dot"></span>Dashboard CRUD</h3>
-        <p><code>ckit harness web</code> opens a local page to view &amp; edit the whole agent-team: models, skills, memory, rules, engines, <b>codebase graph</b> — written straight to config.</p>
+        <h3><span class="dot"></span>Code intelligence</h3>
+        <p>codegraph + codebase-memory MCP index your repo so the AI answers “where / what / impact” in one call — far fewer tokens than grep. <code>ckit harness</code> wires it up per project.</p>
       </article>
       <article class="card">
         <h3><span class="dot"></span>Context-aware</h3>
@@ -192,57 +191,20 @@ ckit doctor            # verify</code></pre>
           </p>
         </div>
       </div>
-      <p class="lede" style="margin-top:16px;">Build from source (any OS): <code>git clone https://github.com/dante241/ckit_agent</code> then <code>cargo build --release</code> — or <code>bash scripts/bootstrap.sh</code> on Unix.</p>
-    </section>
-
-    <!-- DASHBOARD -->
-    <section id="dashboard">
-      <h2>Dashboard — <code>ckit harness web</code></h2>
-      <p class="lede">A local web app (axum + Vite/React, embedded in the binary) to <b>view and control the whole agent-team</b> from the browser instead of hand-editing config files. Every page reads real data; most support <b>CRUD written straight</b> to config/memory. Click any screenshot for the full-size PNG.</p>
-      <figure style="margin:20px 0 0;">
-        <a href="assets/dashboard-state.png"><img src="assets/dashboard-state.png" alt="State page — live plan of the current session" style="width:100%; border-radius:12px; border:1px solid var(--line); display:block;" /></a>
-        <figcaption style="color:var(--dim); font-size:13px; margin-top:8px; text-align:center;">State — the live plan of the current session.</figcaption>
-      </figure>
-      <div class="grid" style="margin-top:18px; grid-template-columns:repeat(auto-fit,minmax(320px,1fr));">
-        <article class="card" style="padding:10px;">
-          <a href="assets/dashboard-bench.png"><img src="assets/dashboard-bench.png" alt="Bench page — token-budget bench with upfront breakdown and spine advisory" style="width:100%; border-radius:8px; border:1px solid var(--line); display:block;" /></a>
-          <p style="margin:10px 4px 2px;">Bench — token-budget bench with upfront breakdown (prefix / CORE / memory-spine) + spine advisory.</p>
-        </article>
-        <article class="card" style="padding:10px;">
-          <a href="assets/dashboard-codegraph.png"><img src="assets/dashboard-codegraph.png" alt="Codegraph page — package call graph + Leiden clusters" style="width:100%; border-radius:8px; border:1px solid var(--line); display:block;" /></a>
-          <p style="margin:10px 4px 2px;">Codegraph — package call graph + Leiden clusters, symbol search, caller/callee tracing — live from codebase-memory-mcp.</p>
-        </article>
-        <article class="card" style="padding:10px;">
-          <a href="assets/dashboard-models.png"><img src="assets/dashboard-models.png" alt="Models page — adaptive model routing per role/task" style="width:100%; border-radius:8px; border:1px solid var(--line); display:block;" /></a>
-          <p style="margin:10px 4px 2px;">Models — adaptive model routing per role/task, written straight to <code>models.toml</code>.</p>
-        </article>
-        <article class="card" style="padding:10px;">
-          <a href="assets/dashboard-marketplace.png"><img src="assets/dashboard-marketplace.png" alt="Marketplace page — MCP + skills marketplace" style="width:100%; border-radius:8px; border:1px solid var(--line); display:block;" /></a>
-          <p style="margin:10px 4px 2px;">Marketplace — browse + one-click install MCP servers &amp; skills (official registry, Smithery, Glama, mcp.so).</p>
-        </article>
-      </div>
-      <div class="two" style="margin-top:24px;">
-        <table>
-          <tbody>
-            <tr><td><b>Session</b></td><td>State (live plan) · Context (real token/compaction)</td></tr>
-            <tr><td><b>Configure</b></td><td>Models · Skills (filter + cycle tier) · Memory (edit 6 files) · Rules (add/remove)</td></tr>
-            <tr><td><b>Runtime</b></td><td>Engines · <b>Codegraph</b> graph · MCP · Submodules</td></tr>
-          </tbody>
-        </table>
-        <table>
-          <tbody>
-            <tr><td><b>Quality</b></td><td>Bench (live runs) · Readiness · Team</td></tr>
-            <tr><td><b>Projects</b></td><td>Workspaces (project switcher)</td></tr>
-            <tr><td><b>Build</b></td><td>Workflow (build a pipeline → export as omp extension)</td></tr>
-          </tbody>
-        </table>
-      </div>
       <div class="codeblock" style="margin-top:18px;">
-        <span class="lbl">bash</span>
-<pre><code>ckit harness web                # http://127.0.0.1:8731 (auto-opens the browser)
-ckit harness web --port 9000    # change the port
-ckit harness web --no-open      # background / headless</code></pre>
+        <span class="lbl">verify the install</span>
+<pre><code># ckit doctor is the single source of truth — it checks PATH, the binary,
+# omp, codegraph, MCP servers, GitHub auth, and project/harness state.
+ckit doctor
+
+# …or check the pieces one by one:
+ckit --version         # prints the installed ckit version
+omp --version          # AI engine present
+codegraph --version    # code index present
+gh auth status         # GitHub CLI logged in (needed by ckit ship)</code></pre>
       </div>
+      <p class="lede" style="margin-top:12px;">A good install shows <code>ckit doctor</code> with green checks and no “stale state”. If a line is red, re-run <code>ckit setup</code> (idempotent) or install the tool it names, then run <code>ckit doctor</code> again.</p>
+      <p class="lede" style="margin-top:16px;">Build from source (any OS): <code>git clone https://github.com/dante241/ckit_agent</code> then <code>cargo build --release</code> — or <code>bash scripts/bootstrap.sh</code> on Unix.</p>
     </section>
 
     <!-- USAGE -->
@@ -319,7 +281,6 @@ ckit .
               <tr><td><code>ckit up</code></td><td>Self-update binary + <code>omp update</code></td></tr>
               <tr><td><code>ckit doctor</code></td><td>Comprehensive health check</td></tr>
               <tr><td><code>ckit harness</code></td><td>Build/refresh the harness with one command (idempotent)</td></tr>
-              <tr><td><code>ckit harness web</code></td><td><b>Local dashboard</b> — agent-team CRUD</td></tr>
               <tr><td><code>ckit harness gateway</code></td><td>Deploy/verify omp model-gateway</td></tr>
               <tr><td><code>ckit harness add-local-model</code></td><td>Serve a local GGUF model (mistral.rs) as an omp provider</td></tr>
               <tr><td><code>ckit locate</code></td><td>Visual grounding: bounding boxes + click points from an image</td></tr>
