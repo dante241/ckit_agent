@@ -159,29 +159,40 @@
     <!-- INSTALL -->
     <section id="install">
       <h2>Quick start</h2>
-      <p class="lede"><b>Linux (CachyOS/Arch), macOS, Windows.</b> On Linux + Kitty, enable <code>allow_remote_control yes</code> for the 3-pane layout. Arch-only profiles &amp; desktop bits are skipped off-Linux.</p>
-      <div class="codeblock">
-        <span class="lbl">bash</span>
-<pre><code># 1. Install — one-liner, prebuilt binary (NO git/rust/cargo needed)
+      <p class="lede">Grab the prebuilt binary, then <code>ckit setup</code> installs the AI core (omp + codegraph + MCP servers + skills). Pick your platform.</p>
+      <div class="two">
+        <div class="card">
+          <h3><span class="dot"></span>macOS &amp; Linux</h3>
+          <div class="codeblock">
+            <span class="lbl">bash</span>
+<pre><code># 1. Install the prebuilt binary (no git/rust/cargo)
 curl -fsSL https://raw.githubusercontent.com/dante241/ckit_agent/main/install.sh | sh
-ckit setup                      # AI core: omp + codegraph + MCP/skills + gh (y/N per profile)
-ckit doctor                     # verify
 
-# 2. Enter a project → build the harness with one command (idempotent)
-cd ~/code/my-app
-ckit harness                    # skills + codegraph + AGENTS.md + memory
-ckit .                          # open a session (kitty 3-pane + omp)
+# 2. Install the AI core (omp + codegraph + MCP + skills + gh)
+ckit setup
+ckit doctor            # verify</code></pre>
+          </div>
+          <p style="color:var(--muted); font-size:13.5px; margin:12px 0 0;">Lands in <code>~/.local/bin/ckit</code>. Linux (CachyOS/Arch) also gets the kitty 3-pane session + optional profiles; on macOS the Arch-only profiles &amp; desktop bits are skipped automatically.</p>
+        </div>
+        <div class="card">
+          <h3><span class="dot"></span>Windows (PowerShell)</h3>
+          <div class="codeblock">
+            <span class="lbl">powershell</span>
+<pre><code># 1. Install ckit.exe + patch your user PATH
+irm https://raw.githubusercontent.com/dante241/ckit_agent/main/install.ps1 | iex
 
-# 3. Dashboard — view + CRUD the whole agent-team from the browser
-ckit harness web                # → http://127.0.0.1:8731</code></pre>
+# 2. Install the AI core (omp + codegraph + MCP + skills)
+ckit setup
+ckit doctor            # verify</code></pre>
+          </div>
+          <p style="color:var(--muted); font-size:13.5px; margin:12px 0 0;">
+            <code>ckit setup</code> needs these on PATH first (all cross-platform): <b>bun</b> (or Node <code>npm</code>) for
+            <code>omp</code> + <code>codegraph</code>, <b>winget</b> for <code>gh</code>, and optional <b>uv</b> for the
+            headroom/serena MCP servers. Arch-only profiles &amp; the kitty session are Linux-only and skipped.
+          </p>
+        </div>
       </div>
-      <p class="lede" style="margin-top:14px;">
-        <b>Windows</b> (PowerShell): <code>irm https://raw.githubusercontent.com/dante241/ckit_agent/main/install.ps1 | iex</code>
-        installs <code>ckit.exe</code> and patches your user PATH. Then <code>ckit setup</code> installs the AI core —
-        it needs <b>bun</b> (or Node <code>npm</code>) on PATH for <code>omp</code> + <code>codegraph</code>, <b>winget</b> for <code>gh</code>,
-        and optional <b>uv</b> for the headroom/serena MCP servers. Arch-only profiles are skipped off-Linux.
-        Build from source: <code>git clone … &amp;&amp; bash scripts/bootstrap.sh</code>.
-      </p>
+      <p class="lede" style="margin-top:16px;">Build from source (any OS): <code>git clone https://github.com/dante241/ckit_agent</code> then <code>cargo build --release</code> — or <code>bash scripts/bootstrap.sh</code> on Unix.</p>
     </section>
 
     <!-- DASHBOARD -->
@@ -237,65 +248,57 @@ ckit harness web --no-open      # background / headless</code></pre>
     <!-- USAGE -->
     <section id="usage">
       <h2>How to use ckit</h2>
-      <p class="lede">Use it in two modes: first-time setup for a machine or project, then a small set of daily commands while you work.</p>
+      <p class="lede">Two phases: a one-time setup for the machine and each project, then day-to-day you just open <b>omp</b> and code.</p>
 
       <div class="two">
         <div class="card">
-          <h3><span class="dot"></span>Initial setup: machine and project</h3>
+          <h3><span class="dot"></span>One-time setup</h3>
           <table>
             <tbody>
-              <tr><td><code>curl .../install.sh | sh</code></td><td>Install the prebuilt <code>ckit</code> binary into <code>~/.local/bin</code>.</td></tr>
-              <tr><td><code>ckit setup</code></td><td>Install the AI core: <code>omp</code>, codegraph, MCP servers, skills, GitHub CLI, and optional profiles.</td></tr>
-              <tr><td><code>ckit doctor</code></td><td>Check PATH, GitHub auth, omp, MCP tools, profiles, and stale harness state.</td></tr>
+              <tr><td><code>ckit setup</code></td><td>Machine: install <code>omp</code>, codegraph, MCP servers, skills, GitHub CLI.</td></tr>
+              <tr><td><code>ckit doctor</code></td><td>Verify PATH, GitHub auth, omp, MCP tools, and profiles.</td></tr>
               <tr><td><code>cd &lt;project&gt;</code></td><td>Move into the repo you want the AI to understand.</td></tr>
-              <tr><td><code>ckit harness</code></td><td>Prepare the project: skills, codegraph index, <code>AGENTS.md</code>, <code>agents/*</code> memory, hooks, and rules. Safe to re-run.</td></tr>
-              <tr><td><code>ckit .</code></td><td>Open or resume the project AI session with loaded context.</td></tr>
+              <tr><td><code>ckit harness</code></td><td>Per-project, run once: skills, codegraph index, <code>AGENTS.md</code>, <code>agents/*</code> memory, hooks, rules. Re-run only after big changes.</td></tr>
             </tbody>
           </table>
         </div>
         <div class="card">
-          <h3><span class="dot"></span>Daily commands</h3>
+          <h3><span class="dot"></span>Daily: open omp and code</h3>
+          <p style="color:var(--muted); font-size:13.5px; margin:0 0 10px;">Day-to-day you live inside <b>omp</b>: open the session, then chat, edit, and drive the AI with <code>/</code> commands. No harness verbs needed.</p>
           <table>
             <tbody>
-              <tr><td><code>ckit .</code></td><td>Resume the working session for the current project.</td></tr>
-              <tr><td><code>ckit ai "prompt"</code></td><td>Ask a one-shot question or request a small change.</td></tr>
-              <tr><td><code>ckit find &lt;kw&gt;</code></td><td>Search code and open the selected hit in your editor.</td></tr>
-              <tr><td><code>ckit run dev|test|build</code></td><td>Run the project command using the detected recipe.</td></tr>
-              <tr><td><code>ckit note "msg"</code></td><td>Save a thought to project memory for the next AI session.</td></tr>
-              <tr><td><code>ckit ship "msg"</code></td><td>Commit, push, and open a GitHub PR when the work is ready.</td></tr>
+              <tr><td><code>ckit .</code></td><td>Open/resume the session → drops you into omp with project context loaded. <span style="color:var(--dim);">(or run <code>omp</code> directly)</span></td></tr>
+              <tr><td><code>/auto &lt;task&gt;</code></td><td><b>in omp</b> — one-pass bug fix or small change.</td></tr>
+              <tr><td><code>/plan &lt;task&gt;</code></td><td><b>in omp</b> — plan, then execute a larger change.</td></tr>
+              <tr><td><code>/feature new|plan|go|ship</code></td><td><b>in omp</b> — multi-phase feature with acceptance criteria.</td></tr>
             </tbody>
           </table>
+          <p style="color:var(--dim); font-size:12.5px; margin:10px 0 0;">Optional shell shortcuts (no need to enter omp): <code>ckit ai "…"</code>, <code>ckit find &lt;kw&gt;</code>, <code>ckit run dev|test</code>, <code>ckit note "…"</code>, <code>ckit ship "…"</code>.</p>
         </div>
       </div>
 
       <div class="codeblock" style="margin-top:16px;">
-        <span class="lbl">feature workflow</span>
-<pre><code># Long task or multi-day feature
+        <span class="lbl">a day with ckit</span>
+<pre><code># open the project session — you're now inside omp
+cd ~/code/my-app
 ckit .
-/plan @assets/skills/feature/SKILL.md build the customer portal
 
-# Inside the omp session, the feature flow is:
-/feature new customer-portal     # create agents/planning/customer-portal/ and set it active
-/feature plan                    # write phase context, goals, AC, and the implementation plan
-/feature go                      # execute the current phase through the verify-gated engine
-/feature ship                    # review against AC, write verification, close the phase
-/feature status                  # see the active feature state
-
-# Deterministic helper outside omp
-ckit feature list
-ckit feature switch customer-portal</code></pre>
+# then just talk to the AI inside omp:
+/auto fix the flaky login test
+/plan add rate limiting to the API
+/feature new customer-portal      # long, multi-phase work with acceptance criteria</code></pre>
       </div>
-      <p class="lede" style="margin-top:14px;">Use <code>/auto</code> for small bugs or one-pass work. Use the feature workflow when the work spans many files, phases, or days and needs acceptance criteria tracked in <code>agents/planning/&lt;slug&gt;/</code>.</p>
+      <p class="lede" style="margin-top:14px;">Use <code>/auto</code> for small bugs or one-pass work; use <code>/feature</code> when the work spans many files, phases, or days and needs acceptance criteria tracked in <code>agents/planning/&lt;slug&gt;/</code>.</p>
     </section>
 
     <!-- COMMANDS -->
     <section id="commands">
       <h2>Command reference</h2>
-      <p class="lede">Every verb has <code>-h</code> / <code>--help</code> with an EXAMPLES block. Run <code>ckit</code> or <code>ckit help</code> for the cheatsheet.</p>
+      <p class="lede">Daily work happens inside <b>omp</b> (open with <code>ckit .</code>, then drive it with <code>/</code> commands). The verbs below are <b>optional shell shortcuts</b> and lifecycle/tools — you don't need them to code. Every verb has <code>-h</code> / <code>--help</code>; run <code>ckit help</code> for the cheatsheet.</p>
 
       <div class="two">
         <div>
-          <h3 style="font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:0 0 6px;">Daily loop</h3>
+          <h3 style="font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:0 0 6px;">Optional shell shortcuts</h3>
           <table>
             <tbody>
               <tr><td><code>ckit .</code></td><td>Open/attach a session (kitty 3-pane + <code>omp --continue</code> inside abduco)</td></tr>

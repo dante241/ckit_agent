@@ -5,6 +5,12 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
 
 ## [Unreleased]
 
+### Changed — docs restructure install by platform + daily use centred on omp
+- `docs/index.html` splits Quick start into side-by-side **macOS/Linux** vs
+  **Windows (PowerShell)** cards, reframes daily use around opening `omp`
+  (`ckit .` → `/auto` / `/plan` / `/feature`), and demotes harness/`ckit` verbs
+  to one-time setup + optional shell shortcuts.
+
 ## [0.1.5] — 2026-08-04
 
 ### Changed — docs explain setup, daily use, and feature workflow
