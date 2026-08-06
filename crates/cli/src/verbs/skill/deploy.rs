@@ -456,76 +456,58 @@ pub(crate) fn ensure_omp_model_roles(home: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Keep the STEP-0 MCP servers' tools ALWAYS VISIBLE via `mcp.discoveryDefaultServers`
-/// in `~/.omp/agent/config.yml`. omp's default `tools.discoveryMode: auto` hides ALL
-/// MCP tools behind a `search_tool_bm25` discovery hop once the registry exceeds 40
-/// tools — measured effect: serena/headroom 0 calls across 29 sessions. Listing the
-/// four harness servers keeps their full catalogs in the active tool set (verified in
-/// omp 16.4.8: the setting filters discoverable MCP tools by `serverName` and merges
-/// them into the session baseline). `tools.essentialOverride` does NOT work for this —
-/// omp filters its entries to BUILT-IN tool names only. Key-presence idempotent:
-/// never overrides a user-set `discoveryDefaultServers`; migrates away the inert
-/// essentialOverride block earlier 8sync builds wrote (exact-match removal only).
+/// Seed `tools.xdevInlineDevices` in `~/.omp/agent/config.yml` so the STEP-0
+/// code-intel tools (codegraph/cbm/serena) ship their schemas every request and the
+/// model reaches them WITHOUT a `search_tool_bm25` discovery hop — the measured fix
+/// for "STEP-0 tools defined but never auto-called". Also flips `tools.xdev: true`
+/// when absent. Key-presence idempotent: never overrides a user-authored
+/// `xdevInlineDevices`, and inserts UNDER an existing `tools:` block so a user's
+/// `approvalMode` etc. survive. Deliberately does NOT seed `approvalMode: yolo` —
+/// auto-approving every tool is an autonomy/security choice left to the user.
+///
+/// omp ≥17 (universal for a long time) mounts MCP tools as `xd://` devices via
+/// `tools.xdev`; the pre-17 `mcp.discoveryDefaultServers` path and the gen-1
+/// `tools.essentialOverride` migration were dead code and are removed.
 pub(crate) fn ensure_mcp_tools_visible(home: &Path) -> Result<()> {
-    // omp ≥17 replaced the pre-17 bm25 discovery hop (+ `mcp.discoveryDefaultServers`)
-    // with `tools.xdev` (default on): MCP tools mount as `xd://` device URLs, callable
-    // via read/write without shipping schemas every request. The old key is obsolete
-    // (absent from omp's schema) — writing it is dead weight omp strips on rewrite,
-    // which is exactly the churn that made STEP-0 look like it kept "regressing".
-    if env_detect::omp_major().is_some_and(|m| m >= 17) {
-        ui::ok("STEP-0 MCP tools mounted as xd:// devices (omp ≥17 tools.xdev) — codegraph/serena/cbm/headroom callable, no config key needed");
-        return Ok(());
-    }
-    const SERVERS: &[&str] = &["codegraph", "codebase-memory-mcp", "headroom", "serena"];
-    // The exact block written by the earlier essentialOverride approach. MCP names
-    // in essentialOverride are filtered out by omp (builtins only) AND clobber the
-    // builtin essential defaults — remove it, but ONLY this byte-exact 8sync block.
-    const LEGACY_PIN: &str = "tools:\n  essentialOverride:\n    - mcp__codebase_memory_mcp_search_graph\n    - mcp__codebase_memory_mcp_trace_path\n    - mcp__codebase_memory_mcp_get_architecture\n    - mcp__codebase_memory_mcp_get_code_snippet\n    - mcp__serena_find_symbol\n    - mcp__serena_find_referencing_symbols\n    - mcp__serena_get_symbols_overview\n    - mcp__headroom_compress\n";
-    const LEGACY_PIN_WITH_ZAI: &str = "tools:\n  essentialOverride:\n    - mcp__codebase_memory_mcp_search_graph\n    - mcp__codebase_memory_mcp_trace_path\n    - mcp__codebase_memory_mcp_get_architecture\n    - mcp__codebase_memory_mcp_get_code_snippet\n    - mcp__serena_find_symbol\n    - mcp__serena_find_referencing_symbols\n    - mcp__serena_get_symbols_overview\n    - mcp__headroom_compress\n    - mcp__zai_vision_extract_text_from_screenshot\n    - mcp__zai_vision_analyze_image\n";
+    const DEVICES: &[&str] = &[
+        "mcp__codegraph_explore",
+        "mcp__codebase_memory*_search_graph",
+        "mcp__codebase_memory*_trace_path",
+        "mcp__codebase_memory*_get_architecture",
+        "mcp__codebase_memory*_get_code_snippet",
+        "mcp__codebase_memory*_search_code",
+        "mcp__serena_find_symbol",
+        "mcp__serena_find_referencing_symbols",
+        "mcp__serena_get_symbols_overview",
+    ];
     let cfg = home.join(".omp/agent/config.yml");
     if let Some(p) = cfg.parent() { std::fs::create_dir_all(p)?; }
     let mut s = std::fs::read_to_string(&cfg).unwrap_or_default();
-    let mut changed = false;
-    if s.contains(LEGACY_PIN_WITH_ZAI) {
-        s = s.replace(LEGACY_PIN_WITH_ZAI, "");
-        changed = true;
-        ui::info("migrated: dropped inert tools.essentialOverride MCP pin (builtins-only setting)");
-    } else if s.contains(LEGACY_PIN) {
-        s = s.replace(LEGACY_PIN, "");
-        changed = true;
-        ui::info("migrated: dropped inert tools.essentialOverride MCP pin (builtins-only setting)");
-    }
-    if s.contains("discoveryDefaultServers") {
-        ui::skip("STEP-0 MCP visibility", "mcp.discoveryDefaultServers already set (user-configured)");
-        if changed { std::fs::write(&cfg, s)?; }
+    if s.lines().any(|l| l.trim_start().starts_with("xdevInlineDevices:")) {
+        ui::skip("STEP-0 inline devices", "tools.xdevInlineDevices already set");
         return Ok(());
     }
-    let list: String = SERVERS.iter().map(|t| format!("    - {t}\n")).collect();
-    if s.lines().any(|l| l.starts_with("mcp:")) {
-        // Insert under the existing top-level `mcp:` block (same approach as
-        // compaction::set_threshold).
+    let list: String = DEVICES.iter().map(|d| format!("    - \"{d}\"\n")).collect();
+    let xdev_line = if s.lines().any(|l| l.trim_start().starts_with("xdev:")) {
+        String::new()
+    } else {
+        "  xdev: true\n".to_string()
+    };
+    let block = format!("{xdev_line}  xdevInlineDevices:\n{}", list.trim_end());
+    if s.lines().any(|l| l.starts_with("tools:")) {
+        // Insert under the existing top-level `tools:` block (preserves approvalMode etc.).
         s = s
             .lines()
-            .map(|l| {
-                if l.starts_with("mcp:") {
-                    format!("{l}\n  discoveryDefaultServers:\n{}", list.trim_end())
-                } else {
-                    l.to_string()
-                }
-            })
+            .map(|l| if l.starts_with("tools:") { format!("{l}\n{block}") } else { l.to_string() })
             .collect::<Vec<_>>()
             .join("\n");
-        if !s.ends_with('\n') {
-            s.push('\n');
-        }
+        if !s.ends_with('\n') { s.push('\n'); }
     } else {
-        if !s.is_empty() && !s.ends_with('\n') {
-            s.push('\n');
-        }
-        s.push_str(&format!("\nmcp:\n  discoveryDefaultServers:\n{list}"));
+        if !s.is_empty() && !s.ends_with('\n') { s.push('\n'); }
+        s.push_str(&format!("\ntools:\n{block}\n"));
     }
     std::fs::write(&cfg, s)?;
-    ui::ok("STEP-0 MCP servers always visible (mcp.discoveryDefaultServers) — codegraph/serena/cbm/headroom callable, no search_tool_bm25 hop");
+    ui::ok("STEP-0 code-intel tools inlined (tools.xdevInlineDevices) — codegraph/cbm/serena reachable without a discovery hop");
     Ok(())
 }
 

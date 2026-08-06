@@ -5,6 +5,53 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
 
 ## [Unreleased]
 
+### Added — `ckit harness` now SEEDS the STEP-0 inline-tools config (omp ≥17)
+- Until now `tools.xdev` + `tools.xdevInlineDevices` were a **manual** hand-edit
+  of `~/.omp/agent/config.yml`; on omp ≥17 `ensure_mcp_tools_visible` just
+  no-op'd. A fresh machine therefore lacked the inline-schema optimization, so
+  the model never auto-reached codegraph/cbm/serena (the "STEP-0 defined but
+  never called" gap). `ensure_mcp_tools_visible` now seeds, idempotently:
+  ```yaml
+  tools:
+    xdev: true
+    xdevInlineDevices:
+      - "mcp__codegraph_explore"
+      - "mcp__codebase_memory*_search_graph"
+      - "mcp__codebase_memory*_trace_path"
+      - "mcp__codebase_memory*_get_architecture"
+      - "mcp__codebase_memory*_get_code_snippet"
+      - "mcp__codebase_memory*_search_code"
+      - "mcp__serena_find_symbol"
+      - "mcp__serena_find_referencing_symbols"
+      - "mcp__serena_get_symbols_overview"
+  ```
+  Key-presence idempotent: never overrides a user-authored `xdevInlineDevices`,
+  inserts UNDER an existing `tools:` block so a user's `approvalMode` survives.
+  Runs from `ckit harness`, `ckit harness global`, and `ckit setup`.
+- **Manual, NOT seeded (by design):** `tools.approvalMode: yolo` (auto-approve
+  every tool call). Auto-approving `bash`/deletes machine-wide is an
+  autonomy/security choice — opt in yourself by adding `approvalMode: yolo`
+  under `tools:` in `~/.omp/agent/config.yml` if you run unattended (L3) loops.
+
+### Removed — dead pre-17 MCP-visibility path
+- omp has been ≥17 for a long time, so the pre-17 branch of
+  `ensure_mcp_tools_visible` was unreachable dead code: the
+  `mcp.discoveryDefaultServers` seeding (gen-2) and the byte-exact
+  `tools.essentialOverride` migration (gen-1 cleanup). Dropped both; the
+  function is now a single `tools.xdevInlineDevices` seeder.
+
+### Fixed — APPEND_SYSTEM overstated codegraph's MCP surface
+- RULE #0 claimed `mcp__codegraph__codegraph_explore` (wrong: double-underscore;
+  omp's actual id is single `mcp__codegraph_explore`) plus "the rest of
+  CodeGraph's MCP catalog — callers/callees/impact/status". Grounded `tools/list`
+  on the installed codegraph shows it registers **exactly one** MCP tool,
+  `codegraph_explore`; callers/callees/impact/node/query/status are `codegraph`
+  **CLI verbs** (run via bash), not MCP tools. The bad guidance made the agent
+  invent non-existent `mcp__codegraph__callers`-style calls and give up.
+- Corrected both lines: name the sole MCP tool correctly, and route precise
+  single-slice lookups to the `codegraph` CLI via `bash`. Redeployed to
+  `~/.omp/agent/APPEND_SYSTEM.md` via `ckit harness global`.
+
 ### Changed — de-duplicate the always-on rulebook (one source of truth)
 - The code-intel-first / STEP-0 rulebook was restated in 3 always-on places
   (`APPEND_SYSTEM.md`, the injected AGENTS.md block, and `00-force-load.md`),
