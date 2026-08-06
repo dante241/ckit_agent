@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-08-06
+
 ### Added — `gw-quota` omp extension bundled
 - New bundled omp extension `gw-quota.ts`: a belowEditor widget showing the
   9router ai-gateway per-key usage quota (`Quota ▰▰▱▱▱ 40% ↻HH:MM`) for the
