@@ -29,6 +29,9 @@ jobs:
         with:
           enablement: true
 
+      - name: Sync CHANGELOG into docs (single source of truth)
+        run: cp CHANGELOG.md docs/CHANGELOG.md
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

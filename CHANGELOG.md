@@ -3,7 +3,19 @@
 Mọi thay đổi đáng kể của `8sync` ghi vào đây. Format theo [Keep a Changelog](https://keepachangelog.com),
 versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nhật mục `Unreleased`.
 
+**Release (giữ code · changelog · docs đồng bộ):** (1) bump `Cargo.toml` → `version = "X.Y.Z"`;
+(2) đổi `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`, thêm `## [Unreleased]` rỗng ở trên;
+(3) `git commit` + `git tag vX.Y.Z && git push && git push --tags`. Tag → `release.yml` build
+binary mọi OS + publish GitHub Release; push `main` → `pages.yml` copy `CHANGELOG.md` vào `docs/`
+và redeploy — mục Changelog trên trang docs tự cập nhật (không sửa HTML tay).
+
 ## [Unreleased]
+
+### Added — docs site renders the changelog live
+- `docs/index.html` gains a **Changelog** section that fetches `CHANGELOG.md` and
+  renders it (marked), plus a "Release & docs update" guide. `pages.yml` copies
+  the root `CHANGELOG.md` into `docs/` on deploy, so the site is a live view of
+  this file — one source of truth, zero per-release HTML edits.
 
 ### Added — `ckit harness` now SEEDS the STEP-0 inline-tools config (omp ≥17)
 - Until now `tools.xdev` + `tools.xdevInlineDevices` were a **manual** hand-edit

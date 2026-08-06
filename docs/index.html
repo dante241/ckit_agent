@@ -100,6 +100,17 @@
     footer .tags { color: var(--dim); }
     a { color: #9cd7ff; text-decoration: none; }
     a:hover { text-decoration: underline; }
+    /* Changelog (rendered from CHANGELOG.md) */
+    .changelog { border:1px solid var(--line); border-radius:14px; padding:2px 20px 18px; background:var(--card); }
+    .changelog h2 { font-size:17px; margin:20px 0 4px; padding-top:16px; border-top:1px solid var(--line); color:var(--pri); letter-spacing:0; }
+    .changelog h2:first-child { border-top:0; padding-top:6px; }
+    .changelog h3 { font-size:14px; margin:14px 0 2px; color:var(--txt); }
+    .changelog ul { margin:6px 0; padding-left:20px; }
+    .changelog li { color:var(--muted); font-size:14px; margin:3px 0; }
+    .changelog p { color:var(--muted); font-size:14px; margin:6px 0; }
+    .changelog pre { margin:8px 0; }
+    .changelog code { font-size:12.5px; }
+    #cl-latest { color:var(--pri); font-weight:600; }
   </style>
 </head>
 <body>
@@ -118,6 +129,7 @@
         <a href="#configure">Configure</a>
         <a href="#commands">Commands</a>
         <a href="#update">Update</a>
+        <a href="#changelog">Changelog</a>
         <a href="https://github.com/dante241/ckit_agent">GitHub</a>
       </nav>
     </div>
@@ -391,6 +403,15 @@ install -m755 target/release/ckit \
       </div>
     </section>
 
+    <!-- CHANGELOG -->
+    <section id="changelog">
+      <h2>Changelog</h2>
+      <p class="lede">Rendered live from <code>CHANGELOG.md</code> — one source of truth, so this site never drifts from the code. <span id="cl-latest"></span></p>
+      <div class="changelog" id="cl-body">
+        <p style="color:var(--dim)">Loading… if this stays, read it on <a href="https://github.com/dante241/ckit_agent/blob/main/CHANGELOG.md">GitHub</a>.</p>
+      </div>
+    </section>
+
     <!-- DOCS / SITE -->
     <section id="docs">
       <h2>Documentation site</h2>
@@ -405,6 +426,16 @@ install -m755 target/release/ckit \
           <tr><td>AGENTS.md (for AI)</td><td><a href="https://github.com/dante241/ckit_agent/blob/main/AGENTS.md">AGENTS.md</a></td></tr>
         </tbody>
       </table>
+      <h3 style="font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:22px 0 6px;">Release &amp; docs update</h3>
+      <p class="lede">Cutting a version keeps code, changelog, and this site in lockstep — no manual HTML edit:</p>
+      <div class="codeblock">
+<pre><code># 1. bump the workspace version:  Cargo.toml → version = "X.Y.Z"
+# 2. promote the changelog: rename "## [Unreleased]" → "## [X.Y.Z] - YYYY-MM-DD"
+#    and add a fresh empty [Unreleased] above it
+git commit -am "release: vX.Y.Z"
+git tag vX.Y.Z &amp;&amp; git push &amp;&amp; git push --tags</code></pre>
+      </div>
+      <p class="lede" style="margin-top:10px;">The <code>vX.Y.Z</code> tag fires <a href="https://github.com/dante241/ckit_agent/blob/main/.github/workflows/release.yml">release.yml</a> (every-OS binaries + GitHub Release). The push to <code>main</code> fires <a href="https://github.com/dante241/ckit_agent/blob/main/.github/workflows/pages.yml">pages.yml</a>, which copies <code>CHANGELOG.md</code> into <code>docs/</code> and redeploys — the Changelog section above updates itself.</p>
     </section>
 
     <footer>
@@ -412,5 +443,23 @@ install -m755 target/release/ckit \
       <div class="tags">#ckit #omp #VibeCoding #TerminalWorkflow #RustLang #ArchLinux #CachyOS</div>
     </footer>
   </main>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js" defer></script>
+  <script defer>
+    window.addEventListener('DOMContentLoaded', async () => {
+      const el = document.getElementById('cl-body');
+      try {
+        const res = await fetch('CHANGELOG.md', { cache: 'no-cache' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const md = await res.text();
+        if (!window.marked) throw new Error('marked unavailable');
+        const start = md.search(/^##\s/m);
+        el.innerHTML = window.marked.parse(start >= 0 ? md.slice(start) : md);
+        const m = md.match(/^##\s*\[(\d+\.\d+\.\d+)\]/m);
+        if (m) document.getElementById('cl-latest').textContent = 'latest release: v' + m[1];
+      } catch (e) {
+        el.innerHTML = '<p style="color:var(--dim)">Inline render unavailable (viewing the raw file locally?). Read the full changelog on <a href="https://github.com/dante241/ckit_agent/blob/main/CHANGELOG.md">GitHub</a>.</p>';
+      }
+    });
+  </script>
 </body>
 </html>
