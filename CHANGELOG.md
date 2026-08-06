@@ -16,6 +16,10 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
   renders it (marked), plus a "Release & docs update" guide. `pages.yml` copies
   the root `CHANGELOG.md` into `docs/` on deploy, so the site is a live view of
   this file — one source of truth, zero per-release HTML edits.
+- Configure section documents the 4 MCP servers: **when** they install (`ckit setup`
+  once + every `ckit harness`/`harness global`, idempotent) and **how** (codegraph
+  `curl|sh` · cbm `curl|bash` · headroom `headroom-ai[mcp]` via `uv` · serena via
+  `uvx`), plus the stdio-per-session runtime note and `disabledServers`.
 
 ### Added — `ckit harness` now SEEDS the STEP-0 inline-tools config (omp ≥17)
 - Until now `tools.xdev` + `tools.xdevInlineDevices` were a **manual** hand-edit

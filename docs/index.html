@@ -299,6 +299,19 @@ User level (~/.omp/agent/mcp.json):
         </div>
       </div>
 
+      <h3 style="font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:24px 0 6px;">MCP servers — when &amp; how they install</h3>
+      <p class="lede">You never install these by hand. <code>ckit setup</code> installs them once; every <code>ckit harness</code> and <code>ckit harness global</code> re-checks + re-registers (idempotent — skips if present). Best-effort: a failed one is skipped and de-registered, never aborting setup.</p>
+      <table>
+        <thead><tr><th>Server</th><th>Role</th><th>Installed via</th></tr></thead>
+        <tbody>
+          <tr><td><code>codegraph</code></td><td>Local code index — explore / callers / impact (STEP 0)</td><td>upstream <code>curl | sh</code> installer (Windows skipped)</td></tr>
+          <tr><td><code>codebase-memory-mcp</code></td><td>Semantic graph — search_graph / trace_path / query_graph / architecture</td><td>upstream <code>curl | bash</code> installer (no Windows build yet)</td></tr>
+          <tr><td><code>headroom</code></td><td>Compress large tool output before it enters context</td><td><code>headroom-ai[mcp]</code> via <code>uv</code></td></tr>
+          <tr><td><code>serena</code></td><td>LSP-precise symbol lookup / rename</td><td>runs via <code>uvx</code> — no install, needs <code>uv</code></td></tr>
+        </tbody>
+      </table>
+      <p class="lede" style="margin-top:10px;">All <b>stdio</b> transport: each omp session spawns its <b>own</b> copy (not a shared daemon), and the code-index servers auto-index the repo on first connect — that's the brief RAM/CPU spike at session start. Registration is written to <code>~/.omp/agent/mcp.json</code>; servers you turn off live under <code>disabledServers</code> there.</p>
+
       <div class="codeblock" style="margin-top:16px;">
         <span class="lbl">set the gateway key + endpoint · migrate old memory</span>
 <pre><code># point omp at the model gateway you were given → writes ~/.omp/agent/models.yml
