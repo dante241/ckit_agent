@@ -175,11 +175,34 @@ pub(crate) fn ensure_codegraph_init(root: &Path) {
     }
 }
 
+/// True if `name` is listed under `disabledServers` in the user's `mcp.json`.
+/// The durable "I removed this MCP" opt-out: `ckit harness` HONORS it — it will
+/// not reinstall or re-register a server the user turned off, and it deregisters
+/// any lingering `mcpServers` entry. Remove the name from `disabledServers` to let
+/// harness manage the server again.
+fn mcp_opted_out(home: &Path, name: &str) -> bool {
+    std::fs::read_to_string(home.join(".omp/agent/mcp.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| {
+            v.get("disabledServers")
+                .and_then(|d| d.as_array())
+                .map(|a| a.iter().any(|x| x.as_str() == Some(name)))
+        })
+        .unwrap_or(false)
+}
+
 /// Ensure the `codebase-memory-mcp` binary is installed (upstream installer,
 /// binary-only) and registered as an omp MCP server. Mirrors `ensure_codegraph`:
 /// `8sync harness` auto-sets-up code intelligence so the agent gets the graph
 /// tools (search_graph/trace_path/get_architecture/…) with zero manual config.
 pub(crate) fn ensure_codebase_memory_mcp(env: &env_detect::Env) -> Result<()> {
+    // User opt-out: `codebase-memory-mcp` in `disabledServers` means "removed".
+    // Honor it so harness never reinstalls/re-registers it behind the user's back.
+    if mcp_opted_out(&env.home, "codebase-memory-mcp") {
+        ui::skip("codebase-memory-mcp", "in disabledServers — left removed (not reinstalled/registered)");
+        return deregister_omp_mcp(&env.home, "codebase-memory-mcp");
+    }
     if which::which("codebase-memory-mcp").is_err() {
         ui::step("codebase-memory-mcp (binary missing — upstream installer, binary-only)");
         // The upstream installer is a POSIX `curl | bash` script; Windows has no

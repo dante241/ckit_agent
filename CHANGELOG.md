@@ -11,6 +11,18 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-08-06
+
+### Added — `codebase-memory-mcp` removal that survives `ckit harness`
+- `ckit harness` re-installs + re-registers the STEP-0 MCP servers on every run,
+  so deleting `codebase-memory-mcp` by hand never stuck. `ckit harness` now HONORS
+  `disabledServers` in `~/.omp/agent/mcp.json`: list `codebase-memory-mcp` there and
+  harness skips its install/registration and deregisters the `mcpServers` entry —
+  the removal survives re-runs. Remove it from `disabledServers` to let harness
+  manage it again.
+- Reclaim disk after removing: `codebase-memory-mcp uninstall` +
+  `rm -rf ~/.cache/codebase-memory-mcp` (the graph DBs can be multi-GB).
+
 ### Added — docs site renders the changelog live
 - `docs/index.html` gains a **Changelog** section that fetches `CHANGELOG.md` and
   renders it (marked), plus a "Release & docs update" guide. `pages.yml` copies

@@ -311,6 +311,17 @@ User level (~/.omp/agent/mcp.json):
         </tbody>
       </table>
       <p class="lede" style="margin-top:10px;">All <b>stdio</b> transport: each omp session spawns its <b>own</b> copy (not a shared daemon), and the code-index servers auto-index the repo on first connect — that's the brief RAM/CPU spike at session start. Registration is written to <code>~/.omp/agent/mcp.json</code>; servers you turn off live under <code>disabledServers</code> there.</p>
+      <p class="lede" style="margin-top:10px;"><b>Remove one for good</b> (e.g. reclaim the multi-GB <code>codebase-memory-mcp</code> graph): add it to <code>disabledServers</code> — <code>ckit harness</code> honors that and never reinstalls/re-registers it.</p>
+      <div class="codeblock">
+<pre><code># 1. tell omp + ckit to drop it (honored on every `ckit harness`)
+jq '.disabledServers = ((.disabledServers // []) + ["codebase-memory-mcp"] | unique)' \
+  ~/.omp/agent/mcp.json | sponge ~/.omp/agent/mcp.json
+ckit harness            # deregisters it, skips reinstall
+
+# 2. reclaim disk (binary + graph DBs)
+codebase-memory-mcp uninstall
+rm -rf ~/.cache/codebase-memory-mcp</code></pre>
+      </div>
 
       <div class="codeblock" style="margin-top:16px;">
         <span class="lbl">set the gateway key + endpoint · migrate old memory</span>
