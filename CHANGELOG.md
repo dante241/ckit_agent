@@ -4,12 +4,19 @@ Mọi thay đổi đáng kể của `8sync` ghi vào đây. Format theo [Keep a 
 versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nhật mục `Unreleased`.
 
 **Release (giữ code · changelog · docs đồng bộ):** (1) bump `Cargo.toml` → `version = "X.Y.Z"`;
+(1b) chạy `cargo build --release` để refresh `Cargo.lock` — **CI build `--locked`, lock cũ sẽ fail**;
 (2) đổi `## [Unreleased]` → `## [X.Y.Z] - YYYY-MM-DD`, thêm `## [Unreleased]` rỗng ở trên;
 (3) `git commit` + `git tag vX.Y.Z && git push && git push --tags`. Tag → `release.yml` build
 binary mọi OS + publish GitHub Release; push `main` → `pages.yml` copy `CHANGELOG.md` vào `docs/`
 và redeploy — mục Changelog trên trang docs tự cập nhật (không sửa HTML tay).
 
 ## [Unreleased]
+
+### Fixed — release guide now refreshes Cargo.lock
+- v0.1.7's first CI release failed: version bump didn't update the committed
+  `Cargo.lock`, and `release.yml` builds with `--locked` → "cannot update the lock
+  file". The release guide (CHANGELOG header + docs site) now includes
+  `cargo build --release` + committing `Cargo.lock` before tagging.
 
 ## [0.1.7] - 2026-08-06
 

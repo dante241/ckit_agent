@@ -454,9 +454,11 @@ install -m755 target/release/ckit \
       <p class="lede">Cutting a version keeps code, changelog, and this site in lockstep — no manual HTML edit:</p>
       <div class="codeblock">
 <pre><code># 1. bump the workspace version:  Cargo.toml → version = "X.Y.Z"
-# 2. promote the changelog: rename "## [Unreleased]" → "## [X.Y.Z] - YYYY-MM-DD"
+# 2. refresh Cargo.lock (CI builds with --locked, so a stale lock fails):
+cargo build --release            # rewrites Cargo.lock to X.Y.Z
+# 3. promote the changelog: rename "## [Unreleased]" → "## [X.Y.Z] - YYYY-MM-DD"
 #    and add a fresh empty [Unreleased] above it
-git commit -am "release: vX.Y.Z"
+git commit -am "release: vX.Y.Z"  # MUST include Cargo.lock
 git tag vX.Y.Z &amp;&amp; git push &amp;&amp; git push --tags</code></pre>
       </div>
       <p class="lede" style="margin-top:10px;">The <code>vX.Y.Z</code> tag fires <a href="https://github.com/dante241/ckit_agent/blob/main/.github/workflows/release.yml">release.yml</a> (every-OS binaries + GitHub Release). The push to <code>main</code> fires <a href="https://github.com/dante241/ckit_agent/blob/main/.github/workflows/pages.yml">pages.yml</a>, which copies <code>CHANGELOG.md</code> into <code>docs/</code> and redeploys — the Changelog section above updates itself.</p>
