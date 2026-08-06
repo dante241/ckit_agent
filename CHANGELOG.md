@@ -12,6 +12,18 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Added — `gw-quota` omp extension bundled
+- New bundled omp extension `gw-quota.ts`: a belowEditor widget showing the
+  9router ai-gateway per-key usage quota (`Quota ▰▰▱▱▱ 40% ↻HH:MM`) for the
+  active model's provider, plus a `/gwquota` refresh command. It reads the
+  provider's `{ baseUrl, apiKey }` from `~/.omp/agent/models.yml` and polls the
+  gateway's `/quota` endpoint; non-gateway providers and unlimited keys are
+  hidden, all failures are swallowed (never affects the session).
+- Deploys GLOBAL-ONLY to `~/.omp/agent/extensions/gw-quota.ts` (reads global
+  `models.yml`, so never mirrored into a project and never brand-namespaced).
+  Rides `ensure_engine`, so it lands on every `ckit harness` / `harness global`
+  / `harness init` / `harness up`. Idempotent (byte-identical skip).
+
 ### Fixed — release guide now refreshes Cargo.lock
 - v0.1.7's first CI release failed: version bump didn't update the committed
   `Cargo.lock`, and `release.yml` builds with `--locked` → "cannot update the lock
