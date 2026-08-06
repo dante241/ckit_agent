@@ -57,7 +57,7 @@ pub(crate) fn harness_eval(env: &env_detect::Env, baseline: bool) -> Result<()> 
         ui::warn("no eval fixtures bundled");
         return Ok(());
     }
-    let cache = env.home.join(".cache/8sync/eval");
+    let cache = env.home.join(".cache/ckit/eval");
     ui::info(&format!(
         "running {} task(s) through omp (model + network; non-deterministic)…",
         names.len()

@@ -4,7 +4,7 @@
 // global + <root>/.omp/extensions/ project, auto-loaded by the native extension
 // provider) and exposes model-callable TOOLS that carry the parts gsd-pi enforces
 // in CODE rather than prose:
-//   - a durable milestone/slice/task state machine (JSON at .cache/8sync/engine/),
+//   - a durable milestone/slice/task state machine (JSON at .cache/ckit/engine/),
 //   - verify-with-auto-retry (the tool runs the commands + counts attempts +
 //     blocks a task once max retries is hit — the agent can't skip the gate),
 //   - git worktree open / squash-merge / remove (code, not "please run git").
@@ -41,8 +41,8 @@ interface EngineState {
   slices: EngineSlice[];
 }
 
-const STATE_REL = ".cache/8sync/engine/state.json";
-const WT_REL = ".cache/8sync/engine/wt";
+const STATE_REL = ".cache/ckit/engine/state.json";
+const WT_REL = ".cache/ckit/engine/wt";
 const MAX_OUTPUT = 2000;
 
 export default function (pi: ExtensionAPI) {
@@ -82,7 +82,7 @@ export default function (pi: ExtensionAPI) {
   function save(state: EngineState): void {
     state.updatedAt = new Date().toISOString();
     const p = join(process.cwd(), STATE_REL);
-    mkdirSync(join(process.cwd(), ".cache/8sync/engine"), { recursive: true });
+    mkdirSync(join(process.cwd(), ".cache/ckit/engine"), { recursive: true });
     writeFileSync(p, JSON.stringify(state, null, 2));
   }
 
@@ -135,7 +135,7 @@ export default function (pi: ExtensionAPI) {
     name: "engine_plan",
     label: "Engine: plan",
     description:
-      "Create/replace the run-to-done plan: a goal decomposed into slices, each with atomic tasks and optional verify commands (lint/test). Persists to .cache/8sync/engine/state.json.",
+      "Create/replace the run-to-done plan: a goal decomposed into slices, each with atomic tasks and optional verify commands (lint/test). Persists to .cache/ckit/engine/state.json.",
     parameters: z.object({
       goal: z.string(),
       maxRetries: z.number().int().min(0).max(10).default(3),
@@ -143,7 +143,7 @@ export default function (pi: ExtensionAPI) {
         .array(
           z.object({
             title: z.string(),
-            tasks: z.array(z.object({ title: z.string(), verify: z.array(z.string()).default([]) })),
+            tasks: z.array(z.object({ title: z.string(), verify: z.array(z.string()).default(() => []) })),
           }),
         )
         .min(1),
@@ -307,7 +307,7 @@ export default function (pi: ExtensionAPI) {
     name: "engine_worktree",
     label: "Engine: git worktree",
     description:
-      "Isolate a slice in its own git worktree (open), squash-merge it back to the current branch (merge), or discard it (remove). open: git worktree add .cache/8sync/engine/wt/<slug> -b 8sync/<slug>.",
+      "Isolate a slice in its own git worktree (open), squash-merge it back to the current branch (merge), or discard it (remove). open: git worktree add .cache/ckit/engine/wt/<slug> -b 8sync/<slug>.",
     parameters: z.object({ action: z.enum(["open", "merge", "remove"]), slug: z.string() }),
     async execute(_id, params) {
       const slug = params.slug.replace(/[^a-zA-Z0-9._-]/g, "-");

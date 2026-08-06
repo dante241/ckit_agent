@@ -100,7 +100,7 @@ pub(crate) fn seed_gitignore(root: &Path) -> Result<()> {
     let body = concat!(
         "# Derived / machine-local — rebuilt by `8sync harness init` + codegraph. Safe to ignore:\n",
         ".codegraph/\n",
-        ".cache/8sync/\n",
+        ".cache/ckit/\n",
         ".gs/\n",
         "# Large-scope feature-planning evidence screenshots (regenerable binaries):\n",
         "agents/planning/**/evidence-*.png\n",

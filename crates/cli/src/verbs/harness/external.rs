@@ -24,7 +24,7 @@ pub(crate) fn install_external_skill_packs(env: &env_detect::Env) -> Result<usiz
             ui::skip(sentinel, "external pack already installed");
             continue;
         }
-        let tmp = env.home.join(".cache/8sync/ext-pack").join(sentinel);
+        let tmp = env.home.join(".cache/ckit/ext-pack").join(sentinel);
         let _ = std::fs::remove_dir_all(&tmp);
         if let Some(p) = tmp.parent() {
             std::fs::create_dir_all(p)?;

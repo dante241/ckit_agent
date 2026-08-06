@@ -616,7 +616,7 @@ struct State {
 }
 
 fn state_dir(env: &env_detect::Env) -> std::path::PathBuf {
-    env.home.join(".cache/8sync")
+    env.home.join(".cache/ckit")
 }
 fn state_path(env: &env_detect::Env) -> std::path::PathBuf {
     state_dir(env).join("vpn.state")

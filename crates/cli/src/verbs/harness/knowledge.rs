@@ -3,7 +3,7 @@
 //! search, and save selected entries into a project's `agents/REFERENCES.md`.
 //!
 //! The source is one big README, so we `curl` the raw markdown (project rule:
-//! no `reqwest`) and cache it under `.cache/8sync/knowledge/` with a 6h TTL,
+//! no `reqwest`) and cache it under `.cache/ckit/knowledge/` with a 6h TTL,
 //! then parse `##`/`###` headings → `- [name](url) - desc` bullets on each read.
 use std::path::{Path, PathBuf};
 
@@ -15,7 +15,7 @@ const SOURCES: &[&str] = &[
 ];
 
 fn cache_dir(root: &Path) -> PathBuf {
-    root.join(".cache/8sync/knowledge")
+    root.join(".cache/ckit/knowledge")
 }
 
 /// Fetch the awesome README, preferring a fresh cache (6h TTL). On a network

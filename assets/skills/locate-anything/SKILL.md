@@ -37,7 +37,7 @@ BOX → `8sync locate`. If it's "understand the content", you want vision/image 
 ```
 
 Builds with CUDA if the toolkit is present, else CPU (still ~1.7–3× faster than the
-official PyTorch path). Artifacts live under `~/.cache/8sync/locate-anything/`.
+official PyTorch path). Artifacts live under `~/.cache/ckit/locate-anything/`.
 
 ## Use
 

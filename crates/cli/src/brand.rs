@@ -24,7 +24,7 @@ pub const CMD: &str = match option_env!("SC_CMD") {
 /// `<NS>:skills` sentinels, and deployed artifact filenames (`<NS>-engine.ts`,
 /// `<NS>-recall.ts`, `<NS>-harness-up` …). Kept beside `CMD` so a rename makes
 /// the binary name and its persistent state paths agree from a single edit.
-/// (`~/.cache/` is deliberately excluded — see the note below.)
+/// (`~/.cache/` uses a fixed `ckit` literal — see the note below.)
 pub const NS: &str = match option_env!("SC_NS") {
     Some(v) => v,
     None => "ckit",
@@ -41,11 +41,12 @@ pub fn config_dir(home: &Path) -> PathBuf {
     home.join(".config").join(NS)
 }
 
-// NOTE: the `~/.cache/` namespace intentionally stays literal `8sync` (NOT
-// rebranded): it is derived/gitignored throwaway state, and the verbatim-deployed
-// `8sync-engine.ts` extension hard-codes `.cache/8sync/engine/` (rendering `.ts`
-// code is out of scope). Keeping it literal avoids a split namespace and keeps
-// the engine ⇄ dashboard state coupling intact.
+// NOTE: the `~/.cache/` namespace uses the fixed literal `ckit` (renamed from
+// the old `8sync`). It is NOT derived from NS because the verbatim-deployed
+// engine `.ts` hard-codes `.cache/ckit/engine/` (rendering `.ts` is out of
+// scope) — Rust, the `.ts`, and rendered prose all share the one literal, so
+// the engine ⇄ dashboard state coupling stays intact. `migrate_namespace`
+// moves an existing `~/.cache/8sync` → `~/.cache/ckit` on the first rebranded run.
 
 /// A deployed-artifact filename/stem: `<NS>-<suffix>` (e.g. `ns_file("engine.ts")`
 /// → `8sync-engine.ts` by default). One definition so the deploy target and the
@@ -82,21 +83,17 @@ pub fn render(s: &str) -> Cow<'_, str> {
     if CMD == "8sync" && NS == "8sync" {
         return Cow::Borrowed(s);
     }
-    // Guard fixed identifiers the staged rules would otherwise rewrite (NUL
-    // never occurs in these text assets): the bundled `8sync-cli` skill dir, and
-    // the `.cache/8sync` namespace which deliberately stays literal (see the NS
-    // note above — the verbatim engine `.ts` couples to it).
+    // Guard the one fixed identifier the staged rules would otherwise rewrite
+    // (NUL never occurs in these text assets): the bundled `8sync-cli` skill
+    // dir, whose name is fixed and must survive the rename.
     const GUARD_CLI: &str = "\u{0}cli\u{0}";
-    const GUARD_CACHE: &str = "\u{0}cache\u{0}";
     let out = s
         .replace("8sync-cli", GUARD_CLI)
-        .replace("cache/8sync", GUARD_CACHE)
         .replace("8sync-", &format!("{NS}-"))
         .replace("8sync:", &format!("{NS}:"))
         .replace("8sync/", &format!("{NS}/"))
         .replace("8sync.", &format!("{NS}."))
         .replace("8sync", CMD)
-        .replace(GUARD_CLI, "8sync-cli")
-        .replace(GUARD_CACHE, "cache/8sync");
+        .replace(GUARD_CLI, "8sync-cli");
     Cow::Owned(out)
 }

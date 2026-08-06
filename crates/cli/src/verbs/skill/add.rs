@@ -49,7 +49,7 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
             //   • repo-root SKILL.md      → single skill `<name>`
             //   • skills/<sub>/SKILL.md   → collection (addyosmani, ponytail, …)
             // Fall back to README-as-skill synthesis when neither layout matches.
-            let tmp = env.home.join(".cache/8sync/skill-clone").join(&name);
+            let tmp = env.home.join(".cache/ckit/skill-clone").join(&name);
             let _ = std::fs::remove_dir_all(&tmp);
             if let Some(p) = tmp.parent() { std::fs::create_dir_all(p)?; }
             let mut found: Vec<(String, PathBuf)> = Vec::new();

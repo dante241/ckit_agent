@@ -39,7 +39,7 @@ use crate::{assets, env_detect, pkg, platform, ui, verbs::profile};
 
         UNATTENDED MODE (auto-on with --community / --full / --profile)
           1. Preflight: print OS, display manager, sessions, GPU, tool presence
-          2. Log every step to ~/.cache/8sync/setup-<unix_ts>.log
+          2. Log every step to ~/.cache/ckit/setup-<unix_ts>.log
           3. On any step failure: log + track + CONTINUE (re-run to retry)
           4. Auto-yes (--noconfirm) for every pacman / AUR install
 
@@ -885,7 +885,7 @@ fn profile_sub(rest: Vec<String>, yes_to_all: bool, dry_run: bool) -> Result<()>
 // YOLO mode helpers (auto-on for --full / --community / --profile)
 // ─────────────────────────────────────────────────────────────────
 
-/// Open `~/.cache/8sync/setup-<unix_ts>.log` and wire `ui::*` to tee into it.
+/// Open `~/.cache/ckit/setup-<unix_ts>.log` and wire `ui::*` to tee into it.
 /// Idempotent across runs (timestamped filename).
 fn init_yolo_log() -> Result<PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("no HOME"))?;
@@ -893,7 +893,7 @@ fn init_yolo_log() -> Result<PathBuf> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let path = home.join(format!(".cache/8sync/setup-{}.log", ts));
+    let path = home.join(format!(".cache/ckit/setup-{}.log", ts));
     let final_path = ui::set_log_file(path)?;
     ui::ok(&format!("logging to {}", final_path.display()));
     Ok(final_path)

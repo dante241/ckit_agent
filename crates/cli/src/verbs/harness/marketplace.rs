@@ -9,7 +9,7 @@
 //!
 //! HTTP goes through `curl` shell-out (project rule: no `reqwest`, keep the
 //! binary small). Results are normalized to one `Entry` shape and cached under
-//! `.cache/8sync/marketplace/*.json` with a 1h TTL (the MCP registry maintainers
+//! `.cache/ckit/marketplace/*.json` with a 1h TTL (the MCP registry maintainers
 //! explicitly ask aggregators to poll infrequently + persist locally).
 
 use std::path::{Path, PathBuf};
@@ -97,7 +97,7 @@ fn curl_json(url: &str) -> Result<serde_json::Value, String> {
 // ── caching ──────────────────────────────────────────────────────────────
 
 fn cache_dir(root: &Path) -> PathBuf {
-    root.join(".cache/8sync/marketplace")
+    root.join(".cache/ckit/marketplace")
 }
 
 /// Read a cache file if younger than `ttl_secs`.

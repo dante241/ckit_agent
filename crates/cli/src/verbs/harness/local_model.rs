@@ -169,7 +169,7 @@ fn resolve_source(env: &env_detect::Env, src: &Source, name: &str) -> Result<Str
             Ok(p.display().to_string())
         }
         Source::Url(u) => {
-            let dir = env.home.join(".cache/8sync/models");
+            let dir = env.home.join(".cache/ckit/models");
             std::fs::create_dir_all(&dir)?;
             let dest = dir.join(format!("{name}.gguf"));
             if !dest.exists() {

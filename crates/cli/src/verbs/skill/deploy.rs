@@ -1034,7 +1034,7 @@ pub(crate) fn ensure_engine(home: &Path, root: Option<&Path>) -> Result<()> {
 /// `8sync-` filenames (the new ones deploy under `<NS>-`, so a leftover
 /// `8sync-engine.ts` would make omp load the engine tools twice). AGENTS.md
 /// sentinels self-heal via `skill::inject`'s legacy-aware block finder, and the
-/// `.cache/` namespace is intentionally left literal (see `brand.rs`). No-op on
+/// `~/.cache/8sync` cache dir is renamed to `~/.cache/ckit` (see `brand.rs`). No-op on
 /// the default build and idempotent once migrated. Best-effort: never bails.
 pub(crate) fn migrate_namespace(home: &Path) {
     if crate::brand::NS == "8sync" {
@@ -1072,6 +1072,11 @@ pub(crate) fn migrate_namespace(home: &Path) {
             let _ = std::fs::remove_file(unit_dir.join("8sync-harness-up.timer"));
         }
     }
+    // Cache namespace: ~/.cache/8sync → ~/.cache/ckit (whole-dir rename — the
+    // cache holds subdirs like models/ and locate-anything/ with expensive GGUF
+    // downloads, so the file-level merge helper won't move them). Guarded to run
+    // only when the new dir is absent, so a fresh cache is never clobbered.
+    rename_if_new_absent(&home.join(".cache/8sync"), &home.join(".cache/ckit"));
     // 2. Stale global deployed artifacts under the old `8sync-` names.
     for stale in [
         home.join(".omp/hooks/pre/8sync-recall.ts"),

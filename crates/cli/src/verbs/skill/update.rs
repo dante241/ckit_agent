@@ -66,7 +66,7 @@ pub(crate) fn update_skills(
         // registering only `alpha-research` out of a 20-skill repo must not
         // also install the other 19 unrequested ones).
         let explicit_collection_filter = filter.is_some_and(|f| f == *url || f == url_seg);
-        let tmp = env.home.join(".cache/8sync/skill-clone").join(sanitize(url));
+        let tmp = env.home.join(".cache/ckit/skill-clone").join(sanitize(url));
         let _ = std::fs::remove_dir_all(&tmp);
         if let Some(p) = tmp.parent() {
             let _ = std::fs::create_dir_all(p);

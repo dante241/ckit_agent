@@ -49,7 +49,7 @@ pub struct Args {
 pub fn run(a: Args) -> Result<()> {
     let base = dirs::home_dir()
         .context("no HOME")?
-        .join(".cache/8sync/locate-anything");
+        .join(".cache/ckit/locate-anything");
 
     if a.setup {
         setup(&base)?;

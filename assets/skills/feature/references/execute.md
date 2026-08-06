@@ -6,7 +6,7 @@ Execute phase hiện tại theo PLAN.
 
 ## Nguyên lý: feed engine có sẵn — KHÔNG dựng engine mới
 
-**Feature layer KHÔNG tự viết vòng lặp thực thi/swarm.** Nó FEED chính `engine_*` mà `/auto` lái (durable state ở `.cache/8sync/engine/state.json`, verify-gate + doom-loop guard + worktree đã enforce trong CODE). Feature layer chỉ sở hữu phần ENGINE KHÔNG quản: hợp đồng ROADMAP nhiều phase + AC + bookkeeping STATE/PLAN. Đọc `assets/commands/auto.md` (`/auto`) để lấy đúng kỷ luật engine-loop + guardrail cần mirror.
+**Feature layer KHÔNG tự viết vòng lặp thực thi/swarm.** Nó FEED chính `engine_*` mà `/auto` lái (durable state ở `.cache/ckit/engine/state.json`, verify-gate + doom-loop guard + worktree đã enforce trong CODE). Feature layer chỉ sở hữu phần ENGINE KHÔNG quản: hợp đồng ROADMAP nhiều phase + AC + bookkeeping STATE/PLAN. Đọc `assets/commands/auto.md` (`/auto`) để lấy đúng kỷ luật engine-loop + guardrail cần mirror.
 
 ## Trước khi code
 

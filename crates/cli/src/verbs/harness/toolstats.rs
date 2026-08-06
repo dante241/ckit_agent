@@ -5,7 +5,7 @@
 //! *actually* called — so you can see whether the token-optimization stack (STEP 0)
 //! is being used, and catch failing tool calls (e.g. a dead MCP server).
 //!
-//! DB: `<repo>/.cache/8sync/toolstats.db` (gitignored). Idempotent: re-ingest
+//! DB: `<repo>/.cache/ckit/toolstats.db` (gitignored). Idempotent: re-ingest
 //! is keyed on (session, seq), so re-running only adds new calls.
 
 use anyhow::{Context, Result};
@@ -22,7 +22,7 @@ pub(crate) fn harness_toolstats(env: &env_detect::Env) -> Result<()> {
     let slug = session_slug(&env.home, &root);
     let sess_dir = env.home.join(format!(".omp/agent/sessions/{}", slug));
 
-    let db_path = root.join(".cache/8sync/toolstats.db");
+    let db_path = root.join(".cache/ckit/toolstats.db");
     if let Some(p) = db_path.parent() {
         std::fs::create_dir_all(p)?;
     }

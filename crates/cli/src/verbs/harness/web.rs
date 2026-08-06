@@ -264,7 +264,7 @@ async fn api_engines(State(ctx): State<Arc<Ctx>>) -> Json<serde_json::Value> {
 }
 
 /// Live `/auto` engine run — the REAL gsd-pi state machine the engine drives at
-/// `<root>/.cache/8sync/engine/state.json` (NOT demo data). Read-only mirror of
+/// `<root>/.cache/ckit/engine/state.json` (NOT demo data). Read-only mirror of
 /// the terminal board: goal · progress · slice/task tree · current task. Returns
 /// `{active:false}` when no run exists. The engine (driven by `/auto` in omp) is
 /// the source of truth; the dashboard displays it, never bypasses its verify gate.
@@ -273,7 +273,7 @@ async fn api_engine(State(_ctx): State<Arc<Ctx>>) -> Json<serde_json::Value> {
         Some(r) => r,
         None => return Json(serde_json::json!({ "active": false })),
     };
-    let raw = match std::fs::read_to_string(root.join(".cache/8sync/engine/state.json")) {
+    let raw = match std::fs::read_to_string(root.join(".cache/ckit/engine/state.json")) {
         Ok(s) => s,
         Err(_) => return Json(serde_json::json!({ "active": false })),
     };

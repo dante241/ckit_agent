@@ -259,7 +259,7 @@ fn print_help() {
 
     println!("\nFILE TAXONOMY (portability — survives a move to a new machine)");
     println!("  COMMIT : AGENTS.md · CLAUDE.md · agents/*.md · CHANGELOG.md · .omp/skills/ (if explicitly added)   (learned/decided)");
-    println!("{}", crate::brand::render("  IGNORE : .codegraph/ · .cache/8sync/                                           (derived → rebuilt by init)"));
+    println!("{}", crate::brand::render("  IGNORE : .codegraph/ · .cache/ckit/                                           (derived → rebuilt by init)"));
     println!("  SECRET : .env · .env.* (keep .env.example)                                     (NEVER commit)");
     println!("{}", crate::brand::render("  → init seeds these into a managed .gitignore block; `8sync doctor` warns if memory is ignored."));
 
