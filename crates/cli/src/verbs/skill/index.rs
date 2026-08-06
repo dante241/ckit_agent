@@ -107,7 +107,7 @@ fn subfolder_index_block(root: &Path) -> String {
 Bạn đang ở **sub-folder**. Rule + skill force-load đầy đủ KHÔNG lặp ở đây — đọc ROOT trước:\n\
 \n\
 - **Root rules + skill list:** `{root}`\n\
-- **Master skills (omp đọc đầu tiên):** `~/.omp/skills/00-force-load.md`\n\
+- **Rules always-on:** `~/.omp/agent/APPEND_SYSTEM.md` (omp nhúng vào MỌI system prompt)\n\
 \n\
 **Always-on (đọc trước tool call đầu tiên, ĐÚNG thứ tự):** {chain}.\n\
 SKILL.md ở `<root>/.omp/skills/<name>/` hoặc `~/.omp/skills/<name>/`.\n\

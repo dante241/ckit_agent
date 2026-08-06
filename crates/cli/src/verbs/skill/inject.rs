@@ -215,48 +215,25 @@ pub(crate) fn build_force_load(home: &Path, root: &Path) -> ForceLoadStats {
 
     let block = format!(
         "{BEGIN}\n\
-## 🚨 STEP 0 — CODE INTELLIGENCE FIRST (codegraph + codebase-memory-mcp; bắt buộc)\n\
+## 🚨 Rules always-on → `~/.omp/agent/APPEND_SYSTEM.md`\n\
 \n\
-Mọi câu hỏi về code → dùng code-intelligence engine TRƯỚC grep/read (tiết kiệm ~99% token). Bạn (AI) **PHẢI**:\n\
+Code-intel-first (codegraph · codebase-memory-mcp · serena TRƯỚC grep/read) · headroom cho output dài · memory + `agents/STATE.md` · loop C/D/E · doc-hygiene — **định nghĩa đầy đủ, KHÔNG lặp ở đây**: omp nhúng `~/.omp/agent/APPEND_SYSTEM.md` vào MỌI system prompt (không compact). Đọc file đó là luật bất biến.\n\
 \n\
-1. **codegraph** (local index): `codegraph index .` 1 lần/session; rồi `codegraph query/explore/node/callers/callees/impact` thay cho `grep`/`rg`/`fd`/`Grep`/`Glob` và `Read` toàn file.\n\
-2. **codebase-memory-mcp** (MCP, LUÔN có trong tool list — gọi đúng tên đăng ký): `mcp__codebase_memory_mcp_search_graph`, `_trace_path`, `_get_architecture`, `_get_code_snippet` — knowledge graph 158 ngôn ngữ, query sub-ms. Full catalog visible (`query_graph`, `detect_changes`, …); server khác/mới thêm → 1 lệnh `search_tool_bm25`.\n\
-3. Tìm/hiểu/định vị code · impact · route→handler · dead code · architecture → ƯU TIÊN 2 engine trên. Chỉ `Read` raw file khi sắp SỬA nó (read-before-edit). Serena LUÔN có trong tool list: `mcp__serena_find_symbol` / `mcp__serena_find_referencing_symbols` / `mcp__serena_get_symbols_overview`.\n\
-4. **Nén những gì BẠN phát lại:** báo cáo / subagent prompt / nội dung dài sắp re-emit → `mcp__headroom_compress` (60–95% ít token). omp tự spill output quá dài ra artifact — KHÔNG paste lại blob đã spill vào context.\n\
+{codegraph_install_hint}## 🧩 Skills — CORE đọc ngay · SPECIALIST + on-demand đọc khi task khớp\n\
 \n\
-Lý do: 5 query cấu trúc ≈ 3.4k token vs ≈ 412k token grep từng file (−99%). Dump cả file / grep mù = đốt token = bug.\n\
+Mỗi skill = 1 directory (Agent Skills open standard) có `SKILL.md` (frontmatter `name`+`description`). Project-local: `.omp/skills/<name>/`; global: `~/.omp/skills/<name>/`. Mỗi skill liệt kê 1 lần.\n\
 \n\
-{codegraph_install_hint}\
-## 🚨 STEP 1 — skills 2 tầng: CORE (đọc ngay) · SPECIALIST + on-demand (đọc khi cần)\n\
-\n\
-Mỗi skill = 1 directory (Agent Skills open standard): `SKILL.md` có frontmatter `name`+`description`. Project-local skill nằm ở `.omp/skills/<name>/`; global skill nằm ở `~/.omp/skills/<name>/`. Mỗi skill liệt kê 1 lần.\n\
-\n\
-### ⛔ CORE always-on — ĐỌC NGAY (body), trước tool call đầu tiên (không skip)\n\
-\n\
-Nhỏ + dùng cho MỌI task. **Thứ tự = ưu tiên (đọc top-down).** Mở `SKILL.md` ở path dưới rồi mới gọi tool đầu tiên:\n\
+### ⛔ CORE always-on — mở `SKILL.md` NGAY, trước tool call đầu tiên (thứ tự = ưu tiên, đọc top-down)\n\
 \n\
 {core_lines}\n\
-### 🧩 SPECIALIST always-on — biết khả năng, đọc body KHI task khớp (progressive disclosure)\n\
+### 🧩 SPECIALIST always-on — biết khả năng, đọc body KHI task khớp\n\
 \n\
-KHÔNG đọc body mỗi phiên (giữ prefix gọn, tiết kiệm KV-cache). Khi task khớp → mở `SKILL.md` tương ứng NGAY. **`impeccable` = design system CHUẨN, BẮT BUỘC mở body ngay khi có việc UI/design/redesign/audit** (kèm `references/house/*`); `assp` cho copy/offer; `taste` chống slop; `image-routing` khi xử lý ảnh/diff/PDF.\n\
+`impeccable` BẮT BUỘC mở body ngay khi có việc UI/design/redesign/audit (kèm `references/house/*`); `assp` copy/offer; `taste` chống slop; `image-routing` ảnh/diff/PDF.\n\
 \n\
 {specialist_lines}\n\
-### 🔎 On-demand — tên = trigger; mở `SKILL.md` của skill khi task khớp (mô tả ở frontmatter, KHÔNG nhồi ở đây)\n\
+### 🔎 On-demand — tên = trigger; mở `SKILL.md` khi description khớp task\n\
 \n\
-{ondemand_lines}\n\
-### Quy tắc bất biến\n\
-\n\
-- **Code-intelligence FIRST** (codegraph + codebase-memory-mcp) cho mọi câu hỏi explore code (Step 0). Bypass = bug.\n\
-- **Output > ~50 dòng → BẮT BUỘC `headroom_compress`** trước khi vào context — không dump thô.\n\
-- Đọc body **CORE** (codegraph → karpathy → ponytail → 8sync-cli) TRƯỚC tool call đầu tiên. **SPECIALIST** (assp · impeccable · taste · image-routing) đọc body KHI task khớp — `impeccable` bắt buộc ngay khi có việc UI/design.\n\
-- Skill **on-demand**: chỉ mở khi description khớp task hiện tại — đừng đọc thừa.\n\
-- Nếu skill có `scripts/` → ưu tiên invoke script đó thay vì viết lại logic.\n\
-- Khi áp dụng skill, **cite** rõ: ví dụ `.omp/skills/<name>/SKILL.md:line` hoặc `~/.omp/skills/<name>/SKILL.md:line`.\n\
-- **Sau mỗi thay đổi:** Ghi học được vào `agents/KNOWLEDGE.md`.\n\
-- **Doc-hygiene**: chạy `8sync harness audit` khi đụng vùng có docs — path lệch→fix, doc rác/superseded→xóa (thêm doc phải kèm xóa cái cũ), oversized→trim.\n\
-- **Loop / STATE spine**: đọc `agents/STATE.md` đầu phiên; rewrite ở mỗi phase-boundary (Goal·Checklist·Current·Next). Context gần đầy → handoff vào STATE + bài học vào KNOWLEDGE rồi reinit. Đo loop: `8sync harness bench`.\n\
-- **Loop discipline (C/D/E)**: implementer↔verifier qua `task` (verifier chạy build/test ĐỘC LẬP, verify-gate TRƯỚC commit); FAIL → ghi `failure:` vào KNOWLEDGE, đọc đầu phiên để khỏi lặp; quy trình `validated:` → distill vào `agents/PLAYBOOKS.md` (index theo `When:`); autonomy L1 report · L2 assisted · L3 unattended — không tự `push`/PR ở L3 mặc định.\n\
-{END}"
+{ondemand_lines}{END}"
     );
 
     let block = crate::brand::render(&block).into_owned();

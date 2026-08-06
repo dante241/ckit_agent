@@ -12,7 +12,7 @@ use super::external::install_external_skill_packs;
 use super::memory::{seed_gitleaks_hook, seed_harness_memory};
 use crate::verbs::skill::pack::{discover_packs, install_pack, is_pack_installed};
 use crate::verbs::skill::{deploy, discover, inject_agents_md, inject_subfolder_indexes, update};
-use crate::{assets, env_detect, ui};
+use crate::{env_detect, ui};
 
 /// Lightweight stepped progress indicator (no TUI dep): `▸ [i/N] label`.
 struct Progress {
@@ -42,17 +42,8 @@ pub(crate) fn harness_init(env: &env_detect::Env, _force: bool) -> Result<()> {
     ui::header("8sync harness init");
     deploy::migrate_namespace(&env.home);
     let in_project = discover::detect_current_project_root().is_some();
-    let total = if in_project { 9 } else { 4 };
+    let total = if in_project { 8 } else { 3 };
     let mut p = Progress::new(total);
-
-    // 1. Master force-load file (omp reads this first every session).
-    p.step("master skill list → ~/.omp/skills/00-force-load.md");
-    let target = env.home.join(".omp/skills/00-force-load.md");
-    std::fs::create_dir_all(target.parent().unwrap())?;
-    let content = assets::read("skills/00-force-load.md")
-        .map(|c| crate::brand::render(&c).into_owned())
-        .unwrap_or_default();
-    std::fs::write(&target, content)?;
 
     // 2. Deploy bundled skills (embedded assets → ~/.omp/skills).
     p.step("deploy bundled skills (codegraph · karpathy · ponytail · assp · impeccable · taste · …)");

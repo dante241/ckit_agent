@@ -27,12 +27,12 @@ pub(crate) fn list_skills(env: &env_detect::Env, toml_path: &Path) -> Result<()>
     println!("\n[global installed skills] {}", omp_skills.display());
     print_skill_list(&omp_skills);
 
-    let force_load = omp_skills.join("00-force-load.md");
-    println!("\n[rules: force-load] {}", force_load.display());
-    if force_load.exists() {
-        println!("  status: present (global auto-inject entrypoint)");
+    let append_sys = env.home.join(".omp/agent/APPEND_SYSTEM.md");
+    println!("\n[rules: APPEND_SYSTEM] {}", append_sys.display());
+    if append_sys.exists() {
+        println!("  status: present (appended to every omp system prompt)");
     } else {
-        println!("{}", crate::brand::render("  status: missing (run `8sync harness init`)"));
+        println!("{}", crate::brand::render("  status: missing (run `8sync harness`)"));
     }
 
     if let Some(root) = detect_current_project_root() {
@@ -48,7 +48,7 @@ pub(crate) fn list_skills(env: &env_detect::Env, toml_path: &Path) -> Result<()>
     }
 
     println!("\n[injection model]");
-    println!("  global : ~/.omp/skills/00-force-load.md loads on every omp session");
+    println!("  global : ~/.omp/agent/APPEND_SYSTEM.md appended to every omp system prompt");
     println!("{}", crate::brand::render("  local  : <repo>/AGENTS.md has a `<!-- 8sync:skills:* -->` block listing local skills"));
     println!("  spec   : Agent Skills open standard — each skill dir has `SKILL.md` with YAML frontmatter");
 
@@ -106,11 +106,11 @@ pub(crate) fn print_help(env: &env_detect::Env, toml_path: &Path) -> Result<()> 
     println!("     and (if inside a project) <root>/.omp/skills/<name>/    (local)");
     println!("{}", crate::brand::render("  2) <root>/AGENTS.md is rewritten between `<!-- 8sync:skills:* -->` sentinels"));
     println!("     to list every global + local skill with its frontmatter description.");
-    println!("  3) omp reads ~/.omp/skills/00-force-load.md + AGENTS.md every session.");
+    println!("  3) omp appends ~/.omp/agent/APPEND_SYSTEM.md to every system prompt + reads AGENTS.md each session.");
 
     println!("\nPATHS");
     println!("  global skills dir : {}", env.home.join(".omp/skills").display());
-    println!("  global rules file : {}", env.home.join(".omp/skills/00-force-load.md").display());
+    println!("  global rules file : {}", env.home.join(".omp/agent/APPEND_SYSTEM.md").display());
     println!("  config registry   : {}", toml_path.display());
 
     if let Some(root) = detect_current_project_root() {

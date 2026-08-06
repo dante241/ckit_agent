@@ -6,7 +6,7 @@
 //! own cgroup so a heavy re-index can't OOM the machine). Per tick the harness
 //! refreshes context (re-inject + re-index + consolidate); the agent then drives
 //! the L1→L3 loop off STATE.md (read STATE → Next → verify-gate → update spine →
-//! `--commit`), per the loop-engineering rules in 00-force-load.md.
+//! `--commit`), per the loop-engineering rules in `~/.omp/agent/APPEND_SYSTEM.md`.
 use std::process::Command;
 use std::path::Path;
 use std::time::Duration;

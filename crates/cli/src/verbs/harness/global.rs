@@ -1,7 +1,7 @@
 //! `8sync harness global` — ONE key that applies the omp operating rules
 //! MACHINE-WIDE, so every project that runs omp gets them (no per-project run
 //! needed for the rule layer):
-//!   ~/.omp/skills + 00-force-load.md        → skill library, read every session
+//!   ~/.omp/skills                          → skill library (one dir per skill, read every session)
 //!   ~/.omp/agent/APPEND_SYSTEM.md           → appended to EVERY omp system prompt
 //!   MCP servers (codegraph · cbm · headroom · serena) + recall hook + capabilities
 //! plus the Anthropic token-optimizer defaults:
@@ -19,7 +19,7 @@ use super::compaction;
 use super::external::install_external_skill_packs;
 use super::memory::{seed_gitleaks_hook, seed_harness_memory};
 use crate::verbs::skill::{deploy, discover, inject_agents_md, update};
-use crate::{assets, env_detect, ui};
+use crate::{env_detect, ui};
 
 /// The global (machine-wide) layer, shared by bare `8sync harness` and
 /// `8sync harness global`: master force-load + bundled skills + codegraph binary
@@ -27,13 +27,6 @@ use crate::{assets, env_detect, ui};
 /// capabilities snapshot + external packs + layout normalization. Idempotent.
 pub(crate) fn global_pass(env: &env_detect::Env) -> Result<()> {
     deploy::migrate_namespace(&env.home);
-    let force_load = env.home.join(".omp/skills/00-force-load.md");
-    if let Some(p) = force_load.parent() {
-        std::fs::create_dir_all(p)?;
-    }
-    if let Some(c) = assets::read("skills/00-force-load.md") {
-        std::fs::write(&force_load, crate::brand::render(&c).as_ref())?;
-    }
     deploy::install_bundled_global(env)?;
     deploy::ensure_codegraph(env)?;
     deploy::ensure_codegraph_mcp(env)?;
@@ -121,7 +114,7 @@ pub(crate) fn harness_global(
     // 5. Summary — what now applies to every omp session on this machine.
     ui::ok("omp rules are now GLOBAL — every omp session in every project gets:");
     ui::info("  • ~/.omp/agent/APPEND_SYSTEM.md appended to EVERY system prompt (code-intel-first, never compacted)");
-    ui::info("  • skills @ ~/.omp/skills + 00-force-load.md · MCP: codegraph · codebase-memory · headroom · serena");
+    ui::info("  • skills @ ~/.omp/skills · MCP: codegraph · codebase-memory · headroom · serena");
     ui::info("  • STEP-0 MCP tools always in the tool set (omp ≥17: xd:// devices via tools.xdev) — codegraph/serena/cbm/headroom callable");
     ui::info("  • token optimizer: headroom compress >50-line outputs · compaction 50% · stable prefix → Anthropic prompt-cache hits");
     if sweep.is_none() {

@@ -54,7 +54,6 @@ pub fn run() -> Result<()> {
     for path in [
         crate::brand::config_dir(&env.home).join("global.toml"),
         crate::brand::config_dir(&env.home).join("skills.toml"),
-        env.home.join(".omp/skills/00-force-load.md"),
     ] {
         if path.exists() {
             ui::ok(&format!("{}", path.display()));

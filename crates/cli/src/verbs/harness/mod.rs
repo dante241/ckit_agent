@@ -266,7 +266,7 @@ fn print_help() {
     println!("\nOVERWRITE POLICY (default = NEVER overwrite — only add what's missing)");
     println!("  user-owned : agents/*.md · CHANGELOG.md · .omp/skills/ (if present) · AGENTS.md outside sentinels · hooks · your config keys");
     println!("               → seed-if-missing or sentinel-block updates ONLY; your edits are never clobbered");
-    println!("  managed    : ~/.omp/skills (global, bundled) · 00-force-load.md · APPEND_SYSTEM.md · extensions/commands");
+    println!("  managed    : ~/.omp/skills (global, bundled) · APPEND_SYSTEM.md · extensions/commands");
     println!("{}", crate::brand::render("               → 8sync-shipped copies, refreshed when the binary updates (edit the PROJECT copy, not these)"));
     println!("  overwrite  : skills are never auto-vendored into the project — `--force` is a no-op reserved flag; use `skill add --force` to overwrite an explicitly-added project-local skill");
 

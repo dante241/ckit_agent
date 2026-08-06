@@ -5,6 +5,22 @@ versioning theo [SemVer](https://semver.org). **8sync rule:** mỗi PR cập nh�
 
 ## [Unreleased]
 
+### Changed — de-duplicate the always-on rulebook (one source of truth)
+- The code-intel-first / STEP-0 rulebook was restated in 3 always-on places
+  (`APPEND_SYSTEM.md`, the injected AGENTS.md block, and `00-force-load.md`),
+  burning ~8k tokens/turn of duplicated system-prompt text without changing
+  agent behavior. Now `~/.omp/agent/APPEND_SYSTEM.md` is the **single** always-on
+  rule source (loop C/D/E · doc-hygiene · skill discipline migrated into it); the
+  AGENTS.md sentinel block is slimmed to a **pointer + the project skill index**
+  (force-load prefix ~659 tok, down from the full rulebook).
+
+### Removed — dead `00-force-load.md`
+- omp 17 never loaded `~/.omp/skills/00-force-load.md` (not a skill dir with
+  `SKILL.md`, and the recall hook lists only directories) — it was written by 3
+  code paths and read by none. Dropped the emitters (`harness init`/`global`/
+  `setup`), the `doctor` check, the bundled asset, and every help/status line that
+  named it; all now point at `APPEND_SYSTEM.md`.
+
 ## [0.1.6] — 2026-08-04
 
 ### Fixed — `ckit setup` no longer loses `models.yml` when codegraph fails (Windows)
