@@ -12,18 +12,6 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
-### Changed — `cargo build` no longer auto-runs the web-FE build script
-- `build.rs` used to shell out to bun/pnpm/npm (`install` + `run build`) to
-  rebuild the `ckit harness web` dashboard on every `cargo build` where
-  `web/src` changed. That auto-ran package lifecycle scripts and touched your
-  npm/registry auth on an ordinary build. Removed: a plain `cargo build` now
-  never spawns a package manager. `build.rs` only embeds the git commit and
-  drops in a fallback dashboard page when `web/dist` is absent.
-- Build the dashboard explicitly when you want a fresh bundle:
-  `pnpm -C web install && pnpm -C web build`. Release CI now does this in a
-  dedicated "Build web dashboard" step so published binaries still ship the
-  real dashboard.
-
 ## [0.1.8] - 2026-08-06
 
 ### Added — `gw-quota` omp extension bundled

@@ -60,19 +60,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Build the `ckit harness web` dashboard explicitly (build.rs no longer
-      # auto-runs bun/pnpm/npm). rust-embed picks up web/dist at compile time.
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Build web dashboard
-        shell: bash
-        run: |
-          npm install -g pnpm
-          pnpm -C web install --frozen-lockfile
-          pnpm -C web build
-
       - name: Install musl toolchain
         if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
         run: |
