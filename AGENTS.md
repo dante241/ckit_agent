@@ -121,8 +121,8 @@ su-code/
 ### Vibe loop (daily, dùng liên tục)
 | Verb | Mô tả |
 |---|---|
-| `8sync .` [name] | Seed agents/* + **resume** phiên omp gần nhất (`omp --continue`). Kèm `name` → resume named bucket |
-| `8sync new` [name] | Seed agents/* + chạy **phiên MỚI** (`omp` không `--continue`). Kèm `name` → bucket riêng (`--session-dir ~/.omp/agent/named/<name>`), resume lại bằng `8sync . <name>` |
+| `8sync .` [name] | Seed agents/* + **resume** phiên omp gần nhất (`omp --continue`). Kèm `name` → mở lại đúng phiên đã lưu (`omp --resume <file>`); tên lạ → cảnh báo + `--continue` |
+| `8sync new` [name] | Seed agents/* + chạy **phiên MỚI** (`omp` không `--continue`) trong **default session dir** → cũng hiện trong `/resume` của omp. Kèm `name` → ckit nhớ file phiên (`~/.cache/ckit/named-sessions.json`), mở lại bằng `8sync . <name>`. omp không có flag đặt title → `name` chỉ là nhãn phía ckit |
 | `8sync ai [prompt]` | AI session (resume hoặc one-shot, wrap omp) |
 | `8sync find <kw>` | rg/fd + fzf preview → mở bằng `$EDITOR` (fallback hx/helix/vi) tại `file:line` |
 | `8sync note "msg" [-t tag]` | Append `su-code/NOTES.md` |

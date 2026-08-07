@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::collections::HashSet;
 
 use crate::{env_detect, ui, verbs::skill};
 
@@ -10,19 +11,19 @@ use crate::{env_detect, ui, verbs::skill};
     after_help = indoc::indoc! {"
         EXAMPLES
           8sync .                       seed agents/* context and resume the last omp session (omp --continue)
-          8sync . work                  resume the named session bucket 'work' (created by `8sync new work`)
+          8sync . work                  reopen the session you named with `8sync new work`
 
         BEHAVIOR
           · Walks up from cwd to find the project root (.git / Cargo.toml / package.json / pyproject.toml / go.mod / deno.json).
           · Detects stack (rust/node/python/nextjs/tauri/react-native/go) and seeds AGENTS.md + agents/{PROJECT,KNOWLEDGE,DECISIONS,PREFERENCES,STATE,NOTES}.md when missing.
           · Re-injects the dynamic skills block in AGENTS.md so omp sees an up-to-date skill list.
-          · Execs `omp --continue` in the project root (resumes the latest session). Pass a NAME to resume that named bucket instead.
+          · Execs `omp --continue` in the project root (resumes the latest session). Pass a NAME to reopen that named session (omp --resume <its file>).
           · To start FRESH instead of resuming, use `8sync new` (optionally `8sync new <name>`).
           · If omp is missing, drops into the user shell instead (run `8sync setup` to fix).
     "}
 )]
 pub struct Args {
-    /// Optional session name — resume the named bucket created by `new <name>` (default: the unnamed session).
+    /// Optional session name — reopen the session you saved with `new <name>` (default: the latest session).
     pub name: Option<String>,
 }
 
@@ -31,18 +32,18 @@ pub struct Args {
     after_help = indoc::indoc! {"
         EXAMPLES
           8sync new                     seed agents/* context and start a FRESH omp session (does NOT resume)
-          8sync new fix-auth            start a fresh, named session bucket 'fix-auth' — return to it later with `8sync . fix-auth`
+          8sync new fix-auth            start a fresh session and remember it as 'fix-auth' — reopen later with `8sync . fix-auth`
 
         BEHAVIOR
           · Same seeding as `8sync .` (project root detection, AGENTS.md + agents/* memory, skills block).
           · Execs `omp` WITHOUT --continue, so a brand-new session starts instead of resuming the last one.
-          · With a NAME, the session lives in its own isolated bucket (omp --session-dir ~/.omp/agent/named/<name>),
-            so it never collides with the default session and can be resumed via `8sync . <name>`.
-          · omp has no custom-title flag; it auto-generates the session title. The NAME is the CLI bucket you reopen by.
+          · With a NAME, ckit remembers which session file omp created (in ~/.cache/ckit/named-sessions.json) so `8sync . <name>` reopens exactly it.
+          · Sessions always live in omp's DEFAULT session dir, so they also appear in omp's `/resume` picker (listed by omp's auto-title).
+          · omp has no custom-title flag; the NAME is a ckit-side label to reopen by, not the title shown inside omp.
     "}
 )]
 pub struct NewArgs {
-    /// Optional session name — an isolated, resumable bucket (reopen with `. <name>`).
+    /// Optional session name — remembered so `. <name>` reopens this exact session later.
     pub name: Option<String>,
 }
 
@@ -56,10 +57,11 @@ pub fn run_new(a: NewArgs) -> Result<()> {
     enter(true, a.name.as_deref())
 }
 
-/// Shared body for `8sync .` (resume) and `8sync new` (fresh): detect the
-/// project root, seed context, then exec omp. `fresh` drops `--continue` so a
-/// new session starts; `name`, when set, isolates the session in its own
-/// `--session-dir` bucket (resumable by the same name).
+/// Shared body for `8sync .` (resume) and `8sync new` (fresh). Always uses omp's
+/// DEFAULT session dir so every session — including `8sync new` — shows up in
+/// omp's own `/resume` picker. `fresh` drops `--continue`; `name` is a ckit-side
+/// label: a fresh named launch records which session file omp created, and
+/// `8sync . <name>` reopens exactly that one (`omp --resume <path>`).
 fn enter(fresh: bool, name: Option<&str>) -> Result<()> {
     let env = env_detect::Env::detect()?;
     let cwd = std::env::current_dir().context("no cwd")?;
@@ -75,52 +77,132 @@ fn enter(fresh: bool, name: Option<&str>) -> Result<()> {
 
     seed_project_context(&env, &root, &stack)?;
 
-    if which::which("omp").is_ok() {
-        let cfg = crate::models::ModelConfig::load();
-        let mut cmd = Command::new("omp");
-        cmd.arg("--cwd").arg(&root).args(cfg.resume_flags());
-        if let Some(n) = name {
-            let dir = named_session_dir(&env.home, n);
-            let _ = std::fs::create_dir_all(&dir);
-            cmd.arg("--session-dir").arg(&dir);
-        }
-        if !fresh {
-            cmd.arg("--continue");
-        }
-        ui::ok(&format!("→ exec: {}", session_desc(fresh, name)));
-        let err = cmd.current_dir(&root).status();
-        match err {
-            Ok(s) if s.success() => Ok(()),
-            Ok(s) => Err(anyhow::anyhow!("omp exited with {}", s)),
-            Err(e) => Err(anyhow::anyhow!("could not exec omp: {}", e)),
-        }
-    } else {
+    if which::which("omp").is_err() {
         ui::warn("omp not installed — run `8sync setup` first. Falling back to $SHELL.");
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
         let _ = Command::new(&shell).current_dir(&root).status();
-        Ok(())
+        return Ok(());
     }
-}
 
-/// Human-readable description of the omp launch for the status line.
-fn session_desc(fresh: bool, name: Option<&str>) -> String {
-    match (fresh, name) {
-        (true, Some(n)) => format!("omp (new session '{n}')"),
+    let cfg = crate::models::ModelConfig::load();
+    let sessions_root = env.home.join(".omp/agent/sessions");
+    let mut cmd = Command::new("omp");
+    cmd.arg("--cwd").arg(&root).args(cfg.resume_flags());
+
+    // Snapshot so a fresh NAMED launch can learn which file omp creates.
+    let before = if fresh && name.is_some() { session_files(&sessions_root) } else { Vec::new() };
+
+    let desc = match (fresh, name) {
+        // Reopen a previously-named session by its recorded path.
+        (false, Some(n)) => match lookup_named(&env.home, &root, n) {
+            Some(p) if p.exists() => {
+                cmd.arg("--resume").arg(&p);
+                format!("omp --resume (named '{n}')")
+            }
+            _ => {
+                ui::warn(&format!(
+                    "no named session '{n}' yet — resuming the latest instead (create one with `{} new {n}`)",
+                    crate::brand::CMD
+                ));
+                cmd.arg("--continue");
+                "omp --continue".to_string()
+            }
+        },
+        (false, None) => {
+            cmd.arg("--continue");
+            "omp --continue".to_string()
+        }
+        (true, Some(n)) => format!("omp (new session, will save as '{n}')"),
         (true, None) => "omp (new session)".to_string(),
-        (false, Some(n)) => format!("omp --continue (session '{n}')"),
-        (false, None) => "omp --continue".to_string(),
+    };
+    ui::ok(&format!("→ exec: {desc}"));
+
+    let status = cmd.current_dir(&root).status();
+
+    // Fresh + named: record name → the session file omp just created, so a later
+    // `8sync . <name>` reopens exactly it (and it's already visible in /resume).
+    if fresh {
+        if let Some(n) = name {
+            if let Some(p) = newest_added(&sessions_root, &before) {
+                if record_named(&env.home, &root, n, &p).is_ok() {
+                    ui::ok(&format!("named '{n}' saved — reopen with `{} . {n}`", crate::brand::CMD));
+                }
+            }
+        }
+    }
+
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(anyhow::anyhow!("omp exited with {}", s)),
+        Err(e) => Err(anyhow::anyhow!("could not exec omp: {}", e)),
     }
 }
 
-/// Isolated session-storage bucket for a named session: `~/.omp/agent/named/<slug>`.
-/// Kept under omp's home session area (never the project tree) so session logs
-/// are never at risk of being committed. The slug keeps the dir name filesystem-safe.
-fn named_session_dir(home: &Path, name: &str) -> PathBuf {
-    let slug: String = name
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
-        .collect();
-    home.join(".omp/agent/named").join(slug)
+/// All `*.jsonl` session files under `root` (recursive, best-effort).
+fn session_files(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    collect_jsonl(root, &mut out);
+    out
+}
+
+fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>) {
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                collect_jsonl(&p, out);
+            } else if p.extension().is_some_and(|x| x == "jsonl") {
+                out.push(p);
+            }
+        }
+    }
+}
+
+/// The newest `*.jsonl` under `root` absent from `before` — the session omp
+/// created during this launch. `None` if the user started none.
+fn newest_added(root: &Path, before: &[PathBuf]) -> Option<PathBuf> {
+    let prev: HashSet<&Path> = before.iter().map(|p| p.as_path()).collect();
+    session_files(root)
+        .into_iter()
+        .filter(|p| !prev.contains(p.as_path()))
+        .max_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok())
+}
+
+/// ckit's name→session-path map: `~/.cache/ckit/named-sessions.json` (flat JSON
+/// object keyed by "<project-root>\n<name>"). Lives in the ckit cache, never the
+/// project tree. Best-effort — a missing/corrupt file reads as empty.
+fn named_map_path(home: &Path) -> PathBuf {
+    home.join(".cache/ckit/named-sessions.json")
+}
+
+fn named_key(root: &Path, name: &str) -> String {
+    format!("{}\n{}", root.display(), name)
+}
+
+fn load_named_map(home: &Path) -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read_to_string(named_map_path(home))
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
+}
+
+fn lookup_named(home: &Path, root: &Path, name: &str) -> Option<PathBuf> {
+    load_named_map(home)
+        .get(&named_key(root, name))
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from)
+}
+
+fn record_named(home: &Path, root: &Path, name: &str, path: &Path) -> Result<()> {
+    let mut map = load_named_map(home);
+    map.insert(named_key(root, name), serde_json::Value::String(path.display().to_string()));
+    let p = named_map_path(home);
+    if let Some(parent) = p.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&p, serde_json::to_string_pretty(&serde_json::Value::Object(map))?)?;
+    Ok(())
 }
 
 /// Scaffold a brand-new project directory headlessly (no omp exec): create the
