@@ -9,24 +9,63 @@ use crate::{env_detect, ui, verbs::skill};
 #[command(
     after_help = indoc::indoc! {"
         EXAMPLES
-          8sync .                       seed agents/* context for the current project and run `omp --continue`
+          8sync .                       seed agents/* context and resume the last omp session (omp --continue)
+          8sync . work                  resume the named session bucket 'work' (created by `8sync new work`)
 
         BEHAVIOR
           · Walks up from cwd to find the project root (.git / Cargo.toml / package.json / pyproject.toml / go.mod / deno.json).
           · Detects stack (rust/node/python/nextjs/tauri/react-native/go) and seeds AGENTS.md + agents/{PROJECT,KNOWLEDGE,DECISIONS,PREFERENCES,STATE,NOTES}.md when missing.
-          · Re-injects the dynamic skills block in AGENTS.md so omp sees up-to-date skill list.
-          · Execs `omp --continue` in the project root. Session lifetime is owned by omp (retain/recall/auto-compact); 8sync no longer manages abduco sockets or kitty panes.
+          · Re-injects the dynamic skills block in AGENTS.md so omp sees an up-to-date skill list.
+          · Execs `omp --continue` in the project root (resumes the latest session). Pass a NAME to resume that named bucket instead.
+          · To start FRESH instead of resuming, use `8sync new` (optionally `8sync new <name>`).
           · If omp is missing, drops into the user shell instead (run `8sync setup` to fix).
     "}
 )]
-pub struct Args {}
+pub struct Args {
+    /// Optional session name — resume the named bucket created by `new <name>` (default: the unnamed session).
+    pub name: Option<String>,
+}
 
-pub fn run(_args: Args) -> Result<()> {
+#[derive(ClapArgs, Debug)]
+#[command(
+    after_help = indoc::indoc! {"
+        EXAMPLES
+          8sync new                     seed agents/* context and start a FRESH omp session (does NOT resume)
+          8sync new fix-auth            start a fresh, named session bucket 'fix-auth' — return to it later with `8sync . fix-auth`
+
+        BEHAVIOR
+          · Same seeding as `8sync .` (project root detection, AGENTS.md + agents/* memory, skills block).
+          · Execs `omp` WITHOUT --continue, so a brand-new session starts instead of resuming the last one.
+          · With a NAME, the session lives in its own isolated bucket (omp --session-dir ~/.omp/agent/named/<name>),
+            so it never collides with the default session and can be resumed via `8sync . <name>`.
+          · omp has no custom-title flag; it auto-generates the session title. The NAME is the CLI bucket you reopen by.
+    "}
+)]
+pub struct NewArgs {
+    /// Optional session name — an isolated, resumable bucket (reopen with `. <name>`).
+    pub name: Option<String>,
+}
+
+/// `8sync .` — seed + resume (the latest session, or a named bucket).
+pub fn run(a: Args) -> Result<()> {
+    enter(false, a.name.as_deref())
+}
+
+/// `8sync new` — seed + start a FRESH session (optionally in a named bucket).
+pub fn run_new(a: NewArgs) -> Result<()> {
+    enter(true, a.name.as_deref())
+}
+
+/// Shared body for `8sync .` (resume) and `8sync new` (fresh): detect the
+/// project root, seed context, then exec omp. `fresh` drops `--continue` so a
+/// new session starts; `name`, when set, isolates the session in its own
+/// `--session-dir` bucket (resumable by the same name).
+fn enter(fresh: bool, name: Option<&str>) -> Result<()> {
     let env = env_detect::Env::detect()?;
     let cwd = std::env::current_dir().context("no cwd")?;
     let root = detect_project_root(&cwd).unwrap_or(cwd.clone());
 
-    ui::header("8sync .");
+    ui::header(&format!("{} {}", crate::brand::CMD, if fresh { "new" } else { "." }));
     ui::info(&format!("project: {}", root.display()));
 
     let stack = detect_stack(&root);
@@ -37,9 +76,19 @@ pub fn run(_args: Args) -> Result<()> {
     seed_project_context(&env, &root, &stack)?;
 
     if which::which("omp").is_ok() {
-        ui::ok("→ exec: omp --continue");
         let cfg = crate::models::ModelConfig::load();
-        let err = Command::new("omp").arg("--cwd").arg(&root).args(cfg.resume_flags()).arg("--continue").current_dir(&root).status();
+        let mut cmd = Command::new("omp");
+        cmd.arg("--cwd").arg(&root).args(cfg.resume_flags());
+        if let Some(n) = name {
+            let dir = named_session_dir(&env.home, n);
+            let _ = std::fs::create_dir_all(&dir);
+            cmd.arg("--session-dir").arg(&dir);
+        }
+        if !fresh {
+            cmd.arg("--continue");
+        }
+        ui::ok(&format!("→ exec: {}", session_desc(fresh, name)));
+        let err = cmd.current_dir(&root).status();
         match err {
             Ok(s) if s.success() => Ok(()),
             Ok(s) => Err(anyhow::anyhow!("omp exited with {}", s)),
@@ -51,6 +100,27 @@ pub fn run(_args: Args) -> Result<()> {
         let _ = Command::new(&shell).current_dir(&root).status();
         Ok(())
     }
+}
+
+/// Human-readable description of the omp launch for the status line.
+fn session_desc(fresh: bool, name: Option<&str>) -> String {
+    match (fresh, name) {
+        (true, Some(n)) => format!("omp (new session '{n}')"),
+        (true, None) => "omp (new session)".to_string(),
+        (false, Some(n)) => format!("omp --continue (session '{n}')"),
+        (false, None) => "omp --continue".to_string(),
+    }
+}
+
+/// Isolated session-storage bucket for a named session: `~/.omp/agent/named/<slug>`.
+/// Kept under omp's home session area (never the project tree) so session logs
+/// are never at risk of being committed. The slug keeps the dir name filesystem-safe.
+fn named_session_dir(home: &Path, name: &str) -> PathBuf {
+    let slug: String = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .collect();
+    home.join(".omp/agent/named").join(slug)
 }
 
 /// Scaffold a brand-new project directory headlessly (no omp exec): create the

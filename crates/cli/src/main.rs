@@ -35,6 +35,7 @@ QUICK START
   ckit setup                        install harness, then ask y/N per profile
   ckit setup --community            install harness + dev-stack + bluetooth, no prompts
   ckit .                            seed agents/* context and run `omp --continue`
+  ckit new                          seed context, start a FRESH session (name it: `ckit new <name>`)
   ckit ai \"add dark mode toggle\"    one-shot AI prompt (or resume with `ckit ai`)
   ckit find \"useAuth\"               rg + fzf preview, open at file:line
   ckit ship \"feat: dark mode\"       commit + push + open a GitHub PR
@@ -60,6 +61,10 @@ enum Cmd {
     /// Seed agents/* context for the current project and exec `omp --continue`
     #[command(name = ".", alias = "here")]
     Here(verbs::here::Args),
+
+    /// Seed agents/* context and start a NEW omp session (optionally named); does not resume
+    #[command(name = "new")]
+    New(verbs::here::NewArgs),
 
     /// AI session / one-shot prompt (omp)
     Ai(verbs::ai::Args),
@@ -152,6 +157,7 @@ fn main() -> Result<()> {
         Some(Cmd::Up(a))      => verbs::up::run(a),
         Some(Cmd::Doctor)     => verbs::doctor::run(),
         Some(Cmd::Here(a))    => verbs::here::run(a),
+        Some(Cmd::New(a))     => verbs::here::run_new(a),
         Some(Cmd::Ai(a))      => verbs::ai::run(a),
         Some(Cmd::Bg(a)) => verbs::bg::run(a),
         Some(Cmd::Ship(a))    => verbs::ship::run(a),

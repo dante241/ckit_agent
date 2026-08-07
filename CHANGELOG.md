@@ -12,6 +12,17 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Added — `ckit new` starts a fresh (optionally named) omp session
+- `ckit .` always resumes the last session (`omp --continue`). New verb
+  `ckit new` does the SAME full seeding (project root, AGENTS.md + agents/*
+  memory, skills block) but execs `omp` WITHOUT `--continue`, so a brand-new
+  session starts instead of reopening the old one.
+- Named sessions: `ckit new <name>` isolates the session in its own bucket
+  (`omp --session-dir ~/.omp/agent/named/<name>`), and `ckit . <name>` resumes
+  that named bucket. omp has no custom-title flag (it auto-generates titles), so
+  the name is the CLI bucket you reopen by — kept under the home session area,
+  never the project tree, so session logs can't be committed.
+
 ## [0.1.8] - 2026-08-06
 
 ### Added — `gw-quota` omp extension bundled
