@@ -10,115 +10,23 @@ fn main() {
         .unwrap_or_default();
     println!("cargo:rustc-env=GIT_COMMIT_HASH={}", commit);
 
-    // Rebuild the Vite FE when dist is missing OR web/src changed, so edits can never
-    // silently ship a stale bundle (build.rs previously built only when dist was
-    // absent). rust-embed (assets.rs) then embeds the fresh web/dist.
-    let web_dir = std::path::Path::new("../../web");
-    let web_dist = web_dir.join("dist/index.html");
-    if !web_dist.exists() || web_src_newer(web_dir, &web_dist) {
-        build_web_fe(web_dir);
-    }
-    // Guarantee dist exists so rust-embed compiles; embed a styled, instructive
-    // fallback when no JS toolchain (bun/pnpm/npm) was available to build the FE.
+    // The `ckit harness web` dashboard (Vite FE) is NOT auto-built here: a plain
+    // `cargo build` never shells out to bun/pnpm/npm, so it can't run package
+    // lifecycle scripts or touch your npm/registry auth. Build a fresh bundle
+    // explicitly when you want one — `pnpm -C web install && pnpm -C web build`
+    // (release CI does this in a dedicated step). rust-embed then embeds whatever
+    // web/dist holds, and we drop in an instructive fallback when it was never built.
+    let web_dist = std::path::Path::new("../../web/dist/index.html");
     if !web_dist.exists() {
         if let Some(p) = web_dist.parent() {
             let _ = std::fs::create_dir_all(p);
         }
-        let _ = std::fs::write(&web_dist, FALLBACK_HTML);
-        println!("cargo:warning=ckit: web FE not built (no bun/pnpm/npm found) — embedded fallback page; install bun then rebuild for the full dashboard");
+        let _ = std::fs::write(web_dist, FALLBACK_HTML);
+        println!("cargo:warning=ckit: web/dist not built — embedded fallback page; run `pnpm -C web install && pnpm -C web build` for the full dashboard");
     }
     println!("cargo:rerun-if-changed=../../web/dist/index.html");
-    println!("cargo:rerun-if-changed=../../web/src");
-    println!("cargo:rerun-if-changed=../../web/index.html");
-    println!("cargo:rerun-if-changed=../../web/package.json");
-    println!("cargo:rerun-if-changed=../../web/vite.config.ts");
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/refs/heads/main");
-}
-
-/// Try bun → pnpm → npm to install deps + build the Vite FE. The first toolchain
-/// that produces web/dist/index.html wins; every failure is non-fatal so a plain
-/// `cargo build` still succeeds on machines without a JS toolchain (fallback embeds).
-fn build_web_fe(web_dir: &std::path::Path) {
-    let dist = web_dir.join("dist/index.html");
-    // (binary, install args, build args)
-    let chains: &[(&str, &[&str], &[&str])] = &[
-        ("bun", &["install"], &["run", "build"]),
-        ("pnpm", &["install"], &["run", "build"]),
-        ("npm", &["install", "--no-audit", "--no-fund"], &["run", "build"]),
-    ];
-    for (bin, install, build) in chains {
-        if which_bin(bin).is_none() {
-            continue;
-        }
-        println!("cargo:warning=ckit: building web FE with {bin} …");
-        let installed = std::process::Command::new(bin)
-            .args(*install)
-            .current_dir(web_dir)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if !installed {
-            continue;
-        }
-        let built = std::process::Command::new(bin)
-            .args(*build)
-            .current_dir(web_dir)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if built && dist.exists() {
-            println!("cargo:warning=ckit: web FE built with {bin} → web/dist");
-            return;
-        }
-    }
-}
-
-/// Minimal PATH lookup (no `which` crate in the build script).
-fn which_bin(bin: &str) -> Option<std::path::PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let cand = dir.join(bin);
-        if cand.is_file() {
-            return Some(cand);
-        }
-    }
-    None
-}
-
-/// Newest mtime under a directory tree (recursive), UNIX_EPOCH if unreadable.
-fn newest_in_dir(dir: &std::path::Path) -> std::time::SystemTime {
-    let mut newest = std::time::SystemTime::UNIX_EPOCH;
-    if let Ok(rd) = std::fs::read_dir(dir) {
-        for e in rd.flatten() {
-            let p = e.path();
-            let m = if p.is_dir() { newest_in_dir(&p) } else { file_mtime(&p) };
-            if m > newest {
-                newest = m;
-            }
-        }
-    }
-    newest
-}
-
-fn file_mtime(p: &std::path::Path) -> std::time::SystemTime {
-    std::fs::metadata(p)
-        .and_then(|m| m.modified())
-        .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-}
-
-/// True when any FE source (web/src tree or key config) is newer than the built
-/// dist — so a `cargo build` after editing web/src rebuilds the bundle.
-fn web_src_newer(web_dir: &std::path::Path, dist: &std::path::Path) -> bool {
-    let dist_m = file_mtime(dist);
-    let mut newest = newest_in_dir(&web_dir.join("src"));
-    for f in ["package.json", "vite.config.ts", "index.html", "tsconfig.json"] {
-        let m = file_mtime(&web_dir.join(f));
-        if m > newest {
-            newest = m;
-        }
-    }
-    newest > dist_m
 }
 
 const FALLBACK_HTML: &str = r#"<!doctype html><html lang="en"><head><meta charset="utf-8">
