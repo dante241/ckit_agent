@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-08-07
+
 ### Added — `ckit new` starts a fresh (optionally named) omp session
 - `ckit .` always resumes the last session (`omp --continue`). New verb
   `ckit new` does the SAME full seeding (project root, AGENTS.md + agents/*
