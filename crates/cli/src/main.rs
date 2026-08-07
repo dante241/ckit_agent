@@ -51,7 +51,7 @@ enum Cmd {
     /// Install harness (gh + omp + configs + skills) then prompt per personal profile
     Setup(verbs::setup::Args),
 
-    /// Full update: ckit + omp + system pkgs (pacman/AUR) + rustup + flatpak. See `ckit up -h`.
+    /// Self-update the ckit binary from GitHub Releases (omp + system pkgs are separate). See `ckit up -h`.
     #[command(alias = "update")]
     Up(verbs::up::Args),
 

@@ -12,6 +12,18 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-08-07
+
+### Changed — clearer post-update guidance for `ckit up`
+- After a successful self-update, `ckit up` now prints an explicit "next steps"
+  block: `omp update` → `ckit harness global` → `ckit doctor` → `ckit .`. Makes
+  it obvious that skills / `00-force-load.md` / `APPEND_SYSTEM.md` / MCP under
+  `~/.omp` do NOT auto-sync and must be re-deployed via `ckit harness global`.
+- Added an explicit "already up to date" message on the no-update path.
+- Fixed a stale doc comment (`ckit up -h` top line) that falsely claimed a full
+  system update (omp + pacman/AUR + rustup + flatpak); `ckit up` swaps the ckit
+  binary only.
+
 ## [0.1.9] - 2026-08-07
 
 ### Added — `ckit new` starts a fresh (optionally named) omp session

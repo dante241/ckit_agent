@@ -33,8 +33,20 @@ pub fn run(a: Args) -> Result<()> {
         None      => selfup::run_self_update(true)?,
     };
     if updated {
-        ui::info("done — re-run any ckit command to pick up the new binary");
+        ui::ok("ckit binary updated");
+        // ckit up ONLY swaps the binary. Skills / 00-force-load.md /
+        // APPEND_SYSTEM.md / MCP under ~/.omp do NOT auto-sync, and omp +
+        // system pkgs update on their own tracks. Spell the chain out so the
+        // user does not run a stale harness against a new binary.
+        ui::header("next steps");
+        ui::step("omp update        update the AI engine (ckit up does NOT touch omp)");
+        ui::step("ckit harness global   re-deploy skills + 00-force-load + APPEND_SYSTEM + MCP globally (they do NOT auto-sync)");
+        ui::step("ckit doctor       verify everything is in place");
+        ui::step("ckit .            back to work — resume your omp session");
+        ui::info("small update (verb logic only)? `ckit .` alone is enough — skip the `ckit harness global` re-deploy.");
+    } else {
+        ui::info("already up to date — nothing to do.");
     }
-    ui::info("note: `ckit up` only updates ckit. For omp run `omp update`; for system pkgs run `paru -Syu`.");
+    ui::info("scope: `ckit up` updates ckit only. omp → `omp update` · system pkgs → `paru -Syu`.");
     Ok(())
 }
