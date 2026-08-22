@@ -1,3 +1,7 @@
+---
+description: "Khi nào và cách cập nhật docs dự án. Đọc khi tạo plan hoặc sửa documentation."
+---
+
 # Project Documentation Management
 
 Use this file when creating plans or changing project documentation.

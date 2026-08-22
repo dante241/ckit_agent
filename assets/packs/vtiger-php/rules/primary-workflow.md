@@ -1,3 +1,7 @@
+---
+description: "Primary Workflow các phase feature/bugfix end-to-end. Đọc khi chạy full ticket/feature flow."
+---
+
 # Primary Workflow — Automated Feature Development
 
 **IMPORTANT:** Analyze the skills catalog and activate skills needed for each phase.
@@ -65,7 +69,7 @@ Analyze requirements → activate matching skills automatically:
 
 ## Phase 4: Plan & Create TodoList
 
-**MANDATORY for ALL complexity levels.** Plans live in `.claude/plans/<ticket-id>-<feature-name>/`.
+**MANDATORY for ALL complexity levels.** Plans live in `.omp/plans/<ticket-id>-<feature-name>/`.
 
 ### TodoList Template (all levels)
 
@@ -166,7 +170,7 @@ Spawn `code-reviewer` per task. If review fails → fix and re-review. DO NOT pr
 ## Phase 10: Completion & Documentation
 
 1. `TaskUpdate` all tasks → `completed` (if used)
-2. **Update todolist** `.claude/plans/<ticket-id>-<feature-name>/todolist.md`: status → Completed, check off tasks, fill Test Results + Completion Notes
+2. **Update todolist** `.omp/plans/<ticket-id>-<feature-name>/todolist.md`: status → Completed, check off tasks, fill Test Results + Completion Notes
 3. Summarize to user
 4. If docs impact → spawn `docs-manager`
 5. **If migrations created:** remind user to run pending migrations

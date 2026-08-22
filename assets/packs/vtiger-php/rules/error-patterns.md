@@ -1,3 +1,7 @@
+---
+description: "Anti-pattern/lessons đã gặp trong codebase (EP-NNN) — tránh khi code, check khi review."
+---
+
 # Error Patterns — Anti-Patterns / Lessons Learned
 
 > **Always loaded.** Bugs đã từng gặp trong codebase, format chuẩn hóa để Claude Code và human dễ search/áp dụng. Khi code → tránh; khi review → check.

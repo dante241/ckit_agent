@@ -1,3 +1,7 @@
+---
+description: "Protocol delegate subagent (context, ownership, acceptance). Đọc khi spawn subagent hoặc song song hoá."
+---
+
 # Orchestration Protocol
 
 Use this file only when spawning subagents or coordinating parallel work.

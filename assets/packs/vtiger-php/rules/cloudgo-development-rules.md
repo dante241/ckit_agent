@@ -1,6 +1,11 @@
+---
+description: "Core CloudGO dev rules áp dụng mọi việc — file-separation, brace K&R, quy trình, error-pattern gate. Always-on."
+alwaysApply: true
+---
+
 # CloudGo Development Rules — Core
 
-> **Always loaded.** Contains rules that apply to ALL work. File-type specific rules are in path-scoped sibling files (auto-loaded by Claude Code when matching files are edited).
+> **Always loaded** (`alwaysApply`). Contains rules that apply to ALL work. File-type specific rules are rulebook siblings — omp lists them by name+glob+description; read `rule://<name>` when editing a matching file.
 
 ## Path-scoped sibling rules
 
@@ -23,7 +28,7 @@
 
 **[MANDATORY khi review/code PHP]** Trước khi review hoặc sinh code PHP, BẮT BUỘC load: [`php-conventions.md`](./php-conventions.md) (đặc biệt mục **Brace Style** — codebase là K&R, KHÔNG phải PSR-12 Allman), [`security-rules.md`](./security-rules.md), [`performance-rules.md`](./performance-rules.md). Vi phạm brace/security/performance là finding (CRITICAL/HIGH/PERF), không phải bỏ qua. Subagent sinh PHP mặc định PSR-12 Allman → SAI; phải audit (grep dòng `{` đứng riêng, header `@author` trùng) trước khi commit, KHÔNG tin self-report của subagent.
 
-**Sau khi fix bug mới:** `cook` (Phase 10.6) / `fix` (Step 9) skill phải hỏi user có bổ sung entry vào `error-patterns.md` không.
+**Sau khi fix bug mới:** `/cook` (Phase 10.6) / `fix` (Step 9) phải hỏi user có bổ sung entry vào `error-patterns.md` không.
 
 ---
 

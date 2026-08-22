@@ -96,6 +96,13 @@ pub(crate) fn install_pack(root: &Path, name: &str, force: bool) -> Result<(usiz
         rules_written = w;
     }
 
+    // Pack-root `RULES.md` → project sticky always-apply rule (`.omp/RULES.md`).
+    // Backup-on-diff (assets::install) so a user's local edits are never clobbered.
+    let rules_md = format!("packs/{}/RULES.md", name);
+    if assets::read(&rules_md).is_some() {
+        assets::install(&rules_md, &root.join(".omp/RULES.md"), force)?;
+    }
+
     ui::ok(&format!(
         "pack `{}` → {} skill(s), {} rule file(s) → {}",
         name,

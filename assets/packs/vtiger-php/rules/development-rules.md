@@ -1,3 +1,7 @@
+---
+description: "Baseline dev rules — YAGNI/KISS/DRY, quality gates, không fake data/mock. Đọc khi code/test/script/config."
+---
+
 # Development Rules
 
 Use this file when editing code, tests, scripts, or configuration.

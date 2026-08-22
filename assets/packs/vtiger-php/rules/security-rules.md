@@ -1,3 +1,9 @@
+---
+description: "OWASP security — SQLi/XSS/CSRF/permission/cast. BẮT BUỘC khi code PHP. Auto-load (TTSR) khi sửa file khớp."
+scope: "tool:edit(**/*.php), tool:write(**/*.php)"
+condition: ".*"
+---
+
 # Security Rules (OWASP) — MANDATORY for all PHP
 
 > Path-scoped sibling of `cloudgo-development-rules.md`. Loads when editing `**/*.php`.

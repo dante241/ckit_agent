@@ -1,3 +1,9 @@
+---
+description: "Performance — tránh N+1, bounded query + LIMIT, index. BẮT BUỘC khi code PHP. Auto-load (TTSR) khi sửa file khớp."
+scope: "tool:edit(**/*.php), tool:write(**/*.php)"
+condition: ".*"
+---
+
 # Performance Rules — MANDATORY for all PHP
 
 > Path-scoped sibling of `cloudgo-development-rules.md`. Loads when editing `**/*.php`.

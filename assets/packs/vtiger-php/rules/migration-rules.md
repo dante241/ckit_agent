@@ -1,6 +1,7 @@
 ---
-paths:
-  - "modules/CPMigration/migrations/**"
+description: "Migration conventions — naming YYYY.MM.DD.HH.mm.ss, anon class CPMigration_Base_Model, idempotent. Auto-load (TTSR) khi sửa file khớp."
+scope: "tool:edit(modules/CPMigration/migrations/**), tool:write(modules/CPMigration/migrations/**)"
+condition: ".*"
 ---
 
 # Migration File Conventions

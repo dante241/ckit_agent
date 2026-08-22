@@ -1,6 +1,7 @@
 ---
-paths:
-  - "**/*.js"
+description: "jQuery/JS conventions — header, app.request, không inline JS. Auto-load (TTSR) khi sửa file khớp."
+scope: "tool:edit(**/*.js), tool:write(**/*.js)"
+condition: ".*"
 ---
 
 # jQuery / JavaScript Conventions

@@ -1,6 +1,7 @@
 ---
-paths:
-  - "languages/**/*.php"
+description: "Language file 3-tier loading + 2 array languageStrings/jsLanguageStrings. Auto-load (TTSR) khi sửa file khớp."
+scope: "tool:edit(languages/**/*.php), tool:write(languages/**/*.php)"
+condition: ".*"
 ---
 
 # Language Configuration

@@ -1,9 +1,7 @@
 ---
-paths:
-  - "include/Webservice/**/*.php"
-  - "modules/CPAPIIntegration/**/*.php"
-  - "modules/CPOTTIntegration/**/*.php"
-  - "modules/CPMauticIntegration/**/*.php"
+description: "API connector/integration transport — V1 REST /api/v1, thin adapter. Auto-load (TTSR) khi sửa file khớp."
+scope: "tool:edit(include/Webservice/**/*.php), tool:write(include/Webservice/**/*.php), tool:edit(modules/CPAPIIntegration/**/*.php), tool:write(modules/CPAPIIntegration/**/*.php), tool:edit(modules/CPOTTIntegration/**/*.php), tool:write(modules/CPOTTIntegration/**/*.php), tool:edit(modules/CPMauticIntegration/**/*.php), tool:write(modules/CPMauticIntegration/**/*.php)"
+condition: ".*"
 ---
 
 # API Connector Patterns

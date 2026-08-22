@@ -43,16 +43,18 @@ pub(crate) fn install_bundled_global(env: &env_detect::Env) -> Result<()> {
     Ok(())
 }
 
-/// Clean cutover for machines that installed an earlier 8sync: remove the retired
-/// `/gs` command + skill (global + project). Idempotent no-op when absent — `/auto`
-/// is the single automation entry now.
+/// Clean cutover for machines that installed an earlier 8sync: remove retired
+/// artifacts. `/gs` command + skill (superseded by `/auto`) and the legacy `cook`
+/// *skill* (superseded by the `/cook` *command*). Idempotent no-op when absent.
 pub(crate) fn cleanup_legacy_gs(home: &Path, root: Option<&Path>) {
     let _ = std::fs::remove_file(home.join(".omp/agent/commands/gs.md"));
     let _ = std::fs::remove_dir_all(home.join(".omp/skills/gs"));
+    let _ = std::fs::remove_dir_all(home.join(".omp/skills/cook"));
     if let Some(r) = root {
         let _ = std::fs::remove_file(r.join(".omp/commands/gs.md"));
         let _ = std::fs::remove_dir_all(r.join(".omp/skills/gs"));
         let _ = std::fs::remove_dir_all(r.join("su-code/skills/gs")); // pre-rename legacy location
+        let _ = std::fs::remove_dir_all(r.join(".omp/skills/cook")); // superseded by /cook command
     }
 }
 
@@ -1030,6 +1032,14 @@ pub(crate) fn ensure_engine(home: &Path, root: Option<&Path>) -> Result<()> {
         ".omp/agent/commands/pull-now.md",
         ".omp/commands/pull-now.md",
         "/pull-now command",
+    )?;
+    deploy_omp_pair(
+        home,
+        root,
+        "commands/cook.md",
+        ".omp/agent/commands/cook.md",
+        ".omp/commands/cook.md",
+        "/cook command",
     )?;
     ensure_gw_quota(home)
 }

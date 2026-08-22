@@ -1,3 +1,7 @@
+---
+description: "Rule review/audit + tôn trọng quyết định user đã chốt, không tự đảo. Đọc khi review code hoặc cắt scope."
+---
+
 # Review, Audit, and Decision Rules
 
 Use this file when reviewing code, applying audit feedback, or cutting scope.
@@ -35,7 +39,7 @@ Do not put plan IDs, phase numbers, audit labels, or finding codes in code comme
 
 **Ticket IDs banned again (decided 2026-07-07, supersedes the 2026-07-03 exception below).** `/feature` (GSD) workflow: never put a ticket number in a code comment. See `php-conventions.md` → Modification Tracking Comments for the ownership-based rule that replaces it (own-class new function = summary only, other's-class new function = Added by, editing other's function = Modified by, editing your own function = no comment). Plan IDs, phase numbers, audit labels, and internal finding codes (e.g. `EP-NNN`, `WR-NN`) remain banned as before.
 
-Other workflows (`/cook`, `/fix`) may still use the old ticket-ID-prefixed format if their own skill reference requires it — this reversal is scoped to `/feature` only, not global.
+Other workflows (`/cook`, `/fix`) may still use the old ticket-ID-prefixed format if their own command/skill requires it — this reversal is scoped to `/feature` only, not global.
 
 <details>
 <summary>Superseded 2026-07-03 exception (kept for history — no longer in effect for /feature)</summary>

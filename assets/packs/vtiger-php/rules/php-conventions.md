@@ -1,6 +1,7 @@
 ---
-paths:
-  - "**/*.php"
+description: "PHP conventions — header, K&R brace (không PSR-12 Allman), autoload, modification-tracking comment. Auto-load (TTSR) khi sửa file khớp."
+scope: "tool:edit(**/*.php), tool:write(**/*.php)"
+condition: ".*"
 ---
 
 # PHP Conventions
@@ -216,7 +217,7 @@ if ($sourceCampaign && $sourceCampaign instanceof Campaigns_Record_Model) { /* .
 
 ## Modification Tracking Comments (ownership-based, decided 2026-07-07 — supersedes 2026-07-03 ticket-ID rule)
 
-**No ticket numbers in comments, ever** (default — the 2026-07-03 "ticket ID required" rule is reversed). `/feature` (GSD) workflow always follows this. Other workflows (`/cook`, `/fix`) may still require a ticket ID per their own skill reference — check there first.
+**No ticket numbers in comments, ever** (default — the 2026-07-03 "ticket ID required" rule is reversed). `/feature` (GSD) workflow always follows this. Other workflows (`/cook`, `/fix`) may still require a ticket ID per their own command/skill — check there first.
 
 Which comment to write depends on **whose class/function you're touching** and **whether the function is new**:
 

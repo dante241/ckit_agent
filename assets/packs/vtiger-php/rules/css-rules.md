@@ -1,7 +1,7 @@
 ---
-paths:
-  - "**/*.css"
-  - "**/*.tpl"
+description: "CSS/TPL conventions + file-separation (không inline CSS). Auto-load (TTSR) khi sửa file khớp."
+scope: "tool:edit(**/*.css), tool:write(**/*.css), tool:edit(**/*.tpl), tool:write(**/*.tpl)"
+condition: ".*"
 ---
 
 # CSS Conventions

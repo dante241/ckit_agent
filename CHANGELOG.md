@@ -12,6 +12,21 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-08-22
+
+### Changed — sync vtiger rule/skill edits back into the bundled `vtiger-php` pack
+- Re-synced all 16 pack rule files from the live vtiger project (frontmatter +
+  body): `.claude/plans/` → `.omp/plans/`, "auto-loaded by Claude Code" → omp
+  rulebook wording, and `command/skill` phrasing now that `cook` is a command.
+- **New:** `install_pack` now deploys the pack-root `RULES.md` → project
+  `.omp/RULES.md` (sticky always-apply rule), backup-on-diff so local edits are
+  never clobbered. Ships with the 16 rules on every `skill add pack:` /
+  `skill update`.
+- **Clean cutover: `cook` skill → `/cook` command.** Removed the bundled
+  `packs/vtiger-php/skills/cook` skill; added `assets/commands/cook.md`.
+  `ensure_engine` deploys `/cook` (agent + project) at every harness path;
+  `cleanup_legacy_gs` now also removes the retired `.omp/skills/cook`.
+
 ## [0.1.10] - 2026-08-07
 
 ### Changed — clearer post-update guidance for `ckit up`
