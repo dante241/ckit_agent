@@ -230,7 +230,13 @@ Which comment to write depends on **whose class/function you're touching** and *
 
 "Owner" of a class = the file's `@author`/`Author:` header. "Originally wrote a function" = check `git blame`/`git log` on that function if the file has multiple contributors — don't assume file-level ownership extends to every function in a multi-author file.
 
+**No `@author`/`Author:` header = no defined owner.** Do NOT assume you own an unheadered file. Determine who wrote the touched function via `git blame`/`git log` and attribute accordingly (`Added by` for a new function, `Modified by` for editing someone else's). Only skip attribution when blame confirms the function is yours. When adding an `@author`/`Author:` header is warranted (brand-new file), you become the owner.
+
 Close attribution blocks with `// End <Name>` (only when the block has a name to close — own-class new functions and own-function edits have no block to close).
+
+**`<REASON>` language: English.** The `- <REASON>` in every `Added by`/`Modified by` attribution comment MUST be written in English, regardless of the surrounding module's comment language. (Other, non-attribution comments follow the file's existing style — some modules comment in Vietnamese.)
+
+**Comment length + intent.** Each comment block is **at most 2 lines**. Comment the function's actual meaning/behaviour/invariant — NOT decisions, tradeoffs, or negotiation from the chat/discussion (no "user chose X", "we decided Y", plan/phase/ticket refs). If the reason isn't self-evident from the code, state the invariant, not the conversation.
 
 ```php
 // Modified by Vu Mai on 2025-04-28 - support filter by modules

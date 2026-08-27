@@ -52,3 +52,10 @@ Common tokens: `--primary-1`, `--white-1`, `--gray-*`, `--success-1`, `--danger-
 - NO `<style>` blocks inside TPL — extract to `<Module>/resources/<View>.css`
 - NO `<script>` blocks inside TPL — extract to JS controller and register via `getHeaderScripts()`
 - Use `{$VARIABLE|escape}` (HTML escape) when rendering user-controlled data
+
+## Comments & Modification Tracking
+
+Same comment + attribution conventions as `php-conventions.md` (§ Modification Tracking Comments) — applied to CSS/TPL (CSS `/* ... */`, TPL `{* ... *}`):
+- **Attribution by ownership.** Others' file → `/* Added by <Name> on <DATE> - <REASON> */` (editing → `Modified by`), close with `/* End <Name> */`; your own file → plain description or none. Owner = file's `Author:` header; no header → resolve via `git blame`, never assume you own it.
+- **`<REASON>` in English**, regardless of the file's comment language.
+- **≤ 2 lines per comment block; comment what the rule/section does** — not chat decisions/tradeoffs, and NO ticket / plan / phase refs.

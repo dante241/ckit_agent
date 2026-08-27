@@ -120,10 +120,15 @@ if (this.active_customer_profile.last_campaign_id) {
 }
 ```
 
-## Modification Tracking Comments
+## Comments & Modification Tracking
+
+Same comment + attribution conventions as `php-conventions.md` (§ Modification Tracking Comments) — applied identically to JS:
+- **Attribution by ownership.** New function in a file someone else owns → `// Added by <Name> on <DATE> - <REASON>`; editing someone else's function → `// Modified by <Name> on <DATE> - <REASON>`; your own file/function → plain description or none. Close a named block with `// End <Name>`. Owner = file's `Author:` header; no header → resolve via `git blame`, never assume you own it.
+- **`<REASON>` in English**, regardless of the file's comment language.
+- **≤ 2 lines per comment block; comment the meaning/behaviour** — not chat decisions/tradeoffs, and NO ticket / plan / phase refs.
 
 ```javascript
-// Added by Nguyen Tung on 2026-03-06 - Fix #17518: description
+// Added by Nguyen Tung on 2026-03-06 - cancel link must not submit the form
 container.find('.cancelLink').on('click', function (e) {
     e.preventDefault();
 });

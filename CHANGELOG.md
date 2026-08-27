@@ -12,6 +12,18 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-08-27
+
+### Changed — tighten vtiger-php pack attribution/comment rules
+- `php-conventions.md`: no `@author`/`Author:` header means no defined owner —
+  use `git blame`/`git log` to find who wrote a touched function; `<REASON>` in
+  every `Added by`/`Modified by` comment MUST be English; comment blocks capped
+  at 2 lines describing behaviour/invariant, not decisions.
+- `javascript-rules.md`: renamed § to "Comments & Modification Tracking";
+  defers to `php-conventions.md` attribution rules, applied identically to JS.
+- `css-rules.md`: new "Comments & Modification Tracking" § applying the same
+  ownership-based attribution to CSS (`/* */`) and TPL (`{* *}`).
+
 ## [0.1.11] - 2026-08-22
 
 ### Changed — sync vtiger rule/skill edits back into the bundled `vtiger-php` pack
