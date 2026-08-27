@@ -124,7 +124,7 @@ if (this.active_customer_profile.last_campaign_id) {
 
 Same comment + attribution conventions as `php-conventions.md` (§ Modification Tracking Comments) — applied identically to JS:
 - **Attribution by ownership.** New function in a file someone else owns → `// Added by <Name> on <DATE> - <REASON>`; editing someone else's function → `// Modified by <Name> on <DATE> - <REASON>`; your own file/function → plain description or none. Close a named block with `// End <Name>`. Owner = file's `Author:` header; no header → resolve via `git blame`, never assume you own it.
-- **`<REASON>` in English**, regardless of the file's comment language.
+- **Comment language: English.** ALL comments (attribution `<REASON>`, block, inline) MUST be in English. Legacy Vietnamese comments → rewrite in English when touched.
 - **≤ 2 lines per comment block; comment the meaning/behaviour** — not chat decisions/tradeoffs, and NO ticket / plan / phase refs.
 
 ```javascript

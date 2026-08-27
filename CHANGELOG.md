@@ -12,6 +12,14 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-08-27
+
+### Changed — vtiger-php pack: comments must be English (all comments, not just attribution)
+- Re-synced `php-conventions.md`, `javascript-rules.md`, `css-rules.md` from the
+  live vtiger project: the comment-language rule now requires ALL code comments
+  (attribution `<REASON>`, docblocks/`@param`/`@return`, inline `//`, TPL `{* *}`)
+  to be English; legacy Vietnamese comments get rewritten in English when touched.
+
 ## [0.1.12] - 2026-08-27
 
 ### Changed — tighten vtiger-php pack attribution/comment rules

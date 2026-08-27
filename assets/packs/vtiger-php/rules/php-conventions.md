@@ -234,7 +234,7 @@ Which comment to write depends on **whose class/function you're touching** and *
 
 Close attribution blocks with `// End <Name>` (only when the block has a name to close — own-class new functions and own-function edits have no block to close).
 
-**`<REASON>` language: English.** The `- <REASON>` in every `Added by`/`Modified by` attribution comment MUST be written in English, regardless of the surrounding module's comment language. (Other, non-attribution comments follow the file's existing style — some modules comment in Vietnamese.)
+**Comment language: English.** ALL code comments MUST be written in English — the attribution `<REASON>`, docblocks (`/** ... */`, `@param`/`@return` descriptions), and inline `//` comments alike. Existing Vietnamese comments are legacy: when you touch a comment, rewrite it in English. New comments are English only.
 
 **Comment length + intent.** Each comment block is **at most 2 lines**. Comment the function's actual meaning/behaviour/invariant — NOT decisions, tradeoffs, or negotiation from the chat/discussion (no "user chose X", "we decided Y", plan/phase/ticket refs). If the reason isn't self-evident from the code, state the invariant, not the conversation.
 
