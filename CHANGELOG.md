@@ -12,6 +12,11 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-09-25
+
+### Fixed
+- `ckit-code-intel.ts`: after one block, any later grep/read passed; now only an exact retry of a blocked call passes until code-intel runs.
+
 ## [0.1.17] - 2026-09-24
 
 ### Fixed

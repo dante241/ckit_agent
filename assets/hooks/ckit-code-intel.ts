@@ -2,10 +2,10 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-// ckit code-intel hook — enforces RULE #0 mechanically. Per user prompt, the first
-// grep/read that targets code is blocked until a code-intel device ran (codegraph ·
-// codebase-memory · serena · lsp). One nudge per prompt: a retry of the same call
-// passes, so plain-text searches are never dead-locked. Inactive without `.codegraph/`.
+// ckit code-intel hook — enforces RULE #0 mechanically. Per user prompt, every grep/read
+// that targets code is blocked until a code-intel device ran (codegraph · codebase-memory
+// · serena · lsp). Only an exact retry of a blocked call passes, so plain-text searches
+// are never dead-locked but can't bypass the rule wholesale. Inactive without `.codegraph/`.
 const CODE_EXT = /\.(php|tpl|js|mjs|cjs|ts|tsx|jsx|vue|go|rs|py|java|kt|rb|cs|c|cc|cpp|h|hpp|swift|scala)$/i;
 const INTEL_TOOL = /^mcp__(codegraph|codebase_memory|serena)/;
 const INTEL_CLI = /\bcodegraph\s+(explore|query|callers|callees|impact|node)\b/;
@@ -36,13 +36,19 @@ function targetsCode(toolName: string, input: Input): boolean {
   });
 }
 
+// Identity of a call for the exact-retry bypass (intent text excluded: it may be reworded).
+function callKey(toolName: string, input: Input): string {
+  const { i: _intent, ...rest } = input;
+  return `${toolName}:${JSON.stringify(rest)}`;
+}
+
 export default function (pi: ExtensionAPI): void {
   let intelUsed = false;
-  let nudged = false;
+  const blocked = new Set<string>();
 
   pi.on("before_agent_start", async () => {
     intelUsed = false;
-    nudged = false;
+    blocked.clear();
     return undefined;
   });
 
@@ -52,10 +58,12 @@ export default function (pi: ExtensionAPI): void {
       intelUsed = true;
       return undefined;
     }
-    if (intelUsed || nudged || !targetsCode(event.toolName, input)) return undefined;
+    if (intelUsed || !targetsCode(event.toolName, input)) return undefined;
     if (!existsSync(join(ctx.cwd, ".codegraph"))) return undefined;
 
-    nudged = true;
+    const key = callKey(event.toolName, input);
+    if (blocked.has(key)) return undefined;
+    blocked.add(key);
     return {
       block: true,
       reason:
