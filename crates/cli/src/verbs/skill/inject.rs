@@ -262,8 +262,8 @@ pub(crate) fn inject_agents_md(home: &Path, root: &Path) -> Result<()> {
     let on_count = stats.ondemand.len();
 
     // Inject into every known agent entry file (markdown: sentinel rewrite or
-    // skeleton; plain text: prepend). AGENTS.md + CLAUDE.md are stub-created;
-    // the rest are touched only if they already exist.
+    // skeleton; plain text: prepend). Only AGENTS.md is stub-created; the rest
+    // (CLAUDE.md included) are touched only if they already exist.
     let targets: &[(&str, EntryKind)] = &[
         ("AGENTS.md",                       EntryKind::Markdown { h1: "AGENTS.md — guidance for AI" }),
         ("CLAUDE.md",                       EntryKind::Markdown { h1: "CLAUDE.md — guidance for Claude Code" }),
@@ -278,7 +278,7 @@ pub(crate) fn inject_agents_md(home: &Path, root: &Path) -> Result<()> {
     for (name, kind) in targets {
         let path = root.join(name);
         let existing = std::fs::read_to_string(&path).unwrap_or_default();
-        let stub_create = matches!(*name, "AGENTS.md" | "CLAUDE.md");
+        let stub_create = *name == "AGENTS.md";
         if existing.is_empty() && !stub_create { continue; }
 
         let block = if *name == "AGENTS.md" { &stats.block } else { &stats.full_block };

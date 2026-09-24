@@ -3,9 +3,9 @@
 //! needed for the rule layer):
 //!   ~/.omp/skills                          → skill library (one dir per skill, read every session)
 //!   ~/.omp/agent/APPEND_SYSTEM.md           → appended to EVERY omp system prompt
-//!   MCP servers (codegraph · cbm · headroom · serena) + recall hook + capabilities
+//!   MCP servers (codegraph · cbm · headroom · serena) + recall/code-intel hooks + capabilities
 //! plus the Anthropic token-optimizer defaults:
-//!   compaction 50% (only if unset) · headroom compress >50-line outputs ·
+//!   compaction 50% (only if unset) · STEP-0 xd:// device docs inlined ·
 //!   byte-stable APPEND_SYSTEM writes (identical ⇒ skip) so the system prefix
 //!   stays cache-hot for Anthropic prompt caching.
 //! CWD-independent — never touches the current project. `--sweep [DIR]` then
@@ -115,8 +115,8 @@ pub(crate) fn harness_global(
     ui::ok("omp rules are now GLOBAL — every omp session in every project gets:");
     ui::info("  • ~/.omp/agent/APPEND_SYSTEM.md appended to EVERY system prompt (code-intel-first, never compacted)");
     ui::info("  • skills @ ~/.omp/skills · MCP: codegraph · codebase-memory · headroom · serena");
-    ui::info("  • STEP-0 MCP tools always in the tool set (omp ≥17: xd:// devices via tools.xdev) — codegraph/serena/cbm/headroom callable");
-    ui::info("  • token optimizer: headroom compress >50-line outputs · compaction 50% · stable prefix → Anthropic prompt-cache hits");
+    ui::info("  • STEP-0 MCP tools as xd:// devices with inlined docs (tools.xdevDocs: builtins) — call via `write xd://mcp__<server>_<tool>`");
+    ui::info("  • token optimizer: compaction 50% · stable prefix → Anthropic prompt-cache hits");
     if sweep.is_none() {
         ui::info("stamp the per-project layer everywhere: `8sync harness global --sweep` (default ~/Projects)");
     }

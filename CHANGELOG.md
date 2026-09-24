@@ -12,6 +12,15 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-09-24
+
+### Fixed
+- `harness init` also seeds `tools.xdevDocs: builtins` (previously only `global`/`setup` did).
+- `harness global` summary no longer claims MCP tools are top-level or that headroom auto-compresses output.
+
+### Changed
+- `CLAUDE.md` is no longer stub-created; it is only refreshed if a project already has one (omp reads `AGENTS.md`).
+
 ## [0.1.16] - 2026-09-24
 
 ### Fixed

@@ -56,6 +56,7 @@ pub(crate) fn harness_init(env: &env_detect::Env, _force: bool) -> Result<()> {
     deploy::ensure_codebase_memory_mcp(env)?;
     deploy::ensure_headroom_mcp(env)?;
     let _ = deploy::ensure_omp_memory_config(&env.home);
+    let _ = deploy::ensure_mcp_tools_visible(&env.home);
     let _ = deploy::ensure_hooks(&env.home);
     let _ = deploy::ensure_append_system(&env.home);
     let _ = deploy::ensure_mcp_spec(&env.home);
