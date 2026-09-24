@@ -46,6 +46,7 @@ Common tokens: `--primary-1`, `--white-1`, `--gray-*`, `--success-1`, `--danger-
 - Scope styles to a container class to avoid global leaks: `.cpchatbot-config .header { ... }`
 - Avoid `!important` except for utilities (overflow, display:none) and overriding 3rd-party CSS
 - No inline `style="..."` in TPL — move to CSS file
+- For filter/action bars using Bootstrap grid columns, size every item for its rendered content in the longest supported language. If buttons are kept on one line (`white-space: nowrap`), the button column must be wide enough at each breakpoint or the buttons must be allowed to wrap/stack.
 
 ## TPL Reminders
 

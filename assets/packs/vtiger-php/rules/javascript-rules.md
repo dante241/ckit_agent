@@ -1,12 +1,38 @@
 ---
-description: "jQuery/JS conventions — header, app.request, không inline JS. Auto-load (TTSR) khi sửa file khớp."
-scope: "tool:edit(**/*.js), tool:write(**/*.js)"
-condition: ".*"
+description: "jQuery/JS conventions — header, app.request, không inline JS, attribution comment. Always-on: nhúng 100% khi code + review JS (quyết định user 2026-09-10, chống vòng code-đi-sửa-lại của TTSR)."
+alwaysApply: true
 ---
 
 # jQuery / JavaScript Conventions
 
-> Loads only when editing JS files.
+> **Always-on** (alwaysApply — user decision 2026-09-10): embedded 100% khi code + review JS.
+
+## Brace Style — K&R open, Stroustrup else (identical to php-conventions)
+
+- Opening brace on the **same line**: `if (cond) {`, `function () {`, `for (…) {`.
+- **`else` / `else if` / `catch` / `finally` on their OWN line** after the closing `}` — same as php-conventions, no divergence:
+
+```javascript
+if (isProject) {
+    avgText = total;
+}
+else if (hours) {
+    avgText = sum;
+}
+else {
+    avgText = avg;
+}
+```
+
+Single-statement inline guards (`if (x) { a(); } else { b(); }` on one line) may stay inline.
+- Tabs for indentation; match the file's existing line endings.
+
+## Block Spacing
+
+Blocks must breathe — never pack them wall-to-wall:
+- One blank line **between methods / functions** (object methods, class methods, standalone functions).
+- One blank line **after the opening `{`** of a class / large object literal.
+- One blank line **between logical statement groups** inside a function (setup → main logic → return). No blank line right before a closing `}`/`)`.
 
 ## File Header
 
@@ -101,14 +127,21 @@ app.request.post({ data: params }).then(function(error, data) {
 
 ## Vue.js Data Properties
 
-Use snake_case for Vue.js data fields to match backend payload keys:
+Mirror PHP naming (`php-conventions.md` § Naming): **camelCase** for client-only UI state and methods; **snake_case only for keys that mirror a backend payload / DB column** — the JS analog of PHP's camelCase variables vs snake_case DB columns. Never blanket-snake_case local state.
 
 ```javascript
-data: {
-    last_campaign_id: null,
-    last_campaign_url: '',
-    last_campaign_name: '',
+data: function () {
+    return {
+        openFilter: null, insightLoading: false,                          // client UI state -> camelCase
+        filters: { department: [], project_ids: [], employee_ids: [] }    // backend payload keys -> snake_case
+    };
 }
+```
+
+Requests keep the backend key casing:
+
+```javascript
+api('getSummary', { filters: this.filters, from_date: r.from, to_date: r.to });
 ```
 
 ### Conditional Data Assignment (Vue.js)

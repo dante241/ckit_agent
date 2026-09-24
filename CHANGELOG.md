@@ -12,6 +12,22 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-09-24
+
+### Changed — vtiger-php pack: PHP/JS rules always-on + new JS/CSS conventions
+- Re-synced `php-conventions.md`, `javascript-rules.md`, `css-rules.md` from the
+  live vtiger project.
+- `php-conventions.md` and `javascript-rules.md` switch from TTSR edit-scoped
+  loading (`scope`/`condition`) to `alwaysApply: true`, so the rules are fully
+  embedded while writing AND reviewing code (stops the write-then-fix loop).
+- JS: brace style matches PHP (K&R open, Stroustrup `else`); block-spacing
+  rule; naming mirrors PHP — camelCase for client UI state/methods,
+  snake_case only for keys mirroring backend payloads / DB columns.
+- PHP: no blank spacer between an attribution `// End <Name>` marker and the
+  closing delimiter it belongs to.
+- CSS: Bootstrap filter/action bars must size columns for the longest
+  supported language, or let buttons wrap/stack.
+
 ## [0.1.14] - 2026-09-24
 
 ### Changed — `gw-quota` shows the daily budget

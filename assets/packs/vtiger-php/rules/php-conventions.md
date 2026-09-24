@@ -1,12 +1,11 @@
 ---
-description: "PHP conventions — header, K&R brace (không PSR-12 Allman), autoload, modification-tracking comment. Auto-load (TTSR) khi sửa file khớp."
-scope: "tool:edit(**/*.php), tool:write(**/*.php)"
-condition: ".*"
+description: "PHP conventions — header, K&R brace (không PSR-12 Allman), autoload, modification-tracking comment, empty-line rules. Always-on: nhúng 100% khi code + review PHP (quyết định user 2026-09-10, chống vòng code-đi-sửa-lại của TTSR)."
+alwaysApply: true
 ---
 
 # PHP Conventions
 
-> Loads only when editing PHP files. Pairs with `cloudgo-development-rules.md` (always loaded).
+> **Always-on** (alwaysApply — user decision 2026-09-10): embedded 100% khi code + review PHP. Pairs with `cloudgo-development-rules.md`.
 
 ## File Header (Required)
 
@@ -233,6 +232,8 @@ Which comment to write depends on **whose class/function you're touching** and *
 **No `@author`/`Author:` header = no defined owner.** Do NOT assume you own an unheadered file. Determine who wrote the touched function via `git blame`/`git log` and attribute accordingly (`Added by` for a new function, `Modified by` for editing someone else's). Only skip attribution when blame confirms the function is yours. When adding an `@author`/`Author:` header is warranted (brand-new file), you become the owner.
 
 Close attribution blocks with `// End <Name>` (only when the block has a name to close — own-class new functions and own-function edits have no block to close).
+
+Do not insert a visual spacer between an attribution end marker and the structural block close it belongs to. Example: `// End <Name>` immediately followed by `}` stays adjacent; add blank lines only between logical statements/sections, not before a closing delimiter.
 
 **Comment language: English.** ALL code comments MUST be written in English — the attribution `<REASON>`, docblocks (`/** ... */`, `@param`/`@return` descriptions), and inline `//` comments alike. Existing Vietnamese comments are legacy: when you touch a comment, rewrite it in English. New comments are English only.
 
