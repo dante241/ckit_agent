@@ -7,12 +7,15 @@
 // Auth: sends BOTH x-api-key (Anthropic path) and Authorization: Bearer (Codex
 // path) so one file works for cloudgo-cc and cloudgo-cx.
 //
-// The endpoint returns NO dollar amounts — only a used percentage. Widget text:
-// `Quota <bar> <pct>% ↻<reset-time>` where the meter bar + color both track the
-// percentage (success/warning/error). Keys with no budget (budget_source
-// "none") and non-gateway providers are hidden. All failures are swallowed
-// (session never affected): a non-200 just clears the slot. `/gwquota` forces a
-// refresh and reports detail via a notification.
+// The endpoint returns NO dollar amounts — only used percentages, for two
+// independent budgets: the rolling window (`used_percent`, `window_seconds`)
+// and the calendar day (`daily_used_percent`, reset at local midnight). Widget:
+// `Quota 4h <bar> <pct>% ↻<reset> · Day <bar> <pct>%` — each segment
+// shown only when that budget applies; the meter bar + color track the
+// percentage (success/warning/error). Keys with neither budget and non-gateway
+// providers are hidden. All failures are swallowed (session never affected): a
+// non-200 just clears the slot. `/gwquota` forces a refresh and reports detail
+// via a notification.
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -29,7 +32,20 @@ export interface ProviderConf {
 export interface Quota {
   budget_source: string; // "override" | "team_policy" | "none"
   used_percent: number | null; // null when the key is unlimited
+  window_seconds?: number; // rolling window length (e.g. 14400 = 4h)
   window_reset_at: string | null; // ISO rollover time; null if never used
+  exceeded: boolean;
+  daily_budget_source?: string; // same enum; absent on older gateways
+  daily_used_percent?: number | null;
+  daily_exceeded?: boolean;
+}
+
+// One budget normalized for display.
+interface Budget {
+  label: string; // "4h" | "Day"
+  source: string;
+  pct: number;
+  resetAt: string | null;
   exceeded: boolean;
 }
 
@@ -76,10 +92,39 @@ function isGatewayProvider(p: ProviderConf | undefined): p is ProviderConf {
   return !!p && !!p.baseUrl && !!p.apiKey && /ai-gateway|\/llm\//.test(p.baseUrl);
 }
 
+// "4h" / "30m" / "1d" from the window length; "" when unknown.
+function windowLabel(sec: number | undefined): string {
+  if (!sec || sec <= 0) return "";
+  if (sec % 86400 === 0) return `${sec / 86400}d`;
+  if (sec % 3600 === 0) return `${sec / 3600}h`;
+  return `${Math.round(sec / 60)}m`;
+}
+
 // A budget applies only when the server resolved one (override or team policy)
-// AND reported a percentage; otherwise the key is unlimited → nothing to show.
-function hasBudget(q: Quota | undefined): q is Quota {
-  return !!q && q.budget_source !== "none" && q.used_percent != null;
+// AND reported a percentage; otherwise that budget is unlimited → skipped.
+// Empty result = key is fully unlimited → nothing to show.
+function budgets(q: Quota | undefined): Budget[] {
+  if (!q) return [];
+  const out: Budget[] = [];
+  if (q.budget_source !== "none" && q.used_percent != null) {
+    out.push({
+      label: windowLabel(q.window_seconds),
+      source: q.budget_source,
+      pct: Math.round(q.used_percent),
+      resetAt: q.window_reset_at,
+      exceeded: q.exceeded,
+    });
+  }
+  if (q.daily_budget_source && q.daily_budget_source !== "none" && q.daily_used_percent != null) {
+    out.push({
+      label: "Day",
+      source: q.daily_budget_source,
+      pct: Math.round(q.daily_used_percent),
+      resetAt: null, // day always rolls over at midnight — no clock shown
+      exceeded: !!q.daily_exceeded,
+    });
+  }
+  return out;
 }
 
 async function fetchQuota(p: ProviderConf): Promise<Quota | undefined> {
@@ -122,17 +167,22 @@ function resetClock(iso: string | null): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function statusText(q: Quota): string {
-  const pct = Math.round(q.used_percent ?? 0);
-  const sgr = levelSgr(pct, q.exceeded);
-  const clock = resetClock(q.window_reset_at);
-  const body = `Quota ${bar(pct, sgr)} ${paint(sgr, pct + "%")}`;
+function segment(b: Budget): string {
+  const sgr = levelSgr(b.pct, b.exceeded);
+  const clock = resetClock(b.resetAt);
+  const head = b.label ? `${paint("90", b.label)} ` : "";
+  const body = `${head}${bar(b.pct, sgr)} ${paint(sgr, b.pct + "%")}`;
   return clock ? `${body} ${paint("90", "↻" + clock)}` : body;
+}
+
+function statusText(bs: Budget[]): string {
+  return "Quota " + bs.map(segment).join(paint("90", " · "));
 }
 
 function render(ctx: ExtensionContext, q: Quota | undefined): void {
   try {
-    if (!hasBudget(q)) {
+    const bs = budgets(q);
+    if (bs.length === 0) {
       ctx.ui.setWidget(STATUS_KEY, undefined); // unlimited / unknown → hide
       return;
     }
@@ -140,7 +190,7 @@ function render(ctx: ExtensionContext, q: Quota | undefined): void {
     // surrounding blank-line spacer. The footer hook-status slot (setStatus)
     // sits above omp's mandatory status→editor gap, so a quota there always
     // looks like it has a dangling empty line under it — this avoids that.
-    ctx.ui.setWidget(STATUS_KEY, [statusText(q)], { placement: "belowEditor" });
+    ctx.ui.setWidget(STATUS_KEY, [statusText(bs)], { placement: "belowEditor" });
   } catch {
     /* stale/torn-down context — ignore */
   }
@@ -215,18 +265,20 @@ export default function gwQuotaExtension(pi: ExtensionAPI): void {
       try {
         const q = await fetchQuota(prov);
         render(ctx, q);
-        if (!hasBudget(q)) {
+        const bs = budgets(q);
+        if (bs.length === 0) {
           ctx.ui.notify("gw-quota: unlimited (no budget on this key/team)", "info");
           return;
         }
-        const pct = Math.round(q.used_percent ?? 0);
-        const clock = resetClock(q.window_reset_at);
-        ctx.ui.notify(
-          `gw-quota [${q.budget_source}]: ${pct}% used${q.exceeded ? " — EXCEEDED" : ""}${
-            clock ? `, resets ${clock}` : ""
-          }`,
-          q.exceeded ? "error" : "info",
-        );
+        const detail = bs
+          .map((b) => {
+            const clock = resetClock(b.resetAt);
+            return `${b.label || "window"} [${b.source}]: ${b.pct}% used${b.exceeded ? " — EXCEEDED" : ""}${
+              clock ? `, resets ${clock}` : ""
+            }`;
+          })
+          .join("; ");
+        ctx.ui.notify(`gw-quota ${detail}`, bs.some((b) => b.exceeded) ? "error" : "info");
       } catch (err) {
         ctx.ui.notify("gw-quota: fetch failed: " + (err instanceof Error ? err.message : String(err)), "error");
       }

@@ -168,8 +168,9 @@ pub fn auto_check_notice() {
 }
 
 /// Force self-update: download the latest release asset and install it.
-/// Returns Ok(true) when a new binary was written, Ok(false) when already up-to-date.
-pub fn run_self_update(force: bool) -> Result<bool> {
+/// Returns the installed binary path when a new binary was written, `None` when
+/// already up-to-date.
+pub fn run_self_update(force: bool) -> Result<Option<PathBuf>> {
     ui::step("Self-update — GitHub Releases");
     let local = build_version();
 
@@ -178,7 +179,7 @@ pub fn run_self_update(force: bool) -> Result<bool> {
     let remote = strip_v(&tag);
     if !force && remote == local {
         ui::skip("ckit", &format!("up to date (v{})", local));
-        return Ok(false);
+        return Ok(None);
     }
 
     ui::info(&format!("local v{} → {} ({})", local, tag, asset_url));
@@ -211,7 +212,7 @@ pub fn run_self_update(force: bool) -> Result<bool> {
 
     let _ = std::fs::write(last_seen_tag_file(), &tag);
     ui::ok(&format!("installed {} → {}", tag, bin_dst.display()));
-    Ok(true)
+    Ok(Some(bin_dst))
 }
 
 /// Resolve the public browser download url for a specific tag's asset.
@@ -246,7 +247,7 @@ fn fetch_asset_url_for_tag(tag: &str) -> Result<Option<String>> {
 
 /// Install a specific tag (e.g. `v0.6.10`). Used by `ckit up --to <tag>`
 /// for reproducibility / explicit downgrade.
-pub fn install_tag(tag: &str) -> Result<bool> {
+pub fn install_tag(tag: &str) -> Result<Option<PathBuf>> {
     ui::step(&format!("Self-update → pinned tag {}", tag));
     let tag = tag.strip_prefix('v').map(|t| format!("v{}", t)).unwrap_or_else(|| format!("v{}", tag));
     let want_name = wanted_asset_name(&tag)?;
@@ -278,7 +279,7 @@ pub fn install_tag(tag: &str) -> Result<bool> {
     std::fs::rename(&tmp, &bin_dst)?;
     let _ = std::fs::write(last_seen_tag_file(), &tag);
     ui::ok(&format!("installed {} → {}", tag, bin_dst.display()));
-    Ok(true)
+    Ok(Some(bin_dst))
 }
 
 #[cfg(test)]

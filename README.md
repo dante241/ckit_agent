@@ -158,7 +158,7 @@ omp --from-claude        # or: omp --from-codex
 ### 5. Update
 
 ```bash
-ckit up                         # self-update the binary (GitHub release) + omp update
+ckit up                         # self-update the binary (GitHub release) + apply it (`ckit harness global`)
 ```
 
 Or rebuild manually from source:
@@ -229,7 +229,7 @@ System packages (`pacman -Syu`) are **not** run automatically — you decide whe
 | Command | Description |
 |---|---|
 | `ckit setup` | Install harness + profiles (see Installation) |
-| `ckit up` | Self-update the binary + `omp update` |
+| `ckit up` | Self-update the binary + apply its skills/extensions (`ckit harness global`); omp → `omp update` |
 | `ckit doctor` | Health check (kitty remote, omp, helix, gh, configs, profiles, WARP/ufw) |
 | `ckit flow` | Workflow help, ordered by usage step |
 | `ckit help` | Cheatsheet (alias of `ckit` with no args) |

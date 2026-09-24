@@ -12,6 +12,26 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-09-24
+
+### Changed — `gw-quota` shows the daily budget
+- The ai-gateway `/quota` response now also carries a per-day budget
+  (`daily_budget_source`, `daily_used_percent`, `daily_exceeded`) and
+  `window_seconds`. The widget renders one segment per applicable budget:
+  `Quota 4h ▰▰▰▰▱ 75% ↻16:59 · Day ▰▰▱▱▱ 40%` (window labelled by its length
+  and shows its reset clock; the day always resets at midnight so shows none;
+  each segment hidden when its budget is `none`). `/gwquota` reports both.
+  Older gateways without the daily fields still render the window-only line.
+
+### Changed — `ckit up` applies the release it installs
+- After swapping the binary, `ckit up` now runs `<new binary> harness global`
+  itself, so bundled skills / APPEND_SYSTEM / omp extensions (e.g.
+  `gw-quota.ts`) / MCP from the new release land in `~/.omp` without a second
+  command. It spawns the NEW binary (the running process still embeds the old
+  assets). Idempotent: identical files skip, user-owned files untouched. If
+  that step fails, `ckit up` prints the manual command. Remaining step for
+  users: restart omp. README no longer claims `ckit up` runs `omp update`.
+
 ## [0.1.13] - 2026-08-27
 
 ### Changed — vtiger-php pack: comments must be English (all comments, not just attribution)
