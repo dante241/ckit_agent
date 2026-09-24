@@ -233,23 +233,24 @@ fn check_ai_engines(home: &std::path::Path) {
     } else {
         ui::warn("  mnemopi memory OFF — `8sync harness` enables deep project recall (API-only)");
     }
-    if env_detect::omp_major().is_some_and(|m| m >= 17) {
-        ui::ok("  STEP-0 MCP tools mounted as xd:// devices (omp ≥17 tools.xdev) — codegraph/serena/cbm/headroom callable");
-    } else if cfg.contains("discoveryDefaultServers") {
-        ui::ok("  STEP-0 MCP servers always visible (mcp.discoveryDefaultServers)");
+    if cfg.contains("xdevDocs: builtins") || cfg.contains("xdevDocs: inline") {
+        ui::ok("  STEP-0 code-intel devices inlined (tools.xdevDocs + xdevInlineDevices) — codegraph/serena/cbm docs in prompt");
     } else {
-        ui::warn("  MCP tools HIDDEN behind search_tool_bm25 (fix: run `8sync harness global`) — codegraph/serena/cbm never get called");
+        ui::warn("  tools.xdevDocs unset/catalog — omp ignores xdevInlineDevices, code-intel devices show one-line summaries only (fix: `8sync harness global`)");
     }
     if mcp.contains("\"serena\"") && which::which("uvx").is_ok() {
         ui::ok("  serena registered + runnable via uvx — LSP symbol intel (mcp__serena_find_symbol/…)");
     } else {
         ui::warn("  serena NOT registered/runnable (uvx + mcp.json) — run `8sync harness`");
     }
-    let hook = home.join(".omp/hooks/pre").join(crate::brand::ns_file("recall.ts")).exists();
-    if hook && cfg.contains("thresholdPercent: 50") {
-        ui::ok("  anti-forget: recall hook + compaction@50% ON");
-    } else {
-        ui::warn("  anti-forget OFF — run `8sync harness` (recall hook + compact@50%)");
+    let hooks = home.join(".omp/agent/hooks/pre");
+    for name in ["recall.ts", "code-intel.ts"] {
+        let path = hooks.join(crate::brand::ns_file(name));
+        if path.exists() {
+            ui::ok(&format!("  hook ON — {}", path.display()));
+        } else {
+            ui::warn(&format!("  hook missing — {} (fix: `8sync harness`)", path.display()));
+        }
     }
     let caps = home.join(".omp/capabilities.md");
     if caps.exists() {

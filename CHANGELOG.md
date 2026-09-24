@@ -12,6 +12,20 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-09-24
+
+### Fixed
+- Hooks deploy to `~/.omp/agent/hooks/pre/` (the dir omp scans); the recall hook in `~/.omp/hooks/pre/` never ran and is removed on refresh.
+- `harness global`/`setup` also seed `tools.xdevDocs: builtins` — omp ≥18 defaults to `catalog`, which silently ignored `tools.xdevInlineDevices`.
+- `APPEND_SYSTEM.md` RULE #0 and the capabilities snapshot describe the real `xd://` calling convention instead of claiming MCP tools are top-level.
+
+### Added
+- `ckit-code-intel.ts` hook: blocks the first grep/read on code per prompt until codegraph/cbm/serena/lsp ran; a retry passes.
+
+### Changed
+- AGENTS.md force-load block drops the on-demand skill index (omp lists skills natively); other agent files keep the full block.
+- Recall hook injects only the live STATE (no duplicate skill list); `doctor` checks `xdevDocs` and both hooks.
+
 ## [0.1.15] - 2026-09-24
 
 ### Changed — vtiger-php pack: PHP/JS rules always-on + new JS/CSS conventions

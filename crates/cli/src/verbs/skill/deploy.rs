@@ -481,18 +481,14 @@ pub(crate) fn ensure_omp_model_roles(home: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Seed `tools.xdevInlineDevices` in `~/.omp/agent/config.yml` so the STEP-0
-/// code-intel tools (codegraph/cbm/serena) ship their schemas every request and the
-/// model reaches them WITHOUT a `search_tool_bm25` discovery hop — the measured fix
-/// for "STEP-0 tools defined but never auto-called". Also flips `tools.xdev: true`
-/// when absent. Key-presence idempotent: never overrides a user-authored
-/// `xdevInlineDevices`, and inserts UNDER an existing `tools:` block so a user's
-/// `approvalMode` etc. survive. Deliberately does NOT seed `approvalMode: yolo` —
-/// auto-approving every tool is an autonomy/security choice left to the user.
-///
-/// omp ≥17 (universal for a long time) mounts MCP tools as `xd://` devices via
-/// `tools.xdev`; the pre-17 `mcp.discoveryDefaultServers` path and the gen-1
-/// `tools.essentialOverride` migration were dead code and are removed.
+/// Seed the `tools.*` keys in `~/.omp/agent/config.yml` that make the STEP-0
+/// code-intel devices (codegraph/cbm/serena) ship full docs/schemas in the prompt:
+/// `xdev: true`, `xdevDocs: builtins` (omp ≥18 defaults to `catalog`, which ignores
+/// the inline list and shows one-line summaries only) and `xdevInlineDevices`.
+/// Key-presence idempotent: each key is added only when absent, so user-authored
+/// values win; inserted UNDER an existing `tools:` block so `approvalMode` etc.
+/// survive. Deliberately does NOT seed `approvalMode: yolo` — auto-approving every
+/// tool is an autonomy/security choice left to the user.
 pub(crate) fn ensure_mcp_tools_visible(home: &Path) -> Result<()> {
     const DEVICES: &[&str] = &[
         "mcp__codegraph_explore",
@@ -507,51 +503,62 @@ pub(crate) fn ensure_mcp_tools_visible(home: &Path) -> Result<()> {
     ];
     let cfg = home.join(".omp/agent/config.yml");
     if let Some(p) = cfg.parent() { std::fs::create_dir_all(p)?; }
-    let mut s = std::fs::read_to_string(&cfg).unwrap_or_default();
-    if s.lines().any(|l| l.trim_start().starts_with("xdevInlineDevices:")) {
-        ui::skip("STEP-0 inline devices", "tools.xdevInlineDevices already set");
+    let s = std::fs::read_to_string(&cfg).unwrap_or_default();
+    let has = |key: &str| s.lines().any(|l| l.trim_start().starts_with(key));
+    let mut block = String::new();
+    if !has("xdev:") { block.push_str("  xdev: true\n"); }
+    if !has("xdevDocs:") { block.push_str("  xdevDocs: builtins\n"); }
+    if !has("xdevInlineDevices:") {
+        block.push_str("  xdevInlineDevices:\n");
+        for d in DEVICES { block.push_str(&format!("    - \"{d}\"\n")); }
+    }
+    if block.is_empty() {
+        ui::skip("STEP-0 inline devices", "tools.xdev/xdevDocs/xdevInlineDevices already set");
         return Ok(());
     }
-    let list: String = DEVICES.iter().map(|d| format!("    - \"{d}\"\n")).collect();
-    let xdev_line = if s.lines().any(|l| l.trim_start().starts_with("xdev:")) {
-        String::new()
-    } else {
-        "  xdev: true\n".to_string()
-    };
-    let block = format!("{xdev_line}  xdevInlineDevices:\n{}", list.trim_end());
+    std::fs::write(&cfg, insert_under_tools(&s, block.trim_end()))?;
+    ui::ok("STEP-0 code-intel devices inlined (tools.xdevDocs: builtins + xdevInlineDevices)");
+    Ok(())
+}
+
+/// Insert `block` (already indented) right under the top-level `tools:` key,
+/// creating the key at EOF when absent.
+fn insert_under_tools(s: &str, block: &str) -> String {
     if s.lines().any(|l| l.starts_with("tools:")) {
-        // Insert under the existing top-level `tools:` block (preserves approvalMode etc.).
-        s = s
+        let mut out = s
             .lines()
             .map(|l| if l.starts_with("tools:") { format!("{l}\n{block}") } else { l.to_string() })
             .collect::<Vec<_>>()
             .join("\n");
-        if !s.ends_with('\n') { s.push('\n'); }
-    } else {
-        if !s.is_empty() && !s.ends_with('\n') { s.push('\n'); }
-        s.push_str(&format!("\ntools:\n{block}\n"));
+        if !out.ends_with('\n') { out.push('\n'); }
+        return out;
     }
-    std::fs::write(&cfg, s)?;
-    ui::ok("STEP-0 code-intel tools inlined (tools.xdevInlineDevices) — codegraph/cbm/serena reachable without a discovery hop");
-    Ok(())
+    let mut out = s.to_string();
+    if !out.is_empty() && !out.ends_with('\n') { out.push('\n'); }
+    out.push_str(&format!("\ntools:\n{block}\n"));
+    out
 }
 
-/// Deploy the anti-forget recall hook to `~/.omp/hooks/pre/8sync-recall.ts`.
-/// The hook injects a lean ref bundle (skill index + live STATE) at every
-/// `before_agent_start` and into every compaction summary, so the agent keeps
-/// the skill/rule/workflow index fresh even past 50% context / compaction.
-/// Idempotent: skipped if the deployed file is byte-identical to the asset.
-pub(crate) fn ensure_recall_hook(home: &Path) -> Result<()> {
-    let dir = home.join(".omp/hooks/pre");
+/// Deploy the omp hooks into `~/.omp/agent/hooks/pre/` — the user-scope directory
+/// omp discovers (`~/.omp/hooks/pre/` is NOT scanned; hooks there never ran):
+/// - `<NS>-recall.ts`: injects the live STATE at every prompt and into compaction.
+/// - `<NS>-code-intel.ts`: blocks the first grep/read on code per prompt until a
+///   code-intel device ran (a retry of the same call passes).
+/// Removes the legacy copy from the undiscovered dir. Idempotent (byte-identical skip).
+pub(crate) fn ensure_hooks(home: &Path) -> Result<()> {
+    let dir = home.join(".omp/agent/hooks/pre");
     std::fs::create_dir_all(&dir)?;
-    let target = dir.join(crate::brand::ns_file("recall.ts"));
-    let Some(body) = assets::read("hooks/8sync-recall.ts") else { return Ok(()); };
-    if std::fs::read(&target).ok().as_deref() == Some(body.as_bytes()) {
-        ui::skip("recall hook", "already deployed");
-        return Ok(());
+    let _ = std::fs::remove_file(home.join(".omp/hooks/pre").join(crate::brand::ns_file("recall.ts")));
+    for (asset, name) in [("hooks/ckit-recall.ts", "recall.ts"), ("hooks/ckit-code-intel.ts", "code-intel.ts")] {
+        let Some(body) = assets::read(asset) else { continue; };
+        let target = dir.join(crate::brand::ns_file(name));
+        if std::fs::read(&target).ok().as_deref() == Some(body.as_bytes()) {
+            ui::skip(name, "hook already deployed");
+            continue;
+        }
+        std::fs::write(&target, body.as_bytes())?;
+        ui::ok(&format!("hook → {}", target.display()));
     }
-    std::fs::write(&target, body.as_bytes())?;
-    ui::ok(&format!("recall hook → {}", target.display()));
     Ok(())
 }
 
@@ -837,7 +844,7 @@ pub(crate) fn ensure_omp_capabilities_snapshot(home: &Path) -> Result<()> {
     }
     out.push_str("\n## Registered MCP servers — EXACT tool catalog\n\n");
     out.push_str(&format!(
-        "`{}` server(s) in `~/.omp/agent/mcp.json`. Use these BEFORE raw grep/read (STEP 0). Callable names are the REGISTERED forms: `mcp__<server-with-underscores>_<tool>` (e.g. `mcp__codebase_memory_mcp_search_graph`, `mcp__serena_find_symbol`; exception: `mcp__headroom_compress` — omp collapses a duplicated server prefix). The four harness servers are kept ALWAYS VISIBLE by `8sync harness` (`mcp.discoveryDefaultServers`) — call their tools directly; only other/newly-added servers' tools need one `search_tool_bm25` call first.\n\n",
+        "`{}` server(s) in `~/.omp/agent/mcp.json`. Use these BEFORE raw grep/read (STEP 0). omp mounts every MCP tool as an `xd://` device named by its REGISTERED form `mcp__<server-with-underscores>_<tool>` (e.g. `mcp__codebase_memory_mcp_search_graph`, `mcp__serena_find_symbol`): call it with `write` path `xd://<name>` + JSON args as content; `read xd://<name>` returns its schema. `8sync harness` inlines the STEP-0 devices' docs (`tools.xdevDocs: builtins` + `tools.xdevInlineDevices`).\n\n",
         mcp_names_sorted.len()
     ));
     for name in &mcp_names_sorted {

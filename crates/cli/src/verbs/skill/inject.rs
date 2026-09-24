@@ -116,7 +116,11 @@ fn project_uses_encore(root: &Path) -> bool {
 /// truth shared by `inject_agents_md` (writes the block) and `harness bench`
 /// (measures it) so the benchmark never drifts from what is actually injected.
 pub(crate) struct ForceLoadStats {
+    /// Lean block for AGENTS.md: omp already lists every skill (name+description)
+    /// in its system prompt, so the on-demand index is omitted there.
     pub(crate) block: String,
+    /// Full block (with on-demand index) for agents without native skill listing.
+    pub(crate) full_block: String,
     pub(crate) core: Vec<PathBuf>,        // CORE always-on — body read upfront every session
     pub(crate) specialist: Vec<PathBuf>,  // SPECIALIST always-on — body read on trigger
     pub(crate) ondemand: Vec<PathBuf>,    // on-demand visible — body read on trigger
@@ -213,11 +217,11 @@ pub(crate) fn build_force_load(home: &Path, root: &Path) -> ForceLoadStats {
         "> ⚠ `codegraph` binary chưa cài. Chạy `8sync harness init` (auto cài) HOẶC `npx -y @colbymchenry/codegraph install` rồi quay lại đọc tiếp.\n\n"
     };
 
-    let block = format!(
+    let head = format!(
         "{BEGIN}\n\
 ## 🚨 Rules always-on → `~/.omp/agent/APPEND_SYSTEM.md`\n\
 \n\
-Code-intel-first (codegraph · codebase-memory-mcp · serena TRƯỚC grep/read) · headroom cho output dài · memory + `agents/STATE.md` · loop C/D/E · doc-hygiene — **định nghĩa đầy đủ, KHÔNG lặp ở đây**: omp nhúng `~/.omp/agent/APPEND_SYSTEM.md` vào MỌI system prompt (không compact). Đọc file đó là luật bất biến.\n\
+Code-intel-first (codegraph · codebase-memory-mcp · serena qua `xd://` TRƯỚC grep/read) · memory + `agents/STATE.md` · loop C/D/E · doc-hygiene — **định nghĩa đầy đủ, KHÔNG lặp ở đây**: omp nhúng `~/.omp/agent/APPEND_SYSTEM.md` vào MỌI system prompt (không compact). Đọc file đó là luật bất biến.\n\
 \n\
 {codegraph_install_hint}## 🧩 Skills — CORE đọc ngay · SPECIALIST + on-demand đọc khi task khớp\n\
 \n\
@@ -232,22 +236,30 @@ Mỗi skill = 1 directory (Agent Skills open standard) có `SKILL.md` (frontmatt
 \n\
 {specialist_lines}\n\
 ### 🔎 On-demand — tên = trigger; mở `SKILL.md` khi description khớp task\n\
-\n\
-{ondemand_lines}{END}"
+\n"
     );
+    let lean = format!(
+        "{head}omp tự liệt kê mọi skill (name + description) trong system prompt — không lặp ở đây; đọc `skill://<name>` khi description khớp task.\n{END}"
+    );
+    let full = format!("{head}{ondemand_lines}{END}");
 
-    let block = crate::brand::render(&block).into_owned();
-    ForceLoadStats { block, core, specialist, ondemand }
+    ForceLoadStats {
+        block: crate::brand::render(&lean).into_owned(),
+        full_block: crate::brand::render(&full).into_owned(),
+        core,
+        specialist,
+        ondemand,
+    }
 }
 
 /// Rewrite (or insert) the force-load block in **every** agent entry file at the
 /// project root: AGENTS.md, CLAUDE.md, GEMINI.md, OPENCODE.md,
-/// .github/copilot-instructions.md, .cursorrules, .windsurfrules.
+/// .github/copilot-instructions.md, .cursorrules, .windsurfrules. AGENTS.md (read
+/// by omp) gets the lean block; the others keep the full on-demand index.
 pub(crate) fn inject_agents_md(home: &Path, root: &Path) -> Result<()> {
     let stats = build_force_load(home, root);
     let always_count = stats.core.len() + stats.specialist.len();
     let on_count = stats.ondemand.len();
-    let block = stats.block;
 
     // Inject into every known agent entry file (markdown: sentinel rewrite or
     // skeleton; plain text: prepend). AGENTS.md + CLAUDE.md are stub-created;
@@ -269,9 +281,10 @@ pub(crate) fn inject_agents_md(home: &Path, root: &Path) -> Result<()> {
         let stub_create = matches!(*name, "AGENTS.md" | "CLAUDE.md");
         if existing.is_empty() && !stub_create { continue; }
 
+        let block = if *name == "AGENTS.md" { &stats.block } else { &stats.full_block };
         let new_contents = match kind {
-            EntryKind::Markdown { h1 } => rewrite_md_with_block(&existing, &block, h1),
-            EntryKind::Plain => rewrite_plain_with_block(&existing, &block),
+            EntryKind::Markdown { h1 } => rewrite_md_with_block(&existing, block, h1),
+            EntryKind::Plain => rewrite_plain_with_block(&existing, block),
         };
         if new_contents != existing {
             if let Some(parent) = path.parent() {
