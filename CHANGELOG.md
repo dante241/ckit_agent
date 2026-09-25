@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-09-25
+
 ### Changed — `gw-quota` drops the reset clock
 - The ai-gateway per-key budget is now a continuously refilling bucket, so `window_reset_at`
   ("full again at") no longer marks a rollover and the `↻HH:MM` suffix misled. The widget is now
