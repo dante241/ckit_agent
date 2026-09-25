@@ -12,6 +12,11 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-09-25
+
+### Changed
+- `ckit-code-intel.ts`: an exact retry of the blocked grep/read now unlocks grep/read for the rest of the prompt (0.1.18 unlocked only that one call, so each new call cost another block + retry turn). Other calls stay blocked until that retry or a code-intel call.
+
 ## [0.1.18] - 2026-09-25
 
 ### Fixed
