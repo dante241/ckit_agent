@@ -8,9 +8,10 @@
 // path) so one file works for cloudgo-cc and cloudgo-cx.
 //
 // The endpoint returns NO dollar amounts — only used percentages, for two
-// independent budgets: the rolling window (`used_percent`, `window_seconds`)
-// and the calendar day (`daily_used_percent`, reset at local midnight). Widget:
-// `Quota 4h <bar> <pct>% ↻<reset> · Day <bar> <pct>%` — each segment
+// independent budgets: the refilling per-key bucket (`used_percent`, refilled
+// over `window_seconds`) and the calendar day (`daily_used_percent`). Widget:
+// `Quota 4h <bar> <pct>% · Day <bar> <pct>%` (no reset clock: the bucket
+// refills continuously, so there is no rollover to show) — each segment
 // shown only when that budget applies; the meter bar + color track the
 // percentage (success/warning/error). Keys with neither budget and non-gateway
 // providers are hidden. All failures are swallowed (session never affected): a
@@ -32,8 +33,7 @@ export interface ProviderConf {
 export interface Quota {
   budget_source: string; // "override" | "team_policy" | "none"
   used_percent: number | null; // null when the key is unlimited
-  window_seconds?: number; // rolling window length (e.g. 14400 = 4h)
-  window_reset_at: string | null; // ISO rollover time; null if never used
+  window_seconds?: number; // bucket refill period (e.g. 14400 = 4h)
   exceeded: boolean;
   daily_budget_source?: string; // same enum; absent on older gateways
   daily_used_percent?: number | null;
@@ -45,7 +45,6 @@ interface Budget {
   label: string; // "4h" | "Day"
   source: string;
   pct: number;
-  resetAt: string | null;
   exceeded: boolean;
 }
 
@@ -111,7 +110,6 @@ function budgets(q: Quota | undefined): Budget[] {
       label: windowLabel(q.window_seconds),
       source: q.budget_source,
       pct: Math.round(q.used_percent),
-      resetAt: q.window_reset_at,
       exceeded: q.exceeded,
     });
   }
@@ -120,7 +118,6 @@ function budgets(q: Quota | undefined): Budget[] {
       label: "Day",
       source: q.daily_budget_source,
       pct: Math.round(q.daily_used_percent),
-      resetAt: null, // day always rolls over at midnight — no clock shown
       exceeded: !!q.daily_exceeded,
     });
   }
@@ -158,21 +155,10 @@ function bar(pct: number, sgr: string): string {
   return paint(sgr, "▰".repeat(filled)) + paint("90", "▱".repeat(5 - filled));
 }
 
-// Local wall-clock HH:MM (24h) at which the window rolls over — the reset
-// time itself, not a countdown.
-function resetClock(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
 function segment(b: Budget): string {
   const sgr = levelSgr(b.pct, b.exceeded);
-  const clock = resetClock(b.resetAt);
   const head = b.label ? `${paint("90", b.label)} ` : "";
-  const body = `${head}${bar(b.pct, sgr)} ${paint(sgr, b.pct + "%")}`;
-  return clock ? `${body} ${paint("90", "↻" + clock)}` : body;
+  return `${head}${bar(b.pct, sgr)} ${paint(sgr, b.pct + "%")}`;
 }
 
 function statusText(bs: Budget[]): string {
@@ -271,12 +257,7 @@ export default function gwQuotaExtension(pi: ExtensionAPI): void {
           return;
         }
         const detail = bs
-          .map((b) => {
-            const clock = resetClock(b.resetAt);
-            return `${b.label || "window"} [${b.source}]: ${b.pct}% used${b.exceeded ? " — EXCEEDED" : ""}${
-              clock ? `, resets ${clock}` : ""
-            }`;
-          })
+          .map((b) => `${b.label || "window"} [${b.source}]: ${b.pct}% used${b.exceeded ? " — EXCEEDED" : ""}`)
           .join("; ");
         ctx.ui.notify(`gw-quota ${detail}`, bs.some((b) => b.exceeded) ? "error" : "info");
       } catch (err) {

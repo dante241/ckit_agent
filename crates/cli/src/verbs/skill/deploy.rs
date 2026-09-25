@@ -1052,7 +1052,7 @@ pub(crate) fn ensure_engine(home: &Path, root: Option<&Path>) -> Result<()> {
 }
 
 /// Deploy the `gw-quota` omp extension — a belowEditor widget showing the
-/// 9router ai-gateway per-key usage quota (percentage + reset time) for the
+/// 9router ai-gateway per-key usage quota (bucket + daily percentages) for the
 /// active model's provider. GLOBAL-ONLY: it reads `~/.omp/agent/models.yml`
 /// (not project-scoped), so it lands only in `~/.omp/agent/extensions/gw-quota.ts`
 /// — never brand-namespaced (it is a standalone tool, not the ckit engine) and
