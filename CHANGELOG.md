@@ -12,6 +12,11 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-09-26
+
+### Fixed
+- `ckit-code-intel.ts`: parallel grep/read calls were all blocked but only the last was remembered, so retrying any other got blocked again (repeated `code-intel-first` errors). All blocked calls are now tracked; retrying any one unlocks the prompt.
+
 ## [0.1.20] - 2026-09-25
 
 ### Changed — `gw-quota` drops the reset clock

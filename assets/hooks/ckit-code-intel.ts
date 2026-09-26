@@ -45,11 +45,11 @@ function callKey(toolName: string, input: Input): string {
 
 export default function (pi: ExtensionAPI): void {
   let intelUsed = false; // code-intel ran, or the agent insisted via exact retry
-  let blockedKey = "";
+  const blockedKeys = new Set<string>(); // parallel calls each block; a retry of any unlocks
 
   pi.on("before_agent_start", async () => {
     intelUsed = false;
-    blockedKey = "";
+    blockedKeys.clear();
     return undefined;
   });
 
@@ -62,11 +62,11 @@ export default function (pi: ExtensionAPI): void {
     if (intelUsed || !targetsCode(event.toolName, input)) return undefined;
     if (!existsSync(join(ctx.cwd, ".codegraph"))) return undefined;
     const key = callKey(event.toolName, input);
-    if (key === blockedKey) {
+    if (blockedKeys.has(key)) {
       intelUsed = true;
       return undefined;
     }
-    blockedKey = key;
+    blockedKeys.add(key);
     return {
       block: true,
       reason:
