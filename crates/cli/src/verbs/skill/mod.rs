@@ -37,7 +37,8 @@ pub(crate) use inject::inject_agents_md;
       8sync skill add pack:vtiger-php                             install a domain skill+rule pack (project-local: .omp/skills + .omp/rules)
       8sync skill gen 1 2                                        FUSE local skill #1 and #2 into one combined SKILL.md
       8sync skill gen karpathy-guidelines codegraph              same, but by name
-      8sync skill update [name]                                  re-pull registered skills from their source (git/builtin/path)
+      8sync skill update [name]                                  re-pull registered skills from their source (git/builtin/path); inside a project also refresh its pack
+      8sync skill update vtiger-php --force                      refresh the pack, overwriting locally edited files (old copy kept as .bak)
 
     NOTE
       Deploy + force-load + memory + CHANGELOG → `8sync harness init`
@@ -76,7 +77,11 @@ pub fn run(a: Args) -> Result<()> {
             add::add_skill(&env, &skills_toml, spec, force)
         }
         Some("gen") => gen::gen_skill(&env, &a.args),
-        Some("update") => update::update_skills(&env, &skills_toml, a.args.first().map(|s| s.as_str())),
+        Some("update") => {
+            let force = a.args.iter().any(|s| s == "--force" || s == "-f");
+            let name = a.args.iter().find(|s| !s.starts_with('-')).map(|s| s.as_str());
+            update::update_skills(&env, &skills_toml, name, Some(force))
+        }
         Some(other) => {
             if other == "sync" {
                 ui::warn("`8sync skill sync` đã đổi tên → chạy `8sync harness init`.");

@@ -98,3 +98,18 @@ Examples:
 3. **must-test** (logic/UI): thao tác flow thật qua chrome-devtools MCP (mở trang → thao tác → screenshot + console check). JS đổi → hard-refresh vì cache-buster tĩnh.
 
 Báo xong PHẢI kèm evidence tier đã chạy (output lệnh / screenshot).
+
+## Test cases BẮT BUỘC (mọi feature/bugfix chạm logic)
+
+Trước khi code (Phase plan) → **liệt kê test case dạng bảng** vào `plan.md`/`todolist.md`. Không được code logic khi chưa có danh sách test case.
+
+Mỗi case tối thiểu: **# · Kịch bản (input/điều kiện) · Kỳ vọng · Trạng thái** (`chưa` / `PASS` / `FAIL`).
+
+**Bắt buộc phủ đủ:**
+1. **Happy path** — hành vi mới đúng như yêu cầu.
+2. **Regression** — hành vi CŨ không đổi (giá trị/quyền/nhánh cũ vẫn như trước).
+3. **Negative/security** — case KHÔNG được cấp quyền/không được qua (đặc biệt logic permission: chứng minh không over-grant, và gate cấp trên — profile/ACL — vẫn chặn).
+4. **Boundary/null** — dữ liệu cũ/thiếu field, giá trị biên, guard null.
+5. **Mọi nhánh code mới** — nếu thêm code ở N nhánh (ROLE/GROUP, def_org 0/1/3, related-module…), phải có case chạm từng nhánh; nhánh chưa test → ghi rõ "CHƯA cover" trong plan, không được ngầm bỏ.
+
+Hoàn thành: tick từng case + đính evidence (output script / screenshot). Case "CHƯA cover" còn lại phải nêu minh bạch trong Completion Notes, KHÔNG được tuyên bố "full coverage".

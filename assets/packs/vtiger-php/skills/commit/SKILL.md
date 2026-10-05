@@ -89,6 +89,8 @@ Unless `--no-review` flag is passed:
 <Optional body — what changed and why>
 ```
 
+- **Ngôn ngữ mô tả:** phần `<Short description>` + body viết **TIẾNG ANH** (đúng như mọi ví dụ dưới). KHÔNG viết tiếng Việt, KHÔNG dùng Angular style `feat(...)`/`fix(...)`/`perf(...)`. Sai format ngay lần commit đầu → phải amend commit đã push → kéo theo force-push; viết đúng ngay từ đầu để tránh.
+
 **Category rules** (derived from commit history):
 | Category | When to use |
 |----------|-------------|
@@ -142,4 +144,5 @@ Only push if `--push` flag is passed OR user explicitly requests it.
 | **Branch from context** | Auto-create branch from change analysis when on master/dev |
 | **Sync before branch** | When branching off `master`/`dev`, always `checkout master` + `pull origin master` first — never branch from stale local master |
 | **Conventional format** | `[Category] #Ticket: Description` format enforced |
+| **English description** | `<Short description>` + body luôn TIẾNG ANH; không tiếng Việt, không Angular `feat()/fix()` prefix |
 | **User confirmation** | Always confirm branch name + commit message before executing |

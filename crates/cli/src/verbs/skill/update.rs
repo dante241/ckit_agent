@@ -19,17 +19,22 @@ use super::spec::{collect_repo_skills, git_clone_at, install_path_skill};
 use super::{inject_agents_md, inject_subfolder_indexes};
 use crate::{assets, env_detect, ui};
 
+/// `packs`: `Some(force)` also refreshes the project's domain packs — only the
+/// explicit `skill update` verb passes it; harness runs (`None`) never touch a pack.
 pub(crate) fn update_skills(
     env: &env_detect::Env,
     toml_path: &Path,
     filter: Option<&str>,
+    packs: Option<bool>,
 ) -> Result<()> {
     ui::header("8sync skill update");
     // Global registry (machine-local) ∪ project manifest (agents/skills.toml,
     // committed) — the manifest is what makes skills reproducible on a new machine.
+    // Packs are project-scoped: only the project's own manifest may list one.
     let project_root = detect_current_project_root();
     let proj_manifest = project_root.as_ref().map(|r| r.join("agents/skills.toml"));
     let mut reg = discover::read_registry(toml_path);
+    reg.retain(|_, e| !e.src.starts_with("pack:"));
     if let Some(pm) = &proj_manifest {
         for (k, v) in discover::read_registry(pm) {
             reg.entry(k).or_insert(v);
@@ -129,22 +134,26 @@ pub(crate) fn update_skills(
             continue;
         }
         matched = true;
-        let gt = omp_skills.join(name);
+        // Global-only, under the same dir name `install_bundled_global` uses.
+        let target = super::deploy::bundled_target(bname);
+        let gt = omp_skills.join(target);
         let (w, _) = assets::install_tree(&prefix, &gt)?;
-        if let Some(root) = project_root.as_ref() {
-            let lt = root.join(".omp/skills").join(name);
-            if lt.is_dir() {
-                let _ = assets::install_tree(&prefix, &lt)?;
-            }
+        // Older builds deployed under the registry key (e.g. `karpathy` beside
+        // `karpathy-guidelines`), leaving a duplicate that is never refreshed.
+        if name.as_str() != target {
+            let _ = std::fs::remove_dir_all(omp_skills.join(name));
         }
-        ui::ok(&format!("updated builtin `{}` ({} file(s))", name, w));
+        ui::ok(&format!("updated builtin `{}` ({} file(s))", target, w));
         updated += 1;
         sources += 1;
     }
 
-    // --- pack sources: reinstall the domain skill+rule pack (project-local only) ---
+    // --- pack sources: refresh the domain skill+rule pack (project-local only) ---
     for (name, entry) in &reg {
         let Some(pname) = entry.src.strip_prefix("pack:") else {
+            continue;
+        };
+        let Some(force) = packs else {
             continue;
         };
         if !want(name) {
@@ -154,7 +163,7 @@ pub(crate) fn update_skills(
             ui::warn(&format!("pack `{}` is project-local — run inside the project to update", pname));
             continue;
         };
-        match install_pack(root, pname, true) {
+        match install_pack(root, pname, force) {
             Ok(_) => {
                 matched = true;
                 updated += 1;

@@ -33,7 +33,7 @@ pub(crate) fn harness_auto(env: &env_detect::Env, _force: bool) -> Result<()> {
     //    never clobbers an edited local skill). No global→project skill copy:
     //    skills live in ~/.omp/skills/ (global) or <root>/.omp/skills/ (project-local,
     //    only if explicitly added via `8sync skill add`).
-    let _ = update::update_skills(env, &crate::brand::config_dir(&env.home).join("skills.toml"), None);
+    let _ = update::update_skills(env, &crate::brand::config_dir(&env.home).join("skills.toml"), None, None);
     for d in discover::list_installed_skill_dirs(&root.join(".omp/skills")).unwrap_or_default() {
         deploy::ensure_skill_layout(&d);
     }
@@ -42,6 +42,7 @@ pub(crate) fn harness_auto(env: &env_detect::Env, _force: bool) -> Result<()> {
     deploy::ensure_codegraph_init(&root);
     seed_harness_memory(&root)?;
     seed_gitleaks_hook(&root);
+    deploy::remove_project_skill_copies(&root);
     inject_agents_md(&env.home, &root)?;
     inject_subfolder_indexes(&root)?;
     let _ = deploy::ensure_workflow_extension(&env.home, Some(&root));

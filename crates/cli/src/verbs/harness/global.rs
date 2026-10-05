@@ -71,7 +71,7 @@ pub(crate) fn harness_global(
     // 3. Optional: re-pull registered skills from their sources (network).
     if pull {
         ui::step("re-pull registered skills (network)");
-        let _ = update::update_skills(env, &crate::brand::config_dir(&env.home).join("skills.toml"), None);
+        let _ = update::update_skills(env, &crate::brand::config_dir(&env.home).join("skills.toml"), None, None);
     }
 
     // 4. Optional: stamp the per-project layer into every git repo under DIR.
@@ -181,15 +181,16 @@ fn find_git_repos(root: &Path, max_depth: usize) -> Vec<PathBuf> {
 /// `8sync harness`): normalize any project-local skills, inject force-load
 /// into AGENTS.md/CLAUDE.md, seed agents/ memory, install the gitleaks hook.
 fn stamp_project(env: &env_detect::Env, root: &Path, _force: bool) -> Result<usize> {
+    // Commands, engine and bundled skills are global-only: move the swept repo's
+    // copies away (they take precedence over global and would stay stale) before
+    // AGENTS.md is injected, so its force-load list never names a moved skill.
+    deploy::remove_project_skill_copies(root);
     for d in discover::list_installed_skill_dirs(&root.join(".omp/skills")).unwrap_or_default() {
         deploy::ensure_skill_layout(&d);
     }
     inject_agents_md(&env.home, root)?;
     seed_harness_memory(root)?;
     seed_gitleaks_hook(root);
-    // Redeploy the /auto command + engine to the project so a swept repo's
-    // `.omp/commands/auto.md` (precedence over global) points at the current
-    // agents/ memory layout, not a stale copy from an older binary.
     deploy::ensure_engine(&env.home, Some(root))?;
     Ok(0)
 }

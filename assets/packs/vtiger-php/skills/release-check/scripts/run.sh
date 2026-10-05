@@ -13,7 +13,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUTPUT_DIR=".claude/release-queue"
+OUTPUT_DIR="agents/release-queue"
 DRY_RUN=0
 SINCE=""
 LIMIT=""

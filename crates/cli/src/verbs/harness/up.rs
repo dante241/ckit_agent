@@ -46,10 +46,11 @@ fn refresh_once(env: &env_detect::Env, pull: bool, commit: bool) -> Result<()> {
         ui::warn("not inside a project — nothing to refresh");
         return Ok(());
     };
+    crate::verbs::skill::deploy::remove_project_skill_copies(&root);
     if pull {
         ui::step("re-pull registered skills (--pull)");
         let registry = crate::brand::config_dir(&env.home).join("skills.toml");
-        let _ = crate::verbs::skill::update::update_skills(env, &registry, None);
+        let _ = crate::verbs::skill::update::update_skills(env, &registry, None, None);
     }
     inject_agents_md(&env.home, &root)?;
     inject_subfolder_indexes(&root)?;

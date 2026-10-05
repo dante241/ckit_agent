@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-OUTPUT_DIR="${1:-.claude/release-queue}"
+OUTPUT_DIR="${1:-agents/release-queue}"
 SINCE=""
 LIMIT=""
 

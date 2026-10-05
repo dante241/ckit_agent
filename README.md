@@ -196,9 +196,10 @@ System packages (`pacman -Syu`) are **not** run automatically — you decide whe
 
 | Command | Description |
 |---|---|
-| `ckit harness` | **One command (idempotent):** deploy/update bundled skills + codegraph binary + external packs (ponytail/addyosmani, best-effort) → `~/.omp/skills/`, mirror into `.omp/skills/`, `codegraph init`, seed `agents/*` + `CHANGELOG.md`, inject the force-load block into `AGENTS.md`/`CLAUDE.md`. Always safe to re-run |
+| `ckit harness` | **One command (idempotent):** deploy/update bundled skills + codegraph binary + external packs (ponytail/addyosmani, best-effort) → `~/.omp/skills/` (skills, commands, extensions are global-only; stale project copies move to `.omp/removed/`), `codegraph init`, seed `agents/*` + `CHANGELOG.md`, inject the force-load block into `AGENTS.md`/`CLAUDE.md`. Always safe to re-run |
 | `ckit harness init` | First-time full bootstrap (progress UI) + managed `.gitignore` + gitleaks pre-commit hook. `--force` re-mirrors everything, overwriting |
 | `ckit harness up` | Refresh state: re-inject + refresh `KNOWLEDGE.md` + re-index codegraph. `--pull` re-pulls skills · `--commit` git-commits memory (gitleaks scan first) · `--loop 10m` (foreground) · `--timer 30m\|off` (systemd user timer, for background runs) |
+| `ckit skill add pack:vtiger-php` / `ckit skill update vtiger-php [--force]` | Install / refresh a domain pack (skills + rules) into this project's `.omp/` — harness never touches packs. Update overwrites only files still as installed (`.omp/pack-<name>.lock`); locally edited files are kept and listed, `--force` overwrites them (old copy → `.bak`) |
 | **`ckit harness web`** | **Local dashboard** (axum + Vite, `http://127.0.0.1:8731`) — view & **CRUD** the whole agent-team from the browser (see the Dashboard section) |
 | `ckit harness gateway [apply\|key <K>\|verify\|status]` | Deploy/verify the omp model-gateway (`~/.omp/agent/models.yml`): 9router + `thinking.mode` fix for claude-sonnet-5. `verify` pings; HTTP 200 = healthy |
 | `ckit harness add-local-model <path.gguf\|org/repo\|url> [name]` | Load a local **GGUF** through **mistral.rs** (Rust, memory-safe) → serve an OpenAI endpoint + register it as omp provider `local/<name>`. `list`/`rm <name>` to manage. Then `ckit ai --model local/<name>` |

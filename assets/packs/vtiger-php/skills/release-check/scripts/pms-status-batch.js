@@ -22,7 +22,7 @@ function getEnv() {
     const { PMS_BASE_URL, PMS_USERNAME, PMS_PASSWORD, PMS_ACCESSKEY } = process.env;
     if (!PMS_BASE_URL || !PMS_USERNAME || !PMS_PASSWORD || !PMS_ACCESSKEY) {
         console.error('ERROR: Missing env vars PMS_BASE_URL/PMS_USERNAME/PMS_PASSWORD/PMS_ACCESSKEY');
-        console.error('Source them from PMS MCP server config: `claude mcp get pms`');
+        console.error('Source them from omp MCP config: eval "$(bash .omp/skills/release-check/scripts/source-pms-env.sh)"');
         process.exit(2);
     }
     return {

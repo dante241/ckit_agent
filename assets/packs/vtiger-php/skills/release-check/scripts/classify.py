@@ -258,6 +258,17 @@ def build_author_matrix(data: dict) -> list[str]:
     return out
 
 
+def derive_repo(mrs: list[dict]) -> str:
+    """Extract '<group>/<project>' from an MR web_url; fallback 'unknown/repo'."""
+    for m in mrs:
+        url = m.get("web_url") or ""
+        head = url.split("/-/merge_requests")[0]
+        parts = head.split("/", 3)
+        if len(parts) == 4 and parts[3]:
+            return parts[3]
+    return "unknown/repo"
+
+
 def main(argv):
     if len(argv) != 4:
         print(__doc__, file=sys.stderr)
@@ -274,7 +285,7 @@ def main(argv):
 
     result = {
         "scan_date": scan_date,
-        "repo": "acme/vtiger",
+        "repo": derive_repo(mrs),
         "label_filter": "Dev done | Chờ release",
         "total_scanned": len(mrs),
         "summary": {k: len(v) for k, v in buckets.items()},

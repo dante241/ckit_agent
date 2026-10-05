@@ -10,7 +10,7 @@ use anyhow::Result;
 
 use super::external::install_external_skill_packs;
 use super::memory::{seed_gitleaks_hook, seed_harness_memory};
-use crate::verbs::skill::pack::{discover_packs, install_pack, is_pack_installed};
+use crate::verbs::skill::pack::{discover_packs, is_pack_installed};
 use crate::verbs::skill::{deploy, discover, inject_agents_md, inject_subfolder_indexes, update};
 use crate::{env_detect, ui};
 
@@ -85,39 +85,21 @@ pub(crate) fn harness_init(env: &env_detect::Env, _force: bool) -> Result<()> {
         // `8sync harness` so init is a true superset, not a smaller bootstrap.
         // No global→project skill copy: skills live in ~/.omp/skills/ (global)
         // or <root>/.omp/skills/ (project-local, only if explicitly added).
+        deploy::remove_project_skill_copies(&root);
         p.step("pull registered skills (agents/skills.toml: feynman, …)");
-        let _ = update::update_skills(env, &crate::brand::config_dir(&env.home).join("skills.toml"), None);
+        let _ = update::update_skills(env, &crate::brand::config_dir(&env.home).join("skills.toml"), None, None);
         let local_dir = root.join(".omp/skills");
         for d in discover::list_installed_skill_dirs(&local_dir).unwrap_or_default() {
             deploy::ensure_skill_layout(&d);
         }
 
-        // Domain skill+rule packs (e.g. vtiger-php): y/N per pack not yet
-        // installed in THIS project — mirrors the `8sync setup` personal-profile
-        // prompt, but project-scoped (a pack writes into <root>/.omp/, so the
-        // question only makes sense once a project root is known).
-        p.step("domain packs (y/N each, not yet installed)");
-        if env_detect::has_tty() {
-            for pk in discover_packs() {
-                if is_pack_installed(&root, &pk.name) {
-                    continue;
-                }
-                let desc = if pk.description.is_empty() { pk.name.as_str() } else { pk.description.as_str() };
-                let q = format!("Install pack `{}` — {}", pk.name, desc);
-                if ui::prompt_yes_no(&q, false) {
-                    if let Err(e) = install_pack(&root, &pk.name, false) {
-                        ui::err(&format!("pack {} failed: {}", pk.name, e));
-                    } else {
-                        let manifest = root.join("agents/skills.toml");
-                        let mut reg = discover::read_registry(&manifest);
-                        reg.insert(pk.name.clone(), discover::SkillEntry {
-                            src: format!("pack:{}", pk.name),
-                            when: Some("on-demand".to_string()),
-                            rev: None,
-                        });
-                        let _ = discover::write_registry(&manifest, &reg);
-                    }
-                }
+        // Domain skill+rule packs (e.g. vtiger-php) install and update only via
+        // their own verb; harness just points at the ones this project lacks.
+        p.step("domain packs (installed via `skill add pack:<name>`)");
+        for pk in discover_packs() {
+            if !is_pack_installed(&root, &pk.name) {
+                let cmd = crate::brand::render(&format!("8sync skill add pack:{}", pk.name)).into_owned();
+                ui::info(&format!("pack `{}` ({}) available: {}", pk.name, pk.description, cmd));
             }
         }
 

@@ -8,7 +8,7 @@ use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 
 use super::deploy::copy_dir_recursive;
-use super::discover::detect_current_project_root;
+use super::discover::{self, detect_current_project_root};
 use super::inject::inject_agents_md;
 use super::meta::audit_skill_layout;
 use super::pack::install_pack;
@@ -125,41 +125,46 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
             installed.push(name.clone());
         }
         Source::Builtin { .. } => {
-            // Deploy the embedded asset tree `assets/skills/<name>/` → global (+ local).
+            // Deploy the embedded asset tree `assets/skills/<name>/` → global only.
             // This is how opt-in bundled skills (e.g. `social-growth`) are enabled:
             // they ship in the binary but are NOT auto-deployed by `harness init`.
             let prefix = format!("skills/{}", name);
-            let local_target = project_root.as_ref().map(|r| r.join(".omp/skills").join(&name));
+            let target = env.home.join(".omp/skills").join(super::deploy::bundled_target(&name));
             if assets::iter_under(&format!("{}/", prefix)).is_empty() {
                 ui::warn(&format!("no bundled skill `{}` (assets/skills/{}/ not found)", name, name));
             } else {
-                // Global and project-local copies are independent targets: being
-                // already present globally (e.g. from `harness init`) must not skip
-                // the explicit project-local `skill add` this project asked for.
-                if !global_target.exists() || force {
-                    let (w, _) = assets::install_tree(&prefix, &global_target)?;
-                    ui::ok(&format!("enabled builtin `{}` ({} file(s)) → {}", name, w, global_target.display()));
-                    audit_skill_layout(&global_target);
+                if !target.exists() || force {
+                    let (w, _) = assets::install_tree(&prefix, &target)?;
+                    ui::ok(&format!("enabled builtin `{}` ({} file(s)) → {}", name, w, target.display()));
+                    audit_skill_layout(&target);
                 } else {
                     ui::skip(&name, "already installed globally (--force to overwrite)");
-                }
-                if let Some(lt) = &local_target {
-                    if !lt.exists() || force {
-                        let _ = assets::install_tree(&prefix, lt)?;
-                        audit_skill_layout(lt);
-                    }
                 }
                 installed.push(name.clone());
             }
         }
         Source::Pack { .. } => {
             // Domain packs (skills + `.omp/rules/*.md`) are always project-local
-            // — the rule files only make sense scoped to a matching project.
+            // — the rule files only make sense scoped to a matching project — so
+            // they are registered in the project manifest, never the global registry.
             let root = project_root.as_ref().ok_or_else(|| {
                 anyhow!("`pack:{}` must be run inside a project (needs a root for .omp/skills + .omp/rules)", name)
             })?;
             install_pack(root, &name, force)?;
-            installed.push(name.clone());
+            let manifest = root.join("agents/skills.toml");
+            let mut reg = discover::read_registry(&manifest);
+            reg.insert(name.clone(), discover::SkillEntry {
+                src: format!("pack:{}", name),
+                when: Some("on-demand".to_string()),
+                rev: None,
+            });
+            discover::write_registry(&manifest, &reg)?;
+            inject_agents_md(&env.home, root)?;
+            ui::info(&crate::brand::render(&format!(
+                "pack installed; refresh later with `8sync skill update {}`. omp picks up .omp/skills + .omp/rules next `omp --continue`.",
+                name
+            )));
+            return Ok(());
         }
     }
 
@@ -171,7 +176,7 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
         Source::Git { url, .. } => url.clone(),
         Source::Path { src, .. } => format!("path:{}", src.display()),
         Source::Builtin { name } => format!("builtin:{}", name),
-        Source::Pack { name } => format!("pack:{}", name),
+        Source::Pack { .. } => unreachable!("pack returns early"),
     };
     let mut registry = std::fs::read_to_string(toml_path).unwrap_or_default();
     for sname in &installed {
@@ -192,13 +197,9 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
         inject_agents_md(&env.home, root)?;
     }
 
-    if let Source::Pack { .. } = &src {
-        ui::info("pack installed; omp picks up the new .omp/skills + .omp/rules next `omp --continue`.");
-    } else {
-        ui::info(&format!(
-            "installed {} skill(s); omp picks them up next `omp --continue`.",
-            installed.len()
-        ));
-    }
+    ui::info(&format!(
+        "installed {} skill(s); omp picks them up next `omp --continue`.",
+        installed.len()
+    ));
     Ok(())
 }

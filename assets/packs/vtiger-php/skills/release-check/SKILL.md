@@ -2,7 +2,6 @@
 name: release-check
 disable-model-invocation: true
 description: "Scan merged MRs có label 'Dev done' hoặc 'Chờ release' + cross-check ticket status trong PMS qua script batch (không dùng MCP ticket_detail). Transition label 'Dev done' → 'Chờ release' cho MR ready. Auto-rollback 'Chờ release' → 'Dev done' khi ticket bị reopen. Sinh report JSON + markdown."
-user-invokable: true
 allowed-tools: Bash(bash .omp/skills/release-check/scripts/*), Bash(glab mr *), Bash(jq*), Bash(cat*), Bash(head*), Read, Write
 ---
 
@@ -38,7 +37,7 @@ scripts/
 ├── scan-mrs.sh         # glab list 2x (Dev done + Chờ release) → dedupe by iid → slim JSON
 ├── pms-status-batch.js # Login 1x + parallel fetch 8 concurrent → TSV (ticket_no, status, record_id, label, categories, assignee)
 ├── classify.py         # Merge MRs + statuses → classified.json + report.md (5 buckets + author matrix, PMS-linked ticket IDs)
-└── source-pms-env.sh   # Extract PMS_* env vars from `claude mcp get pms`
+└── source-pms-env.sh   # Extract PMS_* env vars from omp MCP config (~/.omp/agent/mcp.json)
 ```
 
 **Token budget:** ~5KB context (vs. ~300KB với MCP-per-ticket cũ).
@@ -52,7 +51,7 @@ bash .omp/skills/release-check/scripts/run.sh [--dry-run] [--since DATE] [--limi
 ```
 
 Script pipeline:
-1. `scan-mrs.sh` → `.claude/release-queue/mrs-slim-<DATE>.json` (gọi `glab mr list` 2 lần: `--label "Dev done"` + `--label "Chờ release"`, merge + dedupe by iid)
+1. `scan-mrs.sh` → `agents/release-queue/mrs-slim-<DATE>.json` (gọi `glab mr list` 2 lần: `--label "Dev done"` + `--label "Chờ release"`, merge + dedupe by iid)
 2. `jq` extract unique ticket IDs từ titles (regex `#(\d{3,})`) → `ticket-ids-<DATE>.txt`
 3. `pms-status-batch.js` login PMS + fetch tất cả statuses song song → `status-<DATE>.tsv`
 4. `classify.py` merge + render → `classified-<DATE>.json` + `report-<DATE>.md` + terminal summary (5 buckets: ready / **regressed** / still_testing / no_ticket / ticket_not_found)
@@ -74,7 +73,7 @@ Script pipeline:
 ### Step 2: AI reads report
 
 ```bash
-cat .claude/release-queue/report-<DATE>.md
+cat agents/release-queue/report-<DATE>.md
 ```
 
 AI chỉ cần đọc report markdown (small, ~2-5KB) và present summary cho user. **Không cần read JSON chi tiết** unless user hỏi follow-up.
@@ -92,8 +91,8 @@ Scanned: 55 MRs
 
 Ready MRs: !240 !239
 Regressed MRs: !233 (will rollback label)
-Report: .claude/release-queue/report-2026-04-23.md
-JSON:   .claude/release-queue/classified-2026-04-23.json
+Report: agents/release-queue/report-2026-04-23.md
+JSON:   agents/release-queue/classified-2026-04-23.json
 ```
 
 AI: truyền y nguyên terminal summary + gợi ý next step (`/release-bundle`).
@@ -128,16 +127,16 @@ AI: truyền y nguyên terminal summary + gợi ý next step (`/release-bundle`)
 Test individual scripts:
 ```bash
 # Test scan only
-bash .omp/skills/release-check/scripts/scan-mrs.sh .claude/release-queue
+bash .omp/skills/release-check/scripts/scan-mrs.sh agents/release-queue
 
 # Test PMS batch (needs env vars)
 echo -e "22036\n1346675" | node .omp/skills/release-check/scripts/pms-status-batch.js
 
 # Test classify (needs inputs from above)
 python3 .omp/skills/release-check/scripts/classify.py \
-    .claude/release-queue/mrs-slim-2026-04-23.json \
-    .claude/release-queue/status-2026-04-23.tsv \
-    .claude/release-queue/
+    agents/release-queue/mrs-slim-2026-04-23.json \
+    agents/release-queue/status-2026-04-23.tsv \
+    agents/release-queue/
 ```
 
 ## References

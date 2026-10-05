@@ -6,33 +6,44 @@ use std::process::Command;
 
 use crate::{assets, env_detect, ui};
 
+/// Every bundled skill: (asset prefix, deployed dir under `~/.omp/skills/`).
+/// Always-on first (read order), then on-demand specialists. Encore/full-flow
+/// are on-demand + tech-gated. Global-only: never copied into a project.
+pub(crate) const BUNDLED: [(&str, &str); 17] = [
+    ("skills/codegraph",               "codegraph"),
+    ("skills/karpathy",                "karpathy-guidelines"),
+    ("skills/ponytail",                "ponytail"),
+    ("skills/assp-skill",              "assp-skill"),
+    ("skills/impeccable",              "impeccable"),
+    ("skills/taste-skill",             "taste-skill"),
+    ("skills/8sync-cli",               "8sync-cli"),
+    ("skills/image-routing",           "image-routing"),
+    ("skills/locate-anything",         "locate-anything"),
+    ("skills/code-review-and-quality", "code-review-and-quality"),
+    ("skills/senior-security",         "senior-security"),
+    ("skills/senior-frontend",         "senior-frontend"),
+    ("skills/full-flow",               "full-flow"),
+    ("skills/encore-deploy",           "encore-deploy"),
+    ("skills/last30days",              "last30days"),
+    ("skills/token-bench",             "token-bench"),
+    ("skills/feature",                 "feature"),
+];
+
+/// Deployed dir name for builtin asset `skills/<asset>` (e.g. `karpathy` →
+/// `karpathy-guidelines`); opt-in builtins outside `BUNDLED` keep their name.
+pub(crate) fn bundled_target(asset: &str) -> &str {
+    BUNDLED
+        .iter()
+        .find(|(prefix, _)| prefix.strip_prefix("skills/") == Some(asset))
+        .map_or(asset, |(_, name)| name)
+}
+
 /// Deploy every bundled skill tree under `assets/skills/<name>/` into
 /// `~/.omp/skills/<name>/`. Each tree is deployed verbatim including any
 /// `references/` or `scripts/` subdirs. Shell scripts get mode 0755.
 pub(crate) fn install_bundled_global(env: &env_detect::Env) -> Result<()> {
     let skills_dir = env.home.join(".omp/skills");
-    // (asset prefix, target subdir name). always-on first (read order), then
-    // on-demand specialists. Encore/full-flow are on-demand + tech-gated.
-    let bundled: [(&str, &str); 17] = [
-        ("skills/codegraph",               "codegraph"),
-        ("skills/karpathy",                "karpathy-guidelines"),
-        ("skills/ponytail",                "ponytail"),
-        ("skills/assp-skill",              "assp-skill"),
-        ("skills/impeccable",              "impeccable"),
-        ("skills/taste-skill",             "taste-skill"),
-        ("skills/8sync-cli",               "8sync-cli"),
-        ("skills/image-routing",           "image-routing"),
-        ("skills/locate-anything",         "locate-anything"),
-        ("skills/code-review-and-quality", "code-review-and-quality"),
-        ("skills/senior-security",         "senior-security"),
-        ("skills/senior-frontend",         "senior-frontend"),
-        ("skills/full-flow",               "full-flow"),
-        ("skills/encore-deploy",           "encore-deploy"),
-        ("skills/last30days",              "last30days"),
-        ("skills/token-bench",             "token-bench"),
-        ("skills/feature",                 "feature"),
-    ];
-    for (asset_prefix, name) in bundled {
+    for (asset_prefix, name) in BUNDLED {
         let target_dir = skills_dir.join(name);
         std::fs::create_dir_all(&target_dir)?;
         let (written, _unchanged) = assets::install_tree(asset_prefix, &target_dir)?;
@@ -41,6 +52,34 @@ pub(crate) fn install_bundled_global(env: &env_detect::Env) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Commands, extensions and bundled skills are global-only: a project copy
+/// shadows the global one and never gets refreshed, so take it out of the way.
+/// `.omp` is usually untracked, so the copy is moved to `.omp/removed/` rather
+/// than deleted — any local edit stays recoverable.
+fn remove_project_copy(root: &Path, rel: &str) {
+    let path = root.join(rel);
+    if !path.exists() {
+        return;
+    }
+    let backup = root.join(".omp/removed").join(rel.trim_start_matches(".omp/"));
+    let _ = std::fs::remove_dir_all(&backup);
+    let _ = std::fs::remove_file(&backup);
+    if let Some(p) = backup.parent() {
+        let _ = std::fs::create_dir_all(p);
+    }
+    if std::fs::rename(&path, &backup).is_ok() {
+        ui::ok(&format!("moved project copy {} → {} (served globally)", rel, backup.display()));
+    }
+}
+
+/// Move the project's copies of bundled skills out of `.omp/skills/`. Run it
+/// before injecting AGENTS.md so the force-load list never names a moved skill.
+pub(crate) fn remove_project_skill_copies(root: &Path) {
+    for (_, name) in BUNDLED {
+        remove_project_copy(root, &format!(".omp/skills/{}", name));
+    }
 }
 
 /// Clean cutover for machines that installed an earlier 8sync: remove retired
@@ -925,11 +964,10 @@ pub(crate) fn ensure_feynman_cli() {
 /// Deploy the `8sync-workflow` omp extension — a gsd-pi-grade surface that
 /// registers model-callable workflow tools (wf_state_get/set, persisted across
 /// compaction via a custom session entry) + a `/wf` status command + a
-/// session_start state-restore handler. Lives in omp's config dir
-/// (`~/.omp/agent/extensions/` global + `<root>/.omp/extensions/` project) so it
-/// NEVER patches omp core → omp updates stay safe. The Workflow viz page
-/// (`8sync harness web`) appends exported-workflow `registerTool` blocks to the
-/// project copy. Idempotent (byte-identical skip), mirrors `ensure_gs_command`.
+/// session_start state-restore handler. Lives in omp's global config dir
+/// (`~/.omp/agent/extensions/`) so it NEVER patches omp core → omp updates stay
+/// safe. With `root`, a stale project copy is removed (global-only). Exported
+/// workflows (`harness web`) are separate `<root>/.omp/extensions/<name>.ts` files.
 pub(crate) fn ensure_workflow_extension(home: &Path, root: Option<&Path>) -> Result<()> {
     let Some(body) = assets::read("extensions/8sync-workflow.ts") else {
         return Ok(());
@@ -944,21 +982,13 @@ pub(crate) fn ensure_workflow_extension(home: &Path, root: Option<&Path>) -> Res
         ui::ok(&format!("8sync-workflow extension → {}", global.display()));
     }
     if let Some(r) = root {
-        let proj = r.join(".omp/extensions").join(crate::brand::ns_file("workflow.ts"));
-        if let Some(p) = proj.parent() {
-            std::fs::create_dir_all(p)?;
-        }
-        let changed = std::fs::read_to_string(&proj).map(|s| s != body).unwrap_or(true);
-        std::fs::write(&proj, &body)?;
-        if changed {
-            ui::ok(&format!("8sync-workflow extension → {}", proj.display()));
-        }
+        remove_project_copy(r, &format!(".omp/extensions/{}", crate::brand::ns_file("workflow.ts")));
     }
     Ok(())
 }
 
-/// Deploy an omp artifact (command/extension) to the global config dir and, when
-/// inside a project, the project config dir too. Byte-identical writes are quiet.
+/// Deploy an omp artifact (command/extension) to the global config dir. With
+/// `root`, remove the project copy at `proj_rel` (it would shadow the global one).
 fn deploy_omp_pair(
     home: &Path,
     root: Option<&Path>,
@@ -981,15 +1011,7 @@ fn deploy_omp_pair(
         ui::ok(&format!("{} → {}", label, global.display()));
     }
     if let Some(r) = root {
-        let proj = r.join(proj_rel);
-        if let Some(p) = proj.parent() {
-            std::fs::create_dir_all(p)?;
-        }
-        let changed = std::fs::read_to_string(&proj).map(|s| s != body).unwrap_or(true);
-        std::fs::write(&proj, &body)?;
-        if changed {
-            ui::ok(&format!("{} → {}", label, proj.display()));
-        }
+        remove_project_copy(r, proj_rel);
     }
     Ok(())
 }

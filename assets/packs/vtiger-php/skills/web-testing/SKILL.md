@@ -1,6 +1,7 @@
 ---
 name: web-testing
 disable-model-invocation: true
+user-invokable: true
 description: Web testing with Playwright, Vitest, k6. E2E/unit/integration/load/security/visual/a11y testing. Use for test automation, flakiness, Core Web Vitals, mobile gestures, cross-browser.
 license: Apache-2.0
 version: 3.0.0
