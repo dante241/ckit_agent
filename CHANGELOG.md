@@ -12,6 +12,19 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-10-05
+
+### Changed — engine runs independent tasks in parallel
+- `engine_plan`: tasks accept optional `key`, `depends` and `files`; unknown keys and dependency cycles are rejected. Old `state.json` files still load.
+- New `engine_ready {limit}`: returns every task whose dependencies are done and whose `files` don't overlap a running task (path-prefix match), up to `limit` running tasks. `engine_next` skips tasks with unfinished dependencies.
+- A blocked task now blocks every task that depends on it.
+- `engine_advance {files}` stages and commits only those paths and refuses a whole-tree commit while other tasks are in progress. It commits first and marks the task done only on success; a task with no changes completes without a commit.
+- `/feature` skill: plans declare `[depends:]` + `[file:]` per task instead of waves; `go` dispatches dev agents for all ready tasks and verifies each as soon as it finishes. `config.workflow.min_parallel_tasks` is replaced by `max_parallel_tasks` (default 4). MCP tool names in the skill now use the `xd://` device paths.
+- Engine UI label, `/engine` messages and worktree branches are `ckit` (`ckit/<slug>`); merge/remove still find worktrees opened on `8sync/<slug>`.
+
+### Fixed
+- Engine verify commands and git ran through a login shell, where macOS `path_helper` put `/usr/bin/git` first (fails on an unaccepted Xcode license). Git now runs directly and verify commands use omp's own environment.
+
 ## [0.1.21] - 2026-09-26
 
 ### Fixed
