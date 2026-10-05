@@ -12,6 +12,15 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-10-05
+
+### Changed — skills, commands, extensions are global-only; packs have their own verb
+- `harness` (init/up/global --sweep/auto) deploys commands (`/auto`, `/feature`, `/cook`, `/push-now`, `/pull-now`), the engine and workflow extensions and the bundled skills only to `~/.omp`, and moves the project's copies of them to `.omp/removed/` before injecting AGENTS.md (`.omp/commands/{auto,feature,cook,push-now,pull-now}.md`, `.omp/extensions/ckit-{engine,workflow}.ts`, `.omp/skills/<bundled>`). Project copies shadowed the global ones and were never refreshed. Exported workflows and other project files are untouched.
+- `skill add builtin:<x>` installs globally only, under the same dir name as `harness` (`karpathy` → `karpathy-guidelines`); `skill update` uses that name too and removes the stale duplicate the old name mapping left behind.
+- Domain packs install and update only through `skill add pack:<name>` / `skill update [<name>] [--force]` run inside the project; `harness init` no longer prompts for them (it lists uninstalled packs) and `harness up --pull` never touches them. Packs are registered in the project's `agents/skills.toml` only, never the global registry.
+- Pack updates no longer clobber local edits: `.omp/pack-<name>.lock` records each file's hash as installed; a file is overwritten only while it still has that hash. Edited or untracked files are kept and listed; `--force` overwrites them and saves the old copy as `.bak`. The first update of an existing project therefore lists every file that differs from the pack.
+- `vtiger-php` pack: dropped its stale copies of `feature`, `codegraph` and `karpathy-guidelines` (served by the bundled global skills) and took the newer skills maintained in the vtiger repo (`release-check` on omp MCP config, English commit messages, `testing`, `user-invokable` flags). The `error-patterns*.md` catalogs stay per-project (a project's edited copy is kept by the lock).
+
 ## [0.1.22] - 2026-10-05
 
 ### Changed — engine runs independent tasks in parallel
