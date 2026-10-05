@@ -15,22 +15,22 @@ owns the multi-feature ROADMAP + per-phase Acceptance-Criteria contract *above* 
 
 ## 0. Load the skill + ground (do this first, every subcommand)
 Read the bundled skill and its rules BEFORE acting:
-- `~/.omp/skills/feature/SKILL.md` + `~/.omp/skills/feature/references/feature-rules.md`
+- `.omp/skills/feature/SKILL.md` + `.omp/skills/feature/references/feature-rules.md`
   (the always-applied rules), then the reference for the specific subcommand
   (`new`/`plan`/`execute`/`ship`/`auto`).
 Then ground on state (except for `new`, which creates it):
 - `agents/planning/ACTIVE.md` line 1 → active slug; `agents/planning/<slug>/STATE.md`
   frontmatter (`status`/`active_phase`/`next_action`); `agents/planning/config.json`
   (`workflow.*`, `paths.*`). Obey `~/.omp/agent/APPEND_SYSTEM.md` (code-intel first;
-  always-on skills). Explore with **codegraph / codebase-memory-mcp / serena** — never
-  grep/Read-all; `headroom_compress` any tool output > ~300 lines.
+  always-on skills). Explore with **codegraph / codebase-memory-mcp / serena** via `xd://`
+  devices — never grep/Read-all; `xd://mcp__headroom_compress` any tool output > ~300 lines.
 
 ## 1. Dispatch (`$ARGUMENTS` first word)
 | word | do |
 |------|----|
 | `new <slug>` | `references/new.md` — the deterministic scaffold is also `8sync feature new <slug>`; then fill PROJECT/REQUIREMENTS/ROADMAP with the user, cut phases by dependency. Gate 1: user approves the architecture. |
-| `plan` | `references/plan.md` — discuss + write `M<x>-CONTEXT.md` (📌 Requirement scope + 🎯 Goal + ✅ AC table) + `M<x>-NN-PLAN.md` (tasks ↔ UC ↔ AC, waves). Plan-review per `config.workflow.plan_review`. Gate 2: user approves the AC + plan. |
-| `go` | `references/execute.md` — **delegate execution to the engine**: `engine_plan` (goal = phase Goal, slices/tasks = the PLAN, each task `verify` = the project's real lint/test/build), then loop `engine_next → engine_verify → engine_advance {commit:true}` (verify-gate + doom-loop guard are code-enforced). Tick STATE.Log + PLAN checkbox per task. |
+| `plan` | `references/plan.md` — discuss + write `M<x>-CONTEXT.md` (📌 Requirement scope + 🎯 Goal + ✅ AC table) + `M<x>-NN-PLAN.md` (tasks ↔ UC ↔ AC, each with `[file:]` + `[depends:]` + scoped `[verify:]`). Plan-review per `config.workflow.plan_review`. Gate 2: user approves the AC + plan. |
+| `go` | `references/execute.md` — `engine_plan` (goal = phase Goal, one task per PLAN task with `key`/`depends`/`files`/scoped `verify`), then the dispatch loop: `engine_ready {limit}` returns every task whose deps are done and whose files don't overlap a running task → spawn dev subagents for them; when one finishes run `engine_verify` while the others keep coding; PASS → `engine_advance {commit:true, files:[changed files]}`; FAIL → re-dispatch dev with the failure. Dependency order, file overlap, doom-loop guard and blocked-dependents are engine-enforced. Tick STATE.Log + PLAN checkbox per task. |
 | `ship` | `references/ship.md` — review (multi-lens via `task` reviewers) + test (`task` Tester) against the AC → write `M<x>-VERIFICATION.md` AC-matrix. Phase done ⇔ every AC PASS. Archive on the final phase. |
 | `status` | print the active STATE position (same as `8sync feature status`). |
 | `switch <slug>` | flip ACTIVE (same as `8sync feature switch <slug>`), then re-ground. |

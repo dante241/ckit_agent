@@ -3,13 +3,13 @@
 > Cờ `--auto` biến `/feature` thành chế độ tự lái: chạy **trọn 1 phase** với tối thiểu gián đoạn user.
 > Load file này NGAY khi args chứa `--auto`, trước khi dispatch sang plan/go.
 > `references/feature-rules.md` (luật xuyên suốt, gồm **R10 code-intelligence FIRST**) VẪN áp — auto KHÔNG nới chuẩn code/skill/AC, chỉ thay user-gate bằng tự-quyết.
-> Kỷ luật engine-loop + guardrail lấy từ `/auto` (`assets/commands/auto.md`) — mirror nó, đừng chế lại.
+> Kỷ luật engine-loop + guardrail lấy từ `/auto` (`.omp/commands/auto.md`) — mirror nó, đừng chế lại.
 
 ## 3 luật cốt lõi
 
 1. **Auto-discuss qua subagent** — mọi điểm-quyết-định mà bình thường dùng `ask` → thay bằng **spawn 1 `task` subagent** (`agent: explore` cho "cái gì đang có / nên theo cái nào", `agent: plan` cho trade-off/approach) đóng vai đối tác trao đổi + tự quyết, bám ràng buộc `PROJECT.md` + `REQUIREMENTS.md` + `agents/KNOWLEDGE.md`/`DECISIONS.md`. KHÔNG hỏi user.
 2. **Block thì không stall** — đánh giá: nếu vẫn code tiếp được → code; nếu không → **SKIP item, ghi NEEDS-CONFIRM**, code nốt phần còn lại. User confirm sau, rồi mới code item bị skip.
-3. **1 lệnh `--auto` = code trọn 1 phase** — `plan` (nếu chưa có PLAN) → `go` (hết wave qua engine) → self-check AC → ghi VERIFICATION nếu có item defer. Dừng ở ranh giới phase kế (KHÔNG tự nhảy phase tiếp trừ khi user nói rõ "code hết các phase").
+3. **1 lệnh `--auto` = code trọn 1 phase** — `plan` (nếu chưa có PLAN) → `go` (hết task theo đồ thị phụ thuộc) → self-check AC → ghi VERIFICATION nếu có item defer. Dừng ở ranh giới phase kế (KHÔNG tự nhảy phase tiếp trừ khi user nói rõ "code hết các phase").
 
 ## Phân loại điểm-quyết-định (AI tra được vs phải hỏi)
 
@@ -24,7 +24,7 @@
 
 Khi gặp điểm "cần phán đoán thiết kế":
 - Spawn `task` subagent: `agent: plan` cho trade-off/approach, hoặc `agent: explore` cho "cái gì đang có / nên theo cái nào".
-- Prompt subagent BẮT BUỘC nhúng: câu hỏi cụ thể · ràng buộc liên quan (copy literal từ PROJECT/REQUIREMENTS/su-code memory) · các lựa chọn đang cân nhắc · R10 literal (code-intel FIRST) · "trả về 1 khuyến nghị + lý do ngắn, KHÔNG hỏi lại".
+- Prompt subagent BẮT BUỘC nhúng: câu hỏi cụ thể · ràng buộc liên quan (copy literal từ PROJECT/REQUIREMENTS/`agents/` memory) · các lựa chọn đang cân nhắc · R10 literal (code-intel FIRST) · "trả về 1 khuyến nghị + lý do ngắn, KHÔNG hỏi lại".
 - Orchestrator nhận khuyến nghị → **quyết** (có thể override nếu trái ràng buộc) → ghi `M<x>-CONTEXT.md` Decisions + STATE.Decisions với ghi chú `(auto-decided via <role>)`.
 - Nhiều câu độc lập → spawn song song (1 message, nhiều tool-call).
 
@@ -38,9 +38,9 @@ Khi gặp điểm "cần phán đoán thiết kế":
    - Vẫn viết đủ `M<x>-CONTEXT.md` (Requirement scope + Goal + AC) + `M<x>-NN-PLAN.md` (mỗi task có `[UC:]` + `[AC:]`).
    - **Step 3.5 plan-review VẪN chạy** theo `config.workflow.plan_review` (auto KHÔNG nới chất lượng — review PLAN là tự-soát, không phải hỏi user). NEEDS-FIX → sửa PLAN/CONTEXT rồi tiếp, ghi `(auto-decided)`.
    - Step 4 user-gate → **bỏ qua**, tự set `status: planned` (plan-review thay vai gate chất lượng).
-3. **Chạy `references/execute.md`** — feed PLAN vào `engine_plan`, loop `engine_next → engine_verify → engine_advance {commit:true}` hết wave. KHÔNG yield giữa các task (autonomous). Commit atomic mỗi task (verify-gate của engine đã enforce).
-   - Task block (dữ liệu/môi trường) → SKIP + ghi NEEDS-CONFIRM, làm task khác.
-   - `engine_verify` fail 3 lần giống nhau → engine BLOCK task (doom-loop guard); ghi `failure:` vào `agents/KNOWLEDGE.md`, chuyển task unblocked kế.
+3. **Chạy `references/execute.md`** — feed PLAN vào `engine_plan`, chạy vòng điều phối: dev song song mọi task đủ phụ thuộc → task dev xong thì `engine_verify` ngay (task khác vẫn dev) → PASS thì commit file của task, lỗi thì dev lại. KHÔNG yield giữa các task (autonomous).
+   - Task block (dữ liệu/môi trường) → SKIP + ghi NEEDS-CONFIRM, task phụ thuộc nó block theo, nhánh khác chạy tiếp.
+   - `engine_verify` fail 3 lần giống nhau → engine BLOCK task (doom-loop guard); ghi `failure:` vào `agents/KNOWLEDGE.md`.
 4. Self-check UC/AC. UC/AC nào code-done → đánh dấu; UC/AC block → NEEDS-CONFIRM.
 5. Nếu có item defer → ghi `M<x>-VERIFICATION.md` (matrix UC/AC PASS / NEEDS-CONFIRM) ngay (không chờ ship).
 6. STATE: `status: executing`, `next_action`: `ship-phase` (nếu mọi AC code-done) hoặc giữ `execute-phase` + ghi list NEEDS-CONFIRM.

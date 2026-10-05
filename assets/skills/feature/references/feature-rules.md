@@ -3,7 +3,7 @@
 > **Load FILE NÀY ĐẦU TIÊN ở mọi subcommand** (`new`/`plan`/`go`/`ship`/`--auto`), TRƯỚC khi làm việc. Với subcommand khác `new`: đọc ACTIVE+STATE+config trước rồi load file này. Riêng `new`: chưa có ACTIVE/STATE thì đọc config nếu có, load file này, rồi scaffold ACTIVE/STATE.
 > Đây là "hợp đồng luôn áp" — gom các luật rải rác trong SKILL.md và từng reference. Reference khác chỉ thêm bước RIÊNG của subcommand, KHÔNG lặp lại luật ở đây.
 >
-> **Đã lược cho su-code (repo-agnostic):** R2 (routing model 4-slot của Claude-Code), R4 (audit brace ngôn ngữ cụ thể), R9 (cập nhật ticket quản-lý-dự-án ngoài), R11 (comment convention gắn ticket-ID) đã bị BỎ HẲN — chúng gắn chặt vào 1 repo/1 ngôn ngữ và không portable. R-number của các luật còn lại GIỮ NGUYÊN để cross-reference cũ vẫn resolve.
+> **Đã lược cho 8sync (repo-agnostic):** R2 (routing model 4-slot của Claude-Code), R4 (audit brace ngôn ngữ cụ thể), R9 (cập nhật ticket quản-lý-dự-án ngoài), R11 (comment convention gắn ticket-ID) đã bị BỎ HẲN — chúng gắn chặt vào 1 repo/1 ngôn ngữ và không portable. R-number của các luật còn lại GIỮ NGUYÊN để cross-reference cũ vẫn resolve.
 
 ## R1 — config.X là chỉ thị cho ORCHESTRATOR, resolve về literal trước khi dùng
 
@@ -34,28 +34,30 @@ Mỗi phase có 🎯 Goal + ✅ Acceptance Criteria (AC-NN, đo được) trong 
 ## R7 — Neo vào codebase (brownfield)
 
 - Tổng thể: `AGENTS.md` + `agents/PROJECT.md` — KHÔNG mô tả lại.
-- Nghiệp vụ/kiến trúc: `agents/KNOWLEDGE.md` + codebase-memory-mcp (`mcp__codebase_memory_mcp_get_architecture`, `_search_graph`) — tra trước khi code module.
+- Nghiệp vụ/kiến trúc: `agents/KNOWLEDGE.md` + codebase-memory-mcp (`xd://mcp__codebase_memory_mcp_get_architecture`, `xd://mcp__codebase_memory_mcp_search_graph`) — tra trước khi code module.
 - Convention + quyết định: `AGENTS.md` + `agents/DECISIONS.md` + `agents/PREFERENCES.md`.
 - Không mô tả lại thứ đã có trong các nguồn trên; trích dẫn (vd "theo `agents/DECISIONS.md` đã chốt X").
 
 ## R8 — Commit model riêng của feature
 
-Commit **atomic mỗi task xong** trong `go`, qua `engine_advance {commit:true}` (engine chỉ commit sau khi `engine_verify` pass — verify-gate enforce trong code; self-report "xong" KHÔNG phải tín hiệu dừng). Message theo Conventional Commits, **tiếng Anh**, milestone/task ở ĐẦU: `<type>: M<x> - T<n> <English description>` (`type` ∈ feat/fix/docs/refactor; KHÔNG `[<Category>]` prefix), no AI ref.
+Commit **atomic mỗi task xong** trong `go`: sau `engine_verify` PASS → `engine_advance {taskId, commit:true, files:[đúng các file task đã sửa/tạo], message}` — engine chỉ stage + commit các file đó (KHÔNG `git add -A`, vì task khác đang dev song song; engine từ chối commit cả tree khi còn task khác đang chạy). Self-report "xong" KHÔNG phải tín hiệu dừng. Message theo Conventional Commits, **tiếng Anh**, milestone/task ở ĐẦU: `<type>: M<x> - T<n> <English description>` (`type` ∈ feat/fix/docs/refactor; KHÔNG `[<Category>]` prefix), no AI ref.
 - **Feature branch + ticket là TUỲ CHỌN** (`STATE.branch`/`STATE.ticket` có thể trống — KHÔNG ép tạo nhánh/ticket ở `new`). Nếu user muốn 1 feature branch lớn → verify `git branch --show-current` khớp `STATE.branch` trước khi commit.
-- **KHÔNG `git push` / mở PR** trừ khi user yêu cầu rõ (convention su-code). Commit local làm checkpoint.
+- **KHÔNG `git push` / mở PR** trừ khi user yêu cầu rõ (convention 8sync). Commit local làm checkpoint.
 - Ghi commit hash vào STATE.Log dòng task để `ship`/revert truy ngược.
 
 ## R10 — Code-intelligence FIRST (mọi lookup code, ÁP DỤNG CẢ SUBAGENT — bắt buộc, không tuỳ chọn)
 
 Mọi thao tác TÌM/HIỂU/ĐỊNH VỊ code (không phải sắp EDIT ngay) → dùng code-intelligence engine TRƯỚC grep/Read thô, theo đúng RULE #0 (`~/.omp/agent/APPEND_SYSTEM.md`). Áp dụng cho **CẢ main thread LẪN MỌI subagent** (`explore` ở `plan.md` Step 2, `task` executor ở `execute.md`, `reviewer`/`Tester` ở `ship.md`, discuss subagent ở `auto.md`). Ưu tiên:
 
-1. **codegraph** (local graph, CLI) — `codegraph query/explore/node/callers/callees/impact "<symbol|query>"`: source + call path + blast radius. Skill: `~/.omp/skills/codegraph/SKILL.md`.
-2. **codebase-memory-mcp** (MCP, LUÔN có trong tool list — gọi đúng tên đăng ký): `mcp__codebase_memory_mcp_search_graph`, `_trace_path`, `_get_architecture`, `_get_code_snippet`; full catalog visible (`query_graph`, `detect_changes`, …). Server chưa connected → dùng codegraph, KHÔNG loay hoay grep.
-3. **serena** (MCP, LSP, LUÔN có trong tool list): `mcp__serena_find_symbol`, `mcp__serena_find_referencing_symbols`, `mcp__serena_get_symbols_overview` để định vị; edit symbol-level (`replace_symbol_body`, …) cũng có sẵn. Chỉ `Read` raw file khi SẮP SỬA nó (read-before-edit) — KHÔNG dùng Read/grep để survey; tool của server khác/mới → `search_tool_bm25`.
-4. **Nén những gì BẠN phát lại:** báo cáo/subagent prompt/nội dung dài sắp re-emit → `mcp__headroom_compress` (60–95% ít token). omp tự spill output quá dài ra artifact — KHÔNG paste lại blob đã spill.
+MCP tool là **`xd://` device**, KHÔNG phải top-level tool: gọi bằng `write` JSON args vào path (vd `write` path `xd://mcp__codebase_memory_mcp_search_graph`, content `{"project":"…","query":"…"}`); tool chưa rõ schema → `read xd://<tool>` trước.
+
+1. **codegraph** — `xd://mcp__codegraph_explore` (1 call = source + call path + blast radius) hoặc CLI `codegraph query/callers/callees/impact "<symbol|query>"`. Skill: `~/.omp/skills/codegraph/SKILL.md`.
+2. **codebase-memory-mcp**: `xd://mcp__codebase_memory_mcp_search_graph` (tham số `semantic_query`), `…_trace_path`, `…_get_architecture`, `…_detect_changes`, `…_query_graph`, `…_get_code_snippet` (tiền tố `xd://mcp__codebase_memory_mcp_`). Server chưa connected → dùng codegraph, KHÔNG loay hoay grep.
+3. **serena** (LSP): `xd://mcp__serena_find_symbol`, `xd://mcp__serena_find_referencing_symbols`, `xd://mcp__serena_get_symbols_overview` để định vị + `xd://mcp__serena_replace_symbol_body` để sửa symbol-level. Chỉ `read` raw file khi SẮP SỬA nó (read-before-edit) — KHÔNG dùng read/grep để survey.
+4. Output lớn (>~300 dòng: log/diff/test dump/kết quả research) → nén qua `xd://mcp__headroom_compress` TRƯỚC khi đưa vào context/báo cáo — không dump thô.
 
 **Subagent KHÔNG tự biết luật này** (không đọc APPEND_SYSTEM, không kế thừa session context — chỉ thấy prompt bạn soạn, giống R3). Khi spawn BẤT KỲ subagent nào cần tìm/hiểu code, prompt BẮT BUỘC nhúng 2 lớp:
-- (a) **Chỉ thị literal**: "Dùng `codegraph query/explore/callers/impact \"<query>\"` (CLI) hoặc codebase-memory-mcp (`mcp__codebase_memory_mcp_search_graph`/`_trace_path`/`_get_architecture`) / serena (`mcp__serena_find_symbol`) để tìm/hiểu/định vị code TRƯỚC — KHÔNG grep/Read thô để khảo sát. Chỉ Read file khi sắp sửa đổi nó. Kết quả dài (>50 dòng) sắp đưa vào báo cáo cuối → nén qua `mcp__headroom_compress`, không dump thô."
+- (a) **Chỉ thị literal**: "MCP tool là `xd://` device — gọi bằng `write` JSON args vào path. Dùng `xd://mcp__codegraph_explore` / CLI `codegraph query/callers/callees/impact \"<query>\"` hoặc codebase-memory-mcp (`xd://mcp__codebase_memory_mcp_search_graph` / `_trace_path` / `_get_architecture`) / serena (`xd://mcp__serena_find_symbol`) để tìm/hiểu/định vị code TRƯỚC — KHÔNG grep/read thô để khảo sát. Chỉ read file khi sắp sửa đổi nó. Nếu output/log/test result dài (>300 dòng), nén qua `xd://mcp__headroom_compress` trước khi đưa vào báo cáo cuối, không dump thô."
 - (b) Nếu subagent type có quyền đọc skill (đa số có tool Read) → thêm: "Đọc `~/.omp/skills/codegraph/SKILL.md` nếu cần chi tiết cách dùng."
 
 Vi phạm (subagent grep/Read tràn lan để survey thay vì code-intel, hoặc dump log thô >300 dòng vào báo cáo) = lệch quy tắc dự án, không phải style nit — sửa ngay khi phát hiện, không đợi review pass mới bắt.

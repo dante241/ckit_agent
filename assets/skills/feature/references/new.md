@@ -17,7 +17,7 @@ Scaffold 1 feature lớn mới. Output: `agents/planning/<slug>/` + 4 file + set
 3. **Knowledge lookup (brownfield — BẮT BUỘC, R7)**:
    - Đọc `AGENTS.md` + `agents/PROJECT.md` → tổng thể + stack.
    - Đọc `agents/KNOWLEDGE.md` + `agents/DECISIONS.md` → nghiệp vụ/quyết định module feature sẽ đụng/dùng lại.
-   - **R10 áp dụng**: khi cần khảo cấu trúc module thật (không chỉ đọc memory), dùng `codegraph query/impact "<module>"` hoặc codebase-memory-mcp `get_architecture` TRƯỚC, KHÔNG grep/Read tràn lan toàn module.
+   - **R10 áp dụng**: khi cần khảo cấu trúc module thật (không chỉ đọc memory), dùng `xd://mcp__codegraph_explore` / CLI `codegraph query/impact "<module>"` hoặc `xd://mcp__codebase_memory_mcp_get_architecture` TRƯỚC, KHÔNG grep/read tràn lan toàn module.
    - Mục đích: PROJECT.md ghi đúng "cắm vào module nào", "KHÔNG đụng gì".
 
 4. **Tạo 4 file** từ `templates/` — thay placeholder:
@@ -31,7 +31,7 @@ Scaffold 1 feature lớn mới. Output: `agents/planning/<slug>/` + 4 file + set
    - `agents/planning/ACTIVE.md` ← dòng đầu (không comment) = slug (giữ comment header).
    - `agents/planning/config.json` ← `active_feature: "<slug>"`.
    - **Ticket (TUỲ CHỌN)**: nếu user có ticket number → lưu raw numeric ở `STATE.frontmatter.ticket`. KHÔNG ép ticket — để trống được.
-   - **Feature branch (TUỲ CHỌN)**: nếu user muốn tách nhánh cho cả feature → tạo 1 nhánh lớn, ghi `STATE.frontmatter.branch`. KHÔNG tự tạo nhánh nếu user không yêu cầu (su-code mặc định commit local thẳng nhánh hiện tại). KHÔNG `git push`.
+   - **Feature branch (TUỲ CHỌN)**: nếu user muốn tách nhánh cho cả feature → tạo 1 nhánh lớn, ghi `STATE.frontmatter.branch`. KHÔNG tự tạo nhánh nếu user không yêu cầu (8sync mặc định commit local thẳng nhánh hiện tại). KHÔNG `git push`.
 
 6. **USER DUYỆT (gate 1)** — trình 4 file, dùng `ask` xác nhận kiến trúc + cách cắt phase. KHÔNG sang plan tới khi duyệt.
 

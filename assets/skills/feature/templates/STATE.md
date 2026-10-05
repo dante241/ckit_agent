@@ -55,8 +55,8 @@ Stopped at: [việc cuối — file nào, xong/dở]
 Next: [next_action cụ thể — session sau làm tiếp cái này]
 
 <!-- RESUME RULE: session mới đọc STATE xong PHẢI verify Contract bằng ground-truth
-     trước khi code tiếp: `codegraph query "<symbol>"` / codebase-memory-mcp `mcp__codebase_memory_mcp_search_graph`
-     các symbol trong Contract (tồn tại thật?) + `detect_changes` (code đổi gì từ session
+     trước khi code tiếp: `codegraph query "<symbol>"` / `xd://mcp__codebase_memory_mcp_search_graph`
+     các symbol trong Contract (tồn tại thật?) + `xd://mcp__codebase_memory_mcp_detect_changes` (code đổi gì từ session
      trước). State ghi ý định, code ghi sự thật — lệch nhau thì tin code, sửa STATE. -->
 <!-- DONE RULE: kết thúc phase = rewrite STATE (Position/Decisions/Contract/Files/Next)
      TRƯỚC khi báo done. Chưa rewrite = phase chưa xong. -->

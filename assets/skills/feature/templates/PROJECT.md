@@ -14,7 +14,7 @@
 
 > Dự án đã có sẵn — feature này KHÔNG đứng riêng. Neo vào `AGENTS.md` + `agents/`.
 
-- **Dùng lại module:** [tên — xem `agents/KNOWLEDGE.md` / codebase-memory-mcp `get_architecture`]
+- **Dùng lại module:** [tên — xem `agents/KNOWLEDGE.md` / `xd://mcp__codebase_memory_mcp_get_architecture`]
 - **Tham khảo:** [`agents/PROJECT.md` / `agents/DECISIONS.md` mục liên quan]
 - **Module/thành phần mới:** [tên nếu có]
 - **KHÔNG đụng:** [module cấm sửa — chống lan]

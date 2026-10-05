@@ -2,15 +2,15 @@
 
 > Đã load `references/feature-rules.md` (luật xuyên suốt: R1 config-resolve, R3 load skill, R5 AC, R10 code-intel FIRST) ở Dispatch chưa? Nếu chưa → load trước.
 
-Discuss + Plan cho phase hiện tại (`active_phase` trong STATE). Output: `M<x>-CONTEXT.md` + `M<x>-NN-PLAN.md` trong `su-code/planning/<slug>/phases/M<x>-<name>/`.
+Discuss + Plan cho phase hiện tại (`active_phase` trong STATE). Output: `M<x>-CONTEXT.md` + `M<x>-NN-PLAN.md` trong `agents/planning/<slug>/phases/M<x>-<name>/`.
 
 ## Step 1 — Discuss (chốt quyết định TRƯỚC khi plan)
 
 - Đọc PROJECT.md (ràng buộc) + ROADMAP.md (contract phase này) + REQUIREMENTS.md (UC của phase).
 - Trích **Requirement scope** cho phase: liệt kê UC-ID + mô tả từ REQUIREMENTS.md mà phase này chịu trách nhiệm; nếu ROADMAP và REQUIREMENTS lệch phase/UC → sửa/hỏi trước khi plan.
-- Đọc knowledge liên quan: `su-code/KNOWLEDGE.md` + (R10) `codegraph`/codebase-memory-mcp `get_architecture` cho module sẽ đụng.
+- Đọc knowledge liên quan: `agents/KNOWLEDGE.md` + (R10) `xd://mcp__codegraph_explore` / `xd://mcp__codebase_memory_mcp_get_architecture` cho module sẽ đụng.
 - Chốt quyết định triển khai mơ hồ (API nào, schema, pattern). Mơ hồ → dùng `ask` (tương tác). Auto-mode: thay `ask` bằng spawn `task` discuss (xem `auto.md`).
-- Ghi `su-code/planning/<slug>/phases/M<x>-<name>/M<x>-CONTEXT.md`: quyết định riêng phase + Requirement scope (dùng `templates/M-CONTEXT.md`).
+- Ghi `agents/planning/<slug>/phases/M<x>-<name>/M<x>-CONTEXT.md`: quyết định riêng phase + Requirement scope (dùng `templates/M-CONTEXT.md`).
 - Append quyết định lớn vào STATE.Decisions + PROJECT Key Decisions table.
 
 ### ★ BẮT BUỘC: Goal + Acceptance Criteria (UAT) trong CONTEXT — KHÔNG được bỏ
@@ -45,51 +45,55 @@ Nếu phase cần khảo nhiều mặt codebase (và `config.workflow.paralleliz
   - "tìm pattern <X> trong codebase"
   - "schema/migration module tương tự"
   - "module tham khảo đã làm <Y>"
-- **Prompt mỗi subagent nhúng chỉ thị R10 literal**: dùng `codegraph query/callers/impact "<query>"` (CLI) hoặc codebase-memory-mcp (`mcp__codebase_memory_mcp_search_graph`/`_trace_path`/`_get_architecture`) / serena (`mcp__serena_find_symbol`) để tìm/hiểu code TRƯỚC grep/Read thô; chỉ Read khi cần xem chi tiết 1 file cụ thể đã định vị; kết quả dài (>50 dòng) sắp đưa vào báo cáo cuối → `mcp__headroom_compress` trước, không dump thô.
+- **Prompt mỗi subagent nhúng chỉ thị R10 literal**: MCP tool là `xd://` device (gọi bằng `write` JSON args vào path); dùng `xd://mcp__codegraph_explore` / CLI `codegraph query/callers/impact "<query>"` hoặc codebase-memory-mcp (`xd://mcp__codebase_memory_mcp_search_graph` / `_trace_path` / `_get_architecture`) / serena (`xd://mcp__serena_find_symbol`) để tìm/hiểu code TRƯỚC grep/read thô; chỉ read khi cần xem chi tiết 1 file cụ thể đã định vị; kết quả dài (>300 dòng) → `xd://mcp__headroom_compress` trước khi đưa vào báo cáo cuối.
 - Barrier → tổng hợp ở main thread.
 - Phase nhỏ/pattern đã rõ, hoặc `parallelization === false` → skip, không spawn (chạy tuần tự main thread).
 
-## Step 3 — Plan (decompose + phân wave)
+## Step 3 — Plan (decompose + đồ thị phụ thuộc)
 
 Tạo `M<x>-NN-PLAN.md` (NN bắt đầu 01, dùng `templates/M-PLAN.md`). BẮT BUỘC mỗi task có:
-- **file ownership**: đụng file/folder nào (để biết parallel an toàn).
-- **wave**: nhóm độc lập (song song được) vs nhóm phụ thuộc (chờ). → sẽ map thành slices/tasks của `engine_plan` ở `go`.
+- **file ownership** `[file:]`: đụng file/folder nào — `go` dùng để chặn 2 task sửa cùng file chạy song song + để commit đúng file của task.
+- **phụ thuộc** `[depends:]`: task nào PHẢI xong (test PASS + commit) trước. Ghi `—` nếu không phụ thuộc. → `go` chạy song song mọi task đã đủ phụ thuộc, không chờ theo đợt.
+- **verify** `[verify:]`: lệnh lint/test THẬT, **scoped vào task** (lint file của task, test filter của task) — `go` chạy nó ngay khi task dev xong, trong lúc task khác còn đang sửa.
 - **test tier**: must-test / verify-sql / verify-only.
-- **skill**: skill repo nào chi phối task (`su-code/skills/<name>` hoặc `~/.omp/skills/<name>`). BẮT BUỘC — subagent KHÔNG tự biết skill nào áp dụng; cột này là nguồn để `go` resolve. Task không rõ skill → ghi `—` nhưng tự hỏi đã đúng chưa (đa số task code có ≥1 skill chi phối). Sai/thiếu skill = nguồn lỗi "code đúng task nhưng sai convention".
+- **skill**: skill repo nào chi phối task (`.omp/skills/<name>` hoặc `~/.omp/skills/<name>`). BẮT BUỘC — subagent KHÔNG tự biết skill nào áp dụng; cột này là nguồn để `go` resolve. Task không rõ skill → ghi `—` nhưng tự hỏi đã đúng chưa (đa số task code có ≥1 skill chi phối). Sai/thiếu skill = nguồn lỗi "code đúng task nhưng sai convention".
 - **UC phục vụ**: task này phục vụ UC-ID nào trong `REQUIREMENTS.md`/Requirement scope (vd UC-15).
 - **AC thỏa**: task này thỏa AC-NN nào (truy ngược về CONTEXT). Mọi AC phải có ≥1 task thỏa; task không gắn AC/UC nào = nghi vấn thừa, soát lại.
 
 Template PLAN:
 ```markdown
 # M<x>-NN-PLAN — <phase name>
-## Wave 1 (song song — độc lập, khác file)
-- [ ] T1: <việc>   [file: path]   [skill: <name>]   [tier: ...]   [UC: UC-15]   [AC: AC-01,AC-03]
-- [ ] T2: <việc>   [file: path]   [skill: <name>]   [tier: ...]   [UC: UC-16]   [AC: AC-05]
-## Wave 2 (cần Wave 1)
-- [ ] T3: <việc>   [file: path]   [skill: <name>]   [depends: T1]  [UC: UC-15]  [AC: AC-08]
+## Tasks
+- [ ] T1: <việc>   [file: path]   [depends: —]    [verify: <lệnh>]   [skill: <name>]   [tier: ...]   [UC: UC-15]   [AC: AC-01,AC-03]
+- [ ] T2: <việc>   [file: path]   [depends: —]    [verify: <lệnh>]   [skill: <name>]   [tier: ...]   [UC: UC-16]   [AC: AC-05]
+- [ ] T3: <việc>   [file: path]   [depends: T1]   [verify: <lệnh>]   [skill: <name>]   [tier: ...]   [UC: UC-15]   [AC: AC-08]
 ## Checkpoints / Gates
 - review dimensions: <từ config.workflow.review_dimensions>
 - **Acceptance**: phase done ⇔ mọi AC trong M<x>-CONTEXT PASS (verify ở /feature ship → M<x>-VERIFICATION.md). KHÔNG dùng DoD mơ hồ — dùng AC.
-- engine mapping: mỗi task ↔ 1 engine task; `verify` = lint/test/build THẬT (cột "Cách verify" của AC).
 ```
 
-Quy tắc parallel: chỉ đánh cùng wave khi **độc lập + khác file**. Vi phạm → race/sai. <`min_parallel_tasks` task độc lập → 1 wave tuần tự cũng được.
+**Luật phụ thuộc** (quyết định tốc độ — càng ít cạnh thừa, càng nhiều task chạy song song):
+- Chỉ ghi `B [depends: A]` khi B **thật sự cần thứ A tạo ra**: symbol/class/interface, bảng/cột DB, file, config mà B gọi/đọc. "A nên làm trước cho gọn" KHÔNG phải phụ thuộc.
+- B chỉ cần **chữ ký** của A (interface, DTO) → tách task nhỏ "định nghĩa interface/DTO" làm trước; phần cài đặt A và B chạy song song sau nó.
+- Hai task **cùng file** hoặc cùng **tài nguyên dùng chung** (migration sequence, `composer.json`/`vendor/composer/*`, file ngôn ngữ, config dùng chung) → BẮT BUỘC có phụ thuộc giữa nhau (tránh ghi đè).
+- Task dựng nền (bootstrap, tooling) → giữ nhỏ, tách riêng, để không chặn cả phase.
+- Không vòng phụ thuộc.
 
 **Kiểm tra phủ UC/AC trước khi trình:** mọi UC trong Requirement scope đều có ≥1 AC; mọi AC-NN trong CONTEXT đều xuất hiện ở cột [AC:] của ≥1 task; mọi task có `[UC:]` + `[AC:]`. Thiếu UC/AC nào không task thỏa → thêm task (hoặc UC/AC sai phạm vi → sửa CONTEXT).
 
 ## Step 3.5 — Plan-review (gate theo `config.workflow.plan_review`)
 
-Soát PLAN TRƯỚC khi code — bắt lỗi cấp-kế-hoạch (AC hở, wave race, thiếu skill) rẻ hơn bắt sau khi đã code. Đọc `config.workflow.plan_review`:
+Soát PLAN TRƯỚC khi code — bắt lỗi cấp-kế-hoạch (AC hở, phụ thuộc sai/race, thiếu skill) rẻ hơn bắt sau khi đã code. Đọc `config.workflow.plan_review`:
 
 | Giá trị | Khi nào chạy review |
 |---------|---------------------|
 | `always` | luôn review PLAN |
-| `complex` (mặc định khuyến nghị) | chỉ review khi phase **phức tạp**: ≥`config.workflow.min_parallel_tasks` task, HOẶC nhiều wave phụ thuộc, HOẶC chạm ≥2 module/domain, HOẶC có task DB/migration/schema. Phase nhỏ 1 wave đơn giản → BỎ. |
+| `complex` (mặc định khuyến nghị) | chỉ review khi phase **phức tạp**: ≥3 task, HOẶC chuỗi phụ thuộc dài (≥3 tầng), HOẶC chạm ≥2 module/domain, HOẶC có task DB/migration/schema. Phase nhỏ, ít task, đơn giản → BỎ. |
 | `never` / thiếu | BỎ Step này. |
 
 Khi chạy: spawn 1 `task` subagent `agent: reviewer` review **bản PLAN + bảng AC** (không phải code — chưa có code). Prompt nhúng literal: Goal + bảng AC + PLAN, yêu cầu soát:
 - **Phủ UC/AC**: mọi UC trong Requirement scope có ≥1 AC? Mọi AC-NN có ≥1 task thỏa? Task nào không gắn UC/AC (nghi thừa)?
-- **Wave an toàn**: task cùng wave có thật sự độc lập + khác file? (race risk)
+- **Phụ thuộc đúng**: `[depends:]` có cạnh thừa (chặn song song vô lý) hoặc thiếu cạnh (2 task cùng file/tài nguyên dùng chung không phụ thuộc nhau → race)? `[verify:]` có scoped vào task không?
 - **Skill đúng**: cột `[skill:]` hợp lý? Task code mà `[skill: —]` → cờ đỏ.
 - **Thiếu task**: Goal/contract ROADMAP có phần nào chưa task nào phủ?
 - "Trả về findings cụ thể (PLAN dòng nào) + 1 verdict: READY / NEEDS-FIX. KHÔNG hỏi lại."

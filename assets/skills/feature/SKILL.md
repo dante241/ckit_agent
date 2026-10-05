@@ -8,14 +8,14 @@ description: "Quản lý feature LỚN nhiều phase, nhiều ngày, xuyên sess
 
 > Chống "đi 1 nẻo": tổng thể + vị trí lưu ở FILE (`agents/planning/<slug>/`), không ở context tạm.
 > Mỗi feature lớn = 1 folder. Loop phase: Discuss → Plan → Execute → Verify → Ship.
-> Execute KHÔNG tự dựng engine riêng — nó FEED engine `engine_*` có sẵn của su-code (verify-gate, doom-loop guard, worktree đã enforce trong code).
+> Execute KHÔNG tự dựng engine riêng — nó FEED engine `engine_*` có sẵn của 8sync (thứ tự phụ thuộc, chặn chồng file, verify-gate, doom-loop guard, commit theo file, worktree đã enforce trong code).
 
 ## Usage
 
 ```
 /feature new <slug>     -> Scaffold agents/planning/<slug>/ + 4 file + set ACTIVE. Điền → user duyệt.
 /feature plan           -> Discuss + Plan phase hiện tại (fan-out research) -> M<x>-CONTEXT + M<x>-NN-PLAN.md
-/feature go             -> Execute phase: feed PLAN vào engine_plan → loop engine_next/verify/advance
+/feature go             -> Execute phase: feed PLAN vào engine_plan → dev song song theo [depends:], dev xong test ngay, lỗi dev lại
 /feature ship           -> Verify (review multi-lens + test) BÁM AC -> M<x>-VERIFICATION + tick ROADMAP + archive
 /feature status         -> In STATE.md hiện tại
 /feature switch <slug>  -> Đổi feature active (ghi ACTIVE.md + config.active_feature)
@@ -25,7 +25,7 @@ description: "Quản lý feature LỚN nhiều phase, nhiều ngày, xuyên sess
                            Có thể kèm subcommand: `/feature plan --auto`, `/feature go --auto`.
 ```
 
-> **Deterministic ops cũng có ở verb `ckit feature`** (nhanh, không cần model): `ckit feature new|switch|status|list`.
+> **Deterministic ops cũng có ở verb `8sync feature`** (nhanh, không cần model): `8sync feature new|switch|status|list`.
 > Còn `plan`/`go`/`ship` cần model phán đoán → chạy trong 1 session omp qua `/feature`.
 
 ## Dispatch (đọc STATE → biết đang đâu)
@@ -33,7 +33,7 @@ description: "Quản lý feature LỚN nhiều phase, nhiều ngày, xuyên sess
 BẮT BUỘC trước mọi subcommand (trừ `new`) — đọc 3 file vào context NGAY đầu lệnh:
 1. Đọc `agents/planning/ACTIVE.md` dòng đầu (không comment, không blank) → slug active. Trống → báo user chạy `/feature new` hoặc `/feature switch`.
 2. Đọc `agents/planning/<slug>/STATE.md` → frontmatter `active_phase`, `status`, `next_action`, `ticket`, `branch` (ticket/branch có thể trống — không sao).
-3. Đọc `agents/planning/config.json` → giữ trong context cả lệnh: `workflow.*` (parallelization, min_parallel_tasks, review_dimensions, plan_review, code_review, verifier), `paths.*` (planning_root, archive). Thiếu key → dùng default rồi cảnh báo user.
+3. Đọc `agents/planning/config.json` → giữ trong context cả lệnh: `workflow.*` (parallelization, max_parallel_tasks, review_dimensions, plan_review, code_review, verifier), `paths.*` (planning_root, archive). Thiếu key → dùng default rồi cảnh báo user.
 4. **Load `references/feature-rules.md` NGAY** (luật xuyên suốt mọi subcommand: R1 resolve config→literal, R3 2-lớp load skill, R5 AC discipline, R6 guardrail, R7 codebase anchor, R8 commit, R10 code-intelligence FIRST). Reference từng subcommand chỉ thêm bước RIÊNG, KHÔNG lặp luật này.
 5. Dispatch theo bảng:
 
@@ -54,7 +54,7 @@ Nếu args chứa `--auto` (dù có/không subcommand) → **BẮT BUỘC load `
 - **KHÔNG dùng `ask`** cho điểm-quyết-định triển khai → thay bằng spawn `task` subagent (`agent: explore` / `agent: plan` / `agent: task`) đóng vai discuss + tự quyết theo ràng buộc PROJECT/REQUIREMENTS. Tự tra repo/DB trước khi coi là "phải hỏi".
 - **KHÔNG dừng ở user-gate** (gate 2 plan, gate cuối go) → tự duyệt (plan-review thay vai gate chất lượng) rồi chạy tiếp.
 - **Block** (thiếu credential/môi trường/dữ liệu thật subagent không tra được) → SKIP item đó, ghi NEEDS-CONFIRM vào VERIFICATION/STATE, **code nốt phần còn lại của phase**. Không stall cả phase vì 1 item.
-- **1 lệnh `--auto` = chạy TRỌN 1 phase**: `plan` (nếu chưa có PLAN) → `go` (code hết wave qua engine) → self-check AC. Dừng ở ranh giới phase kế (không tự nhảy phase sau trừ khi user nói "code hết các phase").
+- **1 lệnh `--auto` = chạy TRỌN 1 phase**: `plan` (nếu chưa có PLAN) → `go` (hết task theo đồ thị phụ thuộc) → self-check AC. Dừng ở ranh giới phase kế (không tự nhảy phase sau trừ khi user nói "code hết các phase").
 - Chỉ escalate user thật sự khi: hành động không đảo được/outward-facing (push, xoá data, gọi API production).
 
 Chi tiết luật + cách spawn subagent discuss: `references/auto.md`.
@@ -74,14 +74,14 @@ Chi tiết luật + cách spawn subagent discuss: `references/auto.md`.
 - **Plan** = batch task trong 1 phase: `M<x>-NN-PLAN.md`.
 - **STATE.md < 100 dòng** — digest, không archive. Frontmatter ràng buộc: `---` đầu file · không comment trong `progress:` · `next_phases` single-line.
 - **Cập nhật:** task xong → STATE.Log + next_action · phase xong → ROADMAP tick + STATE.progress · feature xong → `agents/KNOWLEDGE.md` + `agents/DECISIONS.md`.
-- **Parallel:** `config.workflow.parallelization === false` → TẮT mọi swarm, chạy tuần tự main thread (debug/máy yếu). Khi `true`: việc độc lập + khác file + ≥`config.workflow.min_parallel_tasks` → spawn `task` subagent đồng thời; dưới ngưỡng → main thread.
-- **Commit:** commit **atomic mỗi task xong** qua `engine_advance {commit:true}` trong `go` (verify-gate enforce trước). Conventional Commits, tiếng Anh, `<type>: M<x> - T<n> <desc>`, no AI ref. Feature branch + ticket là **TUỲ CHỌN** (STATE `branch`/`ticket` có thể trống). **KHÔNG `git push`/PR trừ khi user yêu cầu**. Chi tiết: `references/execute.md` §Commit + R8.
-- **Model:** ckit sở hữu chọn model qua `~/.config/ckit/models.toml` (xem/sửa: `ckit harness model`) + role của `task` subagent. Skill NEVER hardcode tên model; chỉ chọn `agent: <role>` (explore/plan/reviewer/Tester/task) đúng vai.
+- **Parallel:** PLAN khai `[depends:]` + `[file:]` mỗi task → `go` dev song song mọi task đủ phụ thuộc + khác file (tối đa `config.workflow.max_parallel_tasks`, mặc định 4), task dev xong test ngay trong lúc task khác còn dev, test lỗi → dev lại. `parallelization === false` → cùng vòng nhưng 1 task một lúc (debug/máy yếu).
+- **Commit:** commit **atomic mỗi task xong** trong `go`: `engine_verify` PASS → `engine_advance {commit:true, files:[file của task]}` (engine chỉ commit các file đó; từ chối commit cả tree khi task khác đang chạy). Conventional Commits, tiếng Anh, `<type>: M<x> - T<n> <desc>`, no AI ref. Feature branch + ticket là **TUỲ CHỌN** (STATE `branch`/`ticket` có thể trống). **KHÔNG `git push`/PR trừ khi user yêu cầu**. Chi tiết: `references/execute.md` §Commit + R8.
+- **Model:** 8sync sở hữu chọn model qua `~/.config/8sync/models.toml` (xem/sửa: `8sync harness model`) + role của `task` subagent. Skill NEVER hardcode tên model; chỉ chọn `agent: <role>` (explore/plan/reviewer/Tester/task) đúng vai.
 
 ## Neo vào codebase (brownfield) — R7
 
 - Tổng thể dự án: `AGENTS.md` + `agents/PROJECT.md` — KHÔNG mô tả lại.
-- Nghiệp vụ/kiến trúc module: `agents/KNOWLEDGE.md` + codebase-memory-mcp `mcp__codebase_memory_mcp_get_architecture`/`_search_graph` — đọc/tra trước khi code.
+- Nghiệp vụ/kiến trúc module: `agents/KNOWLEDGE.md` + `xd://mcp__codebase_memory_mcp_get_architecture` / `xd://mcp__codebase_memory_mcp_search_graph` (MCP tool = `xd://` device, gọi bằng `write` JSON args) — đọc/tra trước khi code.
 - Convention + quyết định: `AGENTS.md` + `agents/DECISIONS.md` + `agents/PREFERENCES.md`.
 - Project-local skill: `.omp/skills/<name>/SKILL.md`; global: `~/.omp/skills/<name>/SKILL.md`.
 
