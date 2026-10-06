@@ -225,10 +225,11 @@ export default function (pi: ExtensionAPI) {
     name: "engine_plan",
     label: "Engine: plan",
     description:
-      "Create/replace the run-to-done plan: a goal decomposed into slices, each with atomic tasks and optional verify commands (lint/test). Optional per task: `key` (e.g. T3, defaults to the task id), `depends` (keys that must be done first) and `files` (paths/dirs the task owns) — engine_ready runs independent tasks in parallel from these. Rejects unknown keys and dependency cycles. Persists to .cache/ckit/engine/state.json.",
+      "Create/replace the run-to-done plan: a goal decomposed into slices, each with atomic tasks and optional verify commands (lint/test). Optional per task: `key` (e.g. T3, defaults to the task id), `depends` (keys that must be done first) and `files` (paths/dirs the task owns) — engine_ready runs independent tasks in parallel from these. `append: true` keeps the current plan (goal, tasks, statuses) and adds the slices after it, so new tasks may depend on existing keys. Rejects duplicate/unknown keys and dependency cycles. Persists to .cache/ckit/engine/state.json.",
     parameters: z.object({
       goal: z.string(),
       maxRetries: z.number().int().min(0).max(10).default(3),
+      append: z.boolean().default(false),
       slices: z
         .array(
           z.object({
@@ -248,31 +249,32 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_id, params) {
       const now = new Date().toISOString();
-      let si = 0;
-      const state: EngineState = {
-        goal: params.goal,
-        createdAt: now,
-        updatedAt: now,
-        maxRetries: params.maxRetries,
-        slices: params.slices.map((s) => {
-          si += 1;
-          let ti = 0;
-          return {
-            id: `s${si}`,
-            title: s.title,
-            tasks: s.tasks.map((t) => {
-              ti += 1;
-              const id = `s${si}.t${ti}`;
-              return { id, key: t.key || id, title: t.title, status: "pending", retries: 0, verify: t.verify, depends: t.depends, files: t.files, note: "", verified: false, failStreak: 0, lastFailureHash: "" };
-            }),
-          };
-        }),
-      };
+      const base = params.append ? load() : null;
+      let si = base?.slices.length ?? 0;
+      const added: EngineSlice[] = params.slices.map((s) => {
+        si += 1;
+        let ti = 0;
+        return {
+          id: `s${si}`,
+          title: s.title,
+          tasks: s.tasks.map((t) => {
+            ti += 1;
+            const id = `s${si}.t${ti}`;
+            return { id, key: t.key || id, title: t.title, status: "pending", retries: 0, verify: t.verify, depends: t.depends, files: t.files, note: "", verified: false, failStreak: 0, lastFailureHash: "" };
+          }),
+        };
+      });
+      const state: EngineState = base
+        ? { ...base, updatedAt: now, slices: [...base.slices, ...added] }
+        : { goal: params.goal, createdAt: now, updatedAt: now, maxRetries: params.maxRetries, slices: added };
       const invalid = validateGraph(allTasks(state));
       if (invalid) return text(`Plan REJECTED: ${invalid}. Nothing saved.`);
       save(state);
       const c = counts(state);
-      return text(`Plan saved: "${params.goal}" — ${state.slices.length} slices, ${c.total} tasks. Call engine_ready (parallel) or engine_next (one at a time) to start.`);
+      const head = base
+        ? `Appended ${added.length} slice(s) "${params.goal}" to plan "${state.goal}" — ${c.done}/${c.total} tasks done.`
+        : `Plan saved: "${params.goal}" — ${state.slices.length} slices, ${c.total} tasks.`;
+      return text(`${head} Call engine_ready (parallel) or engine_next (one at a time) to start.`);
     },
   });
 

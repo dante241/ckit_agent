@@ -12,6 +12,11 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.28] - 2026-10-06
+
+### Added
+- `engine_plan {append: true}` keeps the current plan (goal, tasks, statuses) and adds the new slices after it, so new tasks may depend on existing keys and `engine_status` shows the whole phase. Duplicate or unknown keys are still rejected and nothing is saved. With no plan on disk it creates one. `/feature ship` converge rounds now append instead of replacing the phase plan.
+
 ## [0.1.27] - 2026-10-06
 
 ### Added
