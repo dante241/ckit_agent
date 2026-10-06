@@ -200,9 +200,8 @@ fn check_portability() {
 
 /// Verify the token-optimization stack is installed AND registered with omp so
 /// the loop actually uses it ("luôn xài"): codegraph (local index) + the omp MCP
-/// engines codebase-memory-mcp (semantic graph) and headroom (output
-/// compression). A missing or unregistered engine silently defeats STEP 0 token
-/// discipline — flag it with the one-command fix.
+/// engine codebase-memory-mcp (semantic graph). A missing or unregistered
+/// engine silently defeats STEP 0 token discipline — flag it with the one-command fix.
 fn check_ai_engines(home: &std::path::Path) {
     ui::info("AI engines (token-optimization stack — STEP 0):");
     if which::which("codegraph").is_ok() {
@@ -215,7 +214,6 @@ fn check_ai_engines(home: &std::path::Path) {
     for (bin, what) in [
         ("codegraph", "local indexed code MCP (serve --mcp)"),
         ("codebase-memory-mcp", "semantic graph (search_graph/trace_path/cypher)"),
-        ("headroom", "output compression (>50-line dumps)"),
     ] {
         let has_bin = which::which(bin).is_ok();
         let registered = mcp.contains(&format!("\"{}\"", bin));

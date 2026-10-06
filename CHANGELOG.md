@@ -12,6 +12,12 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Removed
+- `headroom` MCP: `harness`/`setup` no longer install or register it and drop its `mcp.json` entry; skills and commands ask for a summary of long tool output instead (omp already spills it to artifacts).
+
+### Fixed
+- `harness` reverted a tuned serena entry on every run. ckit now registers serena with `--project-from-cwd`, `--enable-web-dashboard false` and `SERENA_USAGE_REPORTING=false`.
+
 ## [0.1.23] - 2026-10-05
 
 ### Changed — skills, commands, extensions are global-only; packs have their own verb

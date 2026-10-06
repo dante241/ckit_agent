@@ -140,7 +140,6 @@ pub(crate) fn harness_bench(env: &env_detect::Env) -> Result<()> {
     if let Some(advice) = spine_advice(spine_tok, upfront) {
         ui::warn(&advice);
     }
-    ui::info("A3 headroom: route tool output > ~300 lines through headroom_compress (STEP 0)");
     ui::info(&format!(
         "scorecard: upfront ~{} tok · deferred ~{} tok · A2 saved {}% · A1 {}",
         upfront, deferred, saved_pct, if stable { "PASS" } else { "FAIL" }

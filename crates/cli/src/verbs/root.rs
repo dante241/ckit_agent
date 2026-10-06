@@ -9,7 +9,7 @@ pub fn print_cheatsheet() {
     println!("{}\n", "Run any verb with `-h` for detailed help and examples.".dimmed());
     println!("{}", "AI TEAM — START HERE (the harness + the /auto engine)".bold().green());
     rows(&[
-        ("8sync harness",                  "ONE command: skills + memory loop + /auto + MCP (codegraph/cbm/headroom). Run in any project."),
+        ("8sync harness",                  "ONE command: skills + memory loop + /auto + MCP (codegraph/cbm/serena). Run in any project."),
         ("8sync harness up --timer 30m",   "run the team loop in the background (periodic refresh + work)"),
         ("8sync harness audit|bench|eval", "doc-hygiene · token budget · loop-quality probe"),
         ("8sync harness web",              "local dashboard (axum+Vite): skills/memory/engines/readiness/team"),

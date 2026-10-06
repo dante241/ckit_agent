@@ -3,7 +3,7 @@
 //! needed for the rule layer):
 //!   ~/.omp/skills                          → skill library (one dir per skill, read every session)
 //!   ~/.omp/agent/APPEND_SYSTEM.md           → appended to EVERY omp system prompt
-//!   MCP servers (codegraph · cbm · headroom · serena) + recall/code-intel hooks + capabilities
+//!   MCP servers (codegraph · cbm · serena) + recall/code-intel hooks + capabilities
 //! plus the Anthropic token-optimizer defaults:
 //!   compaction 50% (only if unset) · STEP-0 xd:// device docs inlined ·
 //!   byte-stable APPEND_SYSTEM writes (identical ⇒ skip) so the system prefix
@@ -31,14 +31,13 @@ pub(crate) fn global_pass(env: &env_detect::Env) -> Result<()> {
     deploy::ensure_codegraph(env)?;
     deploy::ensure_codegraph_mcp(env)?;
     deploy::ensure_codebase_memory_mcp(env)?;
-    deploy::ensure_headroom_mcp(env)?;
     let _ = deploy::ensure_omp_memory_config(&env.home);
     let _ = deploy::ensure_mcp_tools_visible(&env.home);
     let _ = deploy::ensure_hooks(&env.home);
     let _ = deploy::ensure_append_system(&env.home);
     let _ = deploy::ensure_mcp_spec(&env.home);
     let _ = deploy::ensure_serena_mcp(env);
-    let _ = deploy::deregister_zai_vision_mcp(&env.home);
+    let _ = deploy::deregister_retired_mcps(&env.home);
     let _ = deploy::ensure_omp_capabilities_snapshot(&env.home);
     deploy::ensure_feynman_cli();
     let _ = install_external_skill_packs(env); // best-effort; skips packs already present
@@ -114,7 +113,7 @@ pub(crate) fn harness_global(
     // 5. Summary — what now applies to every omp session on this machine.
     ui::ok("omp rules are now GLOBAL — every omp session in every project gets:");
     ui::info("  • ~/.omp/agent/APPEND_SYSTEM.md appended to EVERY system prompt (code-intel-first, never compacted)");
-    ui::info("  • skills @ ~/.omp/skills · MCP: codegraph · codebase-memory · headroom · serena");
+    ui::info("  • skills @ ~/.omp/skills · MCP: codegraph · codebase-memory · serena");
     ui::info("  • STEP-0 MCP tools as xd:// devices with inlined docs (tools.xdevDocs: builtins) — call via `write xd://mcp__<server>_<tool>`");
     ui::info("  • token optimizer: compaction 50% · stable prefix → Anthropic prompt-cache hits");
     if sweep.is_none() {

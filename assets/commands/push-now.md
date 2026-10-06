@@ -11,7 +11,7 @@ description: Urgent cross-machine handoff — rewrite su-code/STATE.md with a co
 Purpose: I am **about to move to another machine and continue urgently**. Leave the repo so the next machine resumes **cold** — no memory of this session needed. Obey `~/.omp/agent/APPEND_SYSTEM.md` (code-intel first; always-on skills).
 
 ## 1. Ground (fast, token-lean)
-- `git status --porcelain`, `git branch --show-current`, `git log --oneline -3`, `git diff --stat` (+ `--cached`). `headroom_compress` if >50 lines.
+- `git status --porcelain`, `git branch --show-current`, `git log --oneline -3`, `git diff --stat` (+ `--cached`). Summarize if >50 lines.
 - Read `su-code/STATE.md` (current spine) so the rewrite is a delta, not a reset.
 
 ## 2. Rewrite `su-code/STATE.md` for a COLD resume (the important part — be detailed)

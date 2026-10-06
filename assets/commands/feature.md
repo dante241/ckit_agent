@@ -23,7 +23,7 @@ Then ground on state (except for `new`, which creates it):
   frontmatter (`status`/`active_phase`/`next_action`); `agents/planning/config.json`
   (`workflow.*`, `paths.*`). Obey `~/.omp/agent/APPEND_SYSTEM.md` (code-intel first;
   always-on skills). Explore with **codegraph / codebase-memory-mcp / serena** via `xd://`
-  devices — never grep/Read-all; `xd://mcp__headroom_compress` any tool output > ~300 lines.
+  devices — never grep/Read-all; summarize long tool output (> ~300 lines), never paste it raw.
 
 ## 1. Dispatch (`$ARGUMENTS` first word)
 | word | do |

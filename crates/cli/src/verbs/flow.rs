@@ -14,7 +14,7 @@ pub fn run() -> Result<()> {
     ]);
 
     section("1b. AI TEAM — harness + /auto (the autonomous engine)", &[
-        ("8sync harness", "(bare) ONE idempotent command: skills + memory loop + /auto + MCP (codegraph/cbm/headroom)"),
+        ("8sync harness", "(bare) ONE idempotent command: skills + memory loop + /auto + MCP (codegraph/cbm/serena)"),
         ("8sync . then /auto <goal>", "in omp: research → plan → slices/tasks → verify each → QA/closeout → done"),
         ("/auto status | resume", "report · continue the saved plan to Definition-of-Done"),
         ("8sync harness audit|bench|eval", "doc-hygiene · token budget · loop-quality probe"),

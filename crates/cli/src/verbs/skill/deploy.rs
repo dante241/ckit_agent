@@ -333,14 +333,14 @@ fn register_omp_mcp(home: &Path, name: &str, command: &str, args: &[&str], env: 
 }
 
 /// Best-effort bootstrap of `uv` (Astral's Python tool manager) — the canonical
-/// installer for both `headroom-ai[mcp]` and serena (`uvx`). User-level curl
+/// runner for serena (`uvx`). User-level curl
 /// install (no sudo); lands in `~/.local/bin` (already on PATH). Idempotent.
 /// Returns true if `uv` is available afterwards.
 fn ensure_uv() -> bool {
     if which::which("uv").is_ok() {
         return true;
     }
-    ui::step("uv (missing — bootstrapping Astral uv: powers headroom + serena)");
+    ui::step("uv (missing — bootstrapping Astral uv: powers serena)");
     if crate::platform::os() == crate::platform::Os::Windows {
         // No POSIX `sh` on Windows — use uv's PowerShell installer instead.
         let _ = Command::new("powershell")
@@ -397,10 +397,7 @@ fn deregister_omp_mcp(home: &Path, name: &str) -> Result<()> {
         .is_some_and(|m| m.remove(name).is_some());
     if removed {
         std::fs::write(&mcp_path, serde_json::to_string_pretty(&root)?)?;
-        ui::warn(&format!(
-            "{} not installed — removed its stale MCP entry (omp won't error at startup)",
-            name
-        ));
+        ui::warn(&format!("removed `{}` from omp mcp.json (not installed or retired by ckit)", name));
     }
     Ok(())
 }
@@ -416,39 +413,6 @@ pub(crate) fn index_codebase_memory(root: &Path) {
         .args(["cli", "index_repository"])
         .arg(arg)
         .status();
-}
-
-/// Ensure `headroom` (context-compression MCP) is installed + registered as an
-/// omp MCP server. Headroom compresses long tool outputs / logs / diffs before
-/// they reach the model (60–95% fewer tokens) — complements codegraph/cbm.
-pub(crate) fn ensure_headroom_mcp(env: &env_detect::Env) -> Result<()> {
-    if which::which("headroom").is_err() {
-        ui::step("headroom (missing — installing headroom-ai[mcp] via uv)");
-        if ensure_uv() {
-            let _ = Command::new("uv")
-                .args(["tool", "install", "headroom-ai[mcp]"])
-                .status();
-        }
-        // Fallback for boxes with pipx/pip but no uv (e.g. curl bootstrap
-        // blocked). POSIX-shell only — skipped on Windows (no `sh`; uv's
-        // PowerShell installer above is the path there).
-        if which::which("headroom").is_err() && crate::platform::os() != crate::platform::Os::Windows {
-            let cmd = "if command -v pipx >/dev/null 2>&1; then pipx install 'headroom-ai[mcp]'; \
-elif command -v pip >/dev/null 2>&1; then pip install --user 'headroom-ai[mcp]' \
-|| pip install --user --break-system-packages 'headroom-ai[mcp]'; fi";
-            let _ = Command::new("sh").arg("-c").arg(cmd).status();
-        }
-    }
-    // Register ONLY when the binary exists — never leave a broken MCP entry that
-    // makes omp fail at startup. If still missing, purge any stale entry.
-    if which::which("headroom").is_ok() {
-        let v = env_detect::cmd_version("headroom", &["--version"]).unwrap_or_default();
-        ui::ok(&format!("headroom present ({})", v.trim()));
-        register_omp_mcp(&env.home, "headroom", "headroom", &["mcp", "serve"], &[])
-    } else {
-        ui::warn("headroom unavailable — skipped MCP (install `uv`: https://astral.sh/uv, then re-run `8sync harness`)");
-        deregister_omp_mcp(&env.home, "headroom")
-    }
 }
 
 /// Enable omp's local long-term memory (Mnemopi) in the user's omp settings
@@ -666,8 +630,11 @@ pub(crate) fn ensure_serena_mcp(env: &env_detect::Env) -> Result<()> {
                 "start-mcp-server",
                 "--context",
                 "claude-code",
+                "--project-from-cwd",
+                "--enable-web-dashboard",
+                "false",
             ],
-            &[],
+            &[("SERENA_USAGE_REPORTING", "false")],
         )
     } else {
         ui::skip("serena MCP", "needs `uv` (https://astral.sh/uv) — install failed, skipped");
@@ -675,12 +642,13 @@ pub(crate) fn ensure_serena_mcp(env: &env_detect::Env) -> Result<()> {
     }
 }
 
-/// Remove the legacy Z.AI vision MCP entry + bundled skill directory. ckit no
-/// longer registers this MCP by default; image tasks should use built-in image
-/// tools or specialist skills.
-pub(crate) fn deregister_zai_vision_mcp(home: &Path) -> Result<()> {
+/// Remove MCP servers ckit no longer registers: the Z.AI vision MCP (+ its
+/// bundled skill dir; images go through built-in tools) and headroom (omp
+/// already spills long tool output to artifacts).
+pub(crate) fn deregister_retired_mcps(home: &Path) -> Result<()> {
     let _ = std::fs::remove_dir_all(home.join(".omp/skills/zai-vision"));
-    deregister_omp_mcp(home, "zai-vision")
+    deregister_omp_mcp(home, "zai-vision")?;
+    deregister_omp_mcp(home, "headroom")
 }
 
 /// Exact tool catalogs for the MCP servers `8sync harness` auto-registers.
@@ -718,11 +686,6 @@ fn known_mcp_tool_catalog(server: &str) -> &'static [(&'static str, &'static str
             ("delete_project", "drop a project's index"),
             ("manage_adr", "get/update/list-sections of the Architecture Decision Record"),
             ("ingest_traces", "feed runtime traces into the graph to enrich edges"),
-        ],
-        "headroom" => &[
-            ("headroom_compress", "compress >~50-line output BEFORE it enters context (60-95% fewer tokens)"),
-            ("headroom_retrieve", "fetch the original uncompressed content back by its hash"),
-            ("headroom_stats", "this session's compression stats (tokens/cost saved)"),
         ],
         "serena" => &[
             ("find_symbol", "locate classes/functions/methods by name path (supports include_body)"),

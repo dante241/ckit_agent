@@ -20,7 +20,7 @@ Obey `~/.omp/agent/APPEND_SYSTEM.md` (code-intel first; always-on skills). REJEC
 Read `agents/STATE.md` + recent `failure:` in `agents/KNOWLEDGE.md`. `--resume` → also read the
 existing `.omp/plans/<ticket>-<slug>/todolist.md` and resume at the first unchecked task.
 Explore with **codegraph / codebase-memory-mcp / serena** — never grep/Read-all;
-`headroom_compress` any tool output > ~300 lines.
+Summarize long tool output (> ~300 lines); never paste it raw.
 
 ## 1. Classify + knowledge lookup (Phase 1–1.5)
 - Ticket `#NNNNN` → `pms_ticket_detail` with the raw numeric **internal** id; if the displayed

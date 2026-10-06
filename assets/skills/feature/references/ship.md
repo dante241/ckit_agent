@@ -24,7 +24,7 @@ Spawn ĐỒNG THỜI `task` subagent `agent: reviewer`. Số agent = số phần
 Scope = file phase này đụng (từ PLAN). Barrier → gộp findings.
 Có lỗi → fix (main thread hoặc spawn) → re-review tới sạch. Phase nhỏ → 1 reviewer tổng hợp cũng được.
 
-**Nhúng UC + AC vào prompt reviewer:** mỗi prompt kèm Requirement scope + bảng AC literal (từ Step 0) + yêu cầu: "Ngoài lens <dimension>, soát code có thỏa đúng UC/AC thuộc lens này không (vd security lens ↔ AC nào về permission/inject); báo UC/AC nào code KHÔNG thỏa kèm `file:line`." Reviewer trả findings gắn UC-ID/AC-NN khi liên quan. Nhúng R10 literal (dùng code-intel qua `xd://` device định vị, `xd://mcp__headroom_compress` output dài).
+**Nhúng UC + AC vào prompt reviewer:** mỗi prompt kèm Requirement scope + bảng AC literal (từ Step 0) + yêu cầu: "Ngoài lens <dimension>, soát code có thỏa đúng UC/AC thuộc lens này không (vd security lens ↔ AC nào về permission/inject); báo UC/AC nào code KHÔNG thỏa kèm `file:line`." Reviewer trả findings gắn UC-ID/AC-NN khi liên quan. Nhúng R10 literal (dùng code-intel qua `xd://` device định vị, tóm tắt output dài).
 
 ## Step 2 — Test (theo tier, fan-out per-component nếu nhiều)
 

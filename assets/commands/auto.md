@@ -1,7 +1,7 @@
 ---
 name: auto
 argument-hint: '[<goal> | status | resume]'
-description: 8sync autonomous engine — decompose a goal into slices/tasks and run to DONE on omp core via the code-enforced engine_* tools (durable state, verify-with-retry gate, git worktree). Right-sized, token-lean (codegraph/cbm/serena/headroom), ponytail/karpathy discipline.
+description: 8sync autonomous engine — decompose a goal into slices/tasks and run to DONE on omp core via the code-enforced engine_* tools (durable state, verify-with-retry gate, git worktree). Right-sized, token-lean (codegraph/cbm/serena), ponytail/karpathy discipline.
 ---
 
 # /auto — run to done on the 8sync engine
@@ -11,7 +11,7 @@ description: 8sync autonomous engine — decompose a goal into slices/tasks and 
 You drive the **8sync-engine** (model-callable `engine_*` tools). It owns the durable plan state, the verify gate, and worktrees in CODE — you supply judgement. Obey `~/.omp/agent/APPEND_SYSTEM.md` (code-intel first; always-on skills).
 
 ## 0. Ground (token-lean)
-Read `agents/STATE.md` + the recent `failure:` entries in `agents/KNOWLEDGE.md`. Explore with **codegraph / codebase-memory-mcp / serena** — never grep/Read-all. `headroom_compress` any tool output > ~300 lines.
+Read `agents/STATE.md` + the recent `failure:` entries in `agents/KNOWLEDGE.md`. Explore with **codegraph / codebase-memory-mcp / serena** — never grep/Read-all. Summarize long tool output (> ~300 lines); never paste it raw.
 
 ## 1. Right-size first (ponytail)
 Trivial / small (a few files, clear path) → just do it, no engine ceremony. Medium / large / multi-slice → use the engine.

@@ -200,7 +200,7 @@ ckit doctor            # verify</code></pre>
           <p style="color:var(--muted); font-size:13.5px; margin:12px 0 0;">
             <code>ckit setup</code> needs these on PATH first (all cross-platform): <b>bun</b> (or Node <code>npm</code>) for
             <code>omp</code> + <code>codegraph</code>, <b>winget</b> for <code>gh</code>, and optional <b>uv</b> for the
-            headroom/serena MCP servers. Arch-only profiles &amp; the kitty session are Linux-only and skipped.
+            serena MCP server. Arch-only profiles &amp; the kitty session are Linux-only and skipped.
           </p>
         </div>
       </div>
@@ -292,7 +292,6 @@ ckit .
 User level (~/.omp/agent/mcp.json):
   codebase-memory-mcp  ● connected [stdio]
   codegraph            ● connected [stdio]
-  headroom             ● connected [stdio]
   serena               ● connected [stdio]</code></pre>
           </div>
           <p style="color:var(--dim); font-size:12.5px; margin:10px 0 0;">A server missing or not connected? Re-run <code>ckit harness</code> to re-register, then <code>ckit doctor</code>. On Windows, <code>codebase-memory-mcp</code> may be skipped (no installer yet).</p>
@@ -306,7 +305,6 @@ User level (~/.omp/agent/mcp.json):
         <tbody>
           <tr><td><code>codegraph</code></td><td>Local code index — explore / callers / impact (STEP 0)</td><td>upstream <code>curl | sh</code> installer (Windows skipped)</td></tr>
           <tr><td><code>codebase-memory-mcp</code></td><td>Semantic graph — search_graph / trace_path / query_graph / architecture</td><td>upstream <code>curl | bash</code> installer (no Windows build yet)</td></tr>
-          <tr><td><code>headroom</code></td><td>Compress large tool output before it enters context</td><td><code>headroom-ai[mcp]</code> via <code>uv</code></td></tr>
           <tr><td><code>serena</code></td><td>LSP-precise symbol lookup / rename</td><td>runs via <code>uvx</code> — no install, needs <code>uv</code></td></tr>
         </tbody>
       </table>

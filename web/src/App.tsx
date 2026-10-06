@@ -643,7 +643,6 @@ function EnginesPage() {
   const engines: { key: keyof Omit<Engines, "mnemopi_on">; label: string; hint: string }[] = [
     { key: "codegraph", label: "codegraph", hint: "local code index (read/find)" },
     { key: "cbm", label: "codebase-memory", hint: "semantic graph" },
-    { key: "headroom", label: "headroom", hint: "token compression" },
     { key: "serena", label: "serena", hint: "full-CRUD file tool" },
   ];
   return (

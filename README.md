@@ -67,9 +67,9 @@ tools on PATH first (all cross-platform, no Arch/pacman involved):
   `ckit setup` installs both via `bun add -g` / `npm install -g`.
 - **`winget`** (ships with Windows 10/11) — used for GitHub CLI (`gh`), needed by
   `ckit ship`.
-- **`uv`** (optional, https://astral.sh/uv) — powers the `headroom` + `serena`
-  MCP servers; `ckit setup` bootstraps it via uv's PowerShell installer if
-  missing. Skipped cleanly if unavailable (those MCP servers are just left out).
+- **`uv`** (optional, https://astral.sh/uv) — powers the `serena`
+  MCP server; `ckit setup` bootstraps it via uv's PowerShell installer if
+  missing. Skipped cleanly if unavailable (serena is just left out).
 
 ```powershell
 # with bun or Node installed:
@@ -142,7 +142,6 @@ Configured MCP Servers
 User level (~/.omp/agent/mcp.json):
   codebase-memory-mcp  ● connected [stdio]
   codegraph            ● connected [stdio]
-  headroom             ● connected [stdio]
   serena               ● connected [stdio]
 ```
 
@@ -279,7 +278,7 @@ The sidebar is grouped — every page reads **real data** (no mocks), and most p
 |---|---|---|
 | Session | **State · Context** | Live plan (`agents/STATE.md`), real session token/compaction stats |
 | Configure | **Models · Skills · Memory · Rules** | Change the model per role/task (writes `models.toml` immediately) · filter + cycle tiers across the 37 skills · edit the 6 memory files (STATE/KNOWLEDGE…) · add/remove rules |
-| Runtime | **Engines · Codegraph · MCP · Submodules** | Engine status (codegraph/cbm/headroom/serena/mnemopi) · **codebase graph**: package call graph (elk) + 12 Leiden clusters + symbol search + caller/callee tracing · MCP servers · git submodules |
+| Runtime | **Engines · Codegraph · MCP · Submodules** | Engine status (codegraph/cbm/serena/mnemopi) · **codebase graph**: package call graph (elk) + 12 Leiden clusters + symbol search + caller/callee tracing · MCP servers · git submodules |
 | Quality | **Bench · Readiness · Team** | Run `harness bench` live — the page auto-loads with upfront breakdown meters (prefix / CORE / memory-spine) + a spine advisory · readiness gate · team roster |
 | Discover | **Marketplace** | Browse + one-click install MCP servers & skills from the official registry, Smithery, Glama, and mcp.so |
 | Projects/Build | **Workspaces · Workflow** | Project switcher · pipeline builder for skills/subagents/tools (exports as an omp extension) |

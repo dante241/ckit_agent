@@ -6,7 +6,7 @@
 Bạn đang ở **sub-folder**. Rule + skill force-load đầy đủ KHÔNG lặp ở đây — đọc ROOT trước:
 
 - **Root rules + skill list:** `/Library/WebServer/Documents/source/dante/ckit/AGENTS.md`
-- **Master skills (omp đọc đầu tiên):** `~/.omp/skills/00-force-load.md`
+- **Rules always-on:** `~/.omp/agent/APPEND_SYSTEM.md` (omp nhúng vào MỌI system prompt)
 
 **Always-on (đọc trước tool call đầu tiên, ĐÚNG thứ tự):** codegraph → karpathy → ponytail → assp → impeccable → taste → 8sync-cli → image-routing → locate-anything.
 SKILL.md ở `<root>/.omp/skills/<name>/` hoặc `~/.omp/skills/<name>/`.

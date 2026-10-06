@@ -188,14 +188,14 @@ pub(crate) fn eval_project_data(home: &std::path::Path) -> Option<EvalData> {
     let cbm = bin("codebase-memory-mcp");
     let roles_raw: Vec<(&str, Vec<(&str, bool)>)> = vec![
         ("dev", vec![("codegraph", has(".codegraph")), ("cbm-graph", cbm), ("build", build_cmd), ("karpathy+ponytail", skill("karpathy-guidelines") && skill("ponytail"))]),
-        ("qa/testing", vec![("test", test_cmd), ("full-flow", skill("full-flow")), ("browser-testing", skill("browser-testing-with-devtools")), ("headroom", bin("headroom"))]),
+        ("qa/testing", vec![("test", test_cmd), ("full-flow", skill("full-flow")), ("browser-testing", skill("browser-testing-with-devtools"))]),
         ("research", vec![("omp/web_search", bin("omp")), ("agent-reach|deep-research", skill("agent-reach") || skill("deep-research")), ("last30days", skill("last30days"))]),
         ("ba/po", vec![("planning", skill("planning-and-task-breakdown")), ("spec-driven", skill("spec-driven-development")), ("STATE+DECISIONS", has("agents/STATE.md") && has("agents/DECISIONS.md"))]),
         ("fe", vec![("frontend-stack", frontend), ("impeccable+taste", skill("impeccable") && skill("taste-skill")), ("senior-frontend", skill("senior-frontend"))]),
         ("be", vec![("backend-stack", backend), ("api-design", skill("api-and-interface-design")), ("security", skill("senior-security") || skill("security-and-hardening"))]),
         ("docs", vec![("docs-skill", skill("documentation-and-adrs")), ("AGENTS.md", has("AGENTS.md")), ("CHANGELOG", has("CHANGELOG.md"))]),
         ("memory/learn", vec![("Mnemopi-ON", cfg.contains("backend: mnemopi")), ("KNOWLEDGE+PLAYBOOKS", has("agents/KNOWLEDGE.md") && has("agents/PLAYBOOKS.md")), ("cbm-graph", cbm)]),
-        ("token-opt", vec![("codegraph", bin("codegraph")), ("cbm", cbm), ("headroom", bin("headroom"))]),
+        ("token-opt", vec![("codegraph", bin("codegraph")), ("cbm", cbm)]),
     ];
     let mut roles_out = Vec::new();
     let (mut tp, mut tn) = (0usize, 0usize);

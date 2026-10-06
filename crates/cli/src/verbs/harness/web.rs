@@ -257,7 +257,6 @@ async fn api_engines(State(ctx): State<Arc<Ctx>>) -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "codegraph": eng("codegraph"),
         "cbm": eng("codebase-memory-mcp"),
-        "headroom": eng("headroom"),
         "serena": serena,
         "mnemopi_on": cfg.contains("backend: mnemopi"),
     }))

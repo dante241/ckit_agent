@@ -14,7 +14,7 @@ description: Cold-resume on this machine — git pull the latest, then read su-c
 - Report the range pulled (`<old>..<new>`) and the new HEAD subject.
 
 ## 2. Understand where the project is (the important part — read, don't guess)
-Read, in order (token-lean; `headroom_compress` anything > ~50 lines):
+Read, in order (token-lean; summarize anything > ~50 lines):
 1. **`su-code/STATE.md`** — especially the `## 🚚 HANDOFF` block (what changed last session, Done/Next/Blockers, per-machine gotchas, runbook) and `## Current step` / `## Next`.
 2. **`su-code/KNOWLEDGE.md`** — the most recent `validated:` / `failure:` entries (append-only, at the tail) so I don't repeat a known dead-end.
 3. **`CHANGELOG.md`** `## [Unreleased]` + top released version; **`git log --oneline -5`** to see what just landed.

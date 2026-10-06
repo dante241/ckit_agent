@@ -11,7 +11,6 @@ export type EngineStatus = { present: boolean; version: string; registered?: boo
 export type Engines = {
   codegraph: EngineStatus;
   cbm: EngineStatus;
-  headroom: EngineStatus;
   // serena reports presence via mcp.json + uvx, and carries registration state.
   serena: EngineStatus;
   mnemopi_on: boolean;

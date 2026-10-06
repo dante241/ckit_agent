@@ -139,7 +139,7 @@ pub fn run(a: Args) -> Result<()> {
         ui::info(&format!("would install omp ({omp_via}) if missing"));
         ui::info("would install paru (AUR helper) if missing");
         ui::info(&format!("would install codegraph ({cg_via}) if missing — best-effort, never aborts setup"));
-        ui::info("would register STEP-0 MCPs (codegraph · codebase-memory · headroom · serena) and remove legacy zai-vision");
+        ui::info("would register STEP-0 MCPs (codegraph · codebase-memory · serena) and remove retired zai-vision/headroom");
         ui::info("would write skills + register codegraph as a global+local skill");
     } else {
         // Local config first — these write files with NO external-tool dependency,
@@ -176,9 +176,8 @@ pub fn run(a: Args) -> Result<()> {
         try_step("step0-mcps", yolo, &mut failures, || {
             crate::verbs::skill::deploy::ensure_codegraph_mcp(&env)?;
             crate::verbs::skill::deploy::ensure_codebase_memory_mcp(&env)?;
-            crate::verbs::skill::deploy::ensure_headroom_mcp(&env)?;
             let _ = crate::verbs::skill::deploy::ensure_serena_mcp(&env);
-            let _ = crate::verbs::skill::deploy::deregister_zai_vision_mcp(&env.home);
+            let _ = crate::verbs::skill::deploy::deregister_retired_mcps(&env.home);
             Ok(())
         })?;
         try_step("skills",     yolo, &mut failures, || install_skills(&env))?;
