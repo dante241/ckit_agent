@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-10-06
+
 ### Changed
 - `vtiger-php` pack ships its agents: `code-reviewer`, `debugger`, `tester`, `docs-manager`, `code-simplifier` install into `.omp/agents/` with the pack (the `fix`, `review-pr`, `commit`, `release-doc` skills call them). They now spawn `scout` (was the missing `explore`) and have `lsp`.
 - `vtiger-php` `primary-workflow` rule uses omp's own agents and tools (`scout`, `librarian`, `designer`, `task`, `todo`, `ask`) instead of `planner`/`researcher`/`ui-ux-designer`/`fullstack-developer` and Claude Code tool names.
