@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-10-06
+
 ### Removed
 - `headroom` MCP: `harness`/`setup` no longer install or register it and drop its `mcp.json` entry; skills and commands ask for a summary of long tool output instead (omp already spills it to artifacts).
 
