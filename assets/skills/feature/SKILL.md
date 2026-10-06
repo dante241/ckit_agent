@@ -34,7 +34,7 @@ BẮT BUỘC trước mọi subcommand (trừ `new`) — đọc 3 file vào cont
 1. Đọc `agents/planning/ACTIVE.md` dòng đầu (không comment, không blank) → slug active. Trống → báo user chạy `/feature new` hoặc `/feature switch`.
 2. Đọc `agents/planning/<slug>/STATE.md` → frontmatter `active_phase`, `status`, `next_action`, `ticket`, `branch` (ticket/branch có thể trống — không sao).
 3. Đọc `agents/planning/config.json` → giữ trong context cả lệnh: `workflow.*` (parallelization, max_parallel_tasks, review_dimensions, plan_review, code_review, verifier), `paths.*` (planning_root, archive). Thiếu key → dùng default rồi cảnh báo user.
-4. **Load `references/feature-rules.md` NGAY** (luật xuyên suốt mọi subcommand: R1 resolve config→literal, R3 2-lớp load skill, R5 AC discipline, R6 guardrail, R7 codebase anchor, R8 commit, R10 code-intelligence FIRST). Reference từng subcommand chỉ thêm bước RIÊNG, KHÔNG lặp luật này.
+4. **Load `references/feature-rules.md` NGAY** (luật xuyên suốt mọi subcommand: R1 resolve config→literal, R3 2-lớp load skill, R5 AC discipline, R6 guardrail, R7 codebase anchor, R8 commit, R10 code-intelligence FIRST, R12 nguồn yêu cầu/đặc tả ngoài + `scripts/coverage.py`, R13 chèn phase, R14 đặc tả đổi, R15 user chốt ≠ đề xuất). Reference từng subcommand chỉ thêm bước RIÊNG, KHÔNG lặp luật này.
 5. Dispatch theo bảng:
 
 | Subcommand | Load reference | Khi nào hợp lệ |

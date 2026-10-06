@@ -41,7 +41,7 @@ Lặp:
 2. **Spawn dev** cho các task sẵn sàng (tới giới hạn) — **1 lời gọi `task`, nhiều item**, `agent: task`, chạy nền (kết quả tự về, orchestrator không chờ từng cái). Prompt mỗi agent BẮT BUỘC nhúng (subagent KHÔNG đọc được CONTEXT/config/skill):
    1. Task cụ thể + **danh sách file được phép sửa** + "chỉ làm task này, KHÔNG commit, KHÔNG chạy cả test suite".
    2. **UC literal** task phục vụ.
-   3. **AC literal** task gánh (Given/When/Then nguyên văn).
+   3. **AC literal** task gánh (Given/When/Then nguyên văn) + **đoạn nguồn nguyên văn** mà cột Nguồn của các AC đó trỏ tới (R12: có đặc tả ngoài → copy đúng đoạn BR / bước luồng / tiêu chí US·AC từ file đặc tả; không có → dòng UC trong REQUIREMENTS). Dev phải thấy quy tắc gốc, không chỉ bản AC viết lại.
    4. **Decisions liên quan** (copy literal — KHÔNG ghi "theo D4").
    5. **Skill (cột `[skill:]`) — 2 lớp:** (a) nhúng luật cốt lõi + anti-pattern; (b) ra lệnh Read `.omp/skills/<skill>/SKILL.md` (không có thì `~/.omp/skills/<skill>/SKILL.md`) TRƯỚC khi code.
    6. Convention: `AGENTS.md` + `agents/DECISIONS.md`/`PREFERENCES.md` liên quan.
@@ -87,7 +87,7 @@ Lặp:
 
 - **Chạy test đầy đủ 1 lần** (cả suite/lint của các module phase đụng) — bắt lỗi tương tác giữa các task mà verify scoped không thấy. Lỗi → xác định task gây lỗi → đưa task đó về dev (vòng Bước 2).
 - STATE: `status: executing`, `next_action: ship-phase`.
-- **Self-check**: mọi UC trong Requirement scope có task phủ; mọi AC có code thỏa. Thiếu → làm nốt trước khi ship.
+- **Self-check**: mọi UC trong Requirement scope có task phủ; mọi AC có code thỏa; có đặc tả ngoài → mọi mã ở cột Nguồn của AC có chỗ cài trong code (đọc lại nguyên văn, không đoán từ tên hàm). Thiếu → làm nốt trước khi ship.
 - KHÔNG review/test sâu theo AC ở đây — đó là việc `/feature ship`.
 
 Next: `/feature ship`.

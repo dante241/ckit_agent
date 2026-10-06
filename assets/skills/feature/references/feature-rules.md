@@ -40,8 +40,8 @@ Mỗi phase có 🎯 Goal + ✅ Acceptance Criteria (AC-NN, đo được) trong 
 
 - Việc đang code phải thuộc `active_phase`. Lệch ra ngoài ROADMAP → DỪNG, hỏi user (auto-mode: SKIP+NEEDS-CONFIRM).
 - Lệch Decision trong CONTEXT → DỪNG (như lệch ROADMAP).
+- Traceability bắt buộc: `REQUIREMENTS.md` UC → `M<x>-CONTEXT.md` Requirement scope → AC-NN (cột Nguồn) → PLAN task → go prompt → `M<x>-VERIFICATION.md`. Có đặc tả ngoài thì đầu chuỗi là mã đặc tả qua `COVERAGE.md` (R12). Code task mà không biết UC nào đang phục vụ = DỪNG, bổ sung trace trước.
 - STATE.md < 100 dòng, digest không archive. Cập nhật: task xong → STATE.Log + next_action; phase xong → ROADMAP tick + progress.
-- Traceability bắt buộc: `REQUIREMENTS.md` UC → `M<x>-CONTEXT.md` Requirement scope → AC-NN → PLAN task → go prompt → `M<x>-VERIFICATION.md`. Code task mà không biết UC nào đang phục vụ = DỪNG, bổ sung trace trước.
 
 ## R7 — Neo vào codebase (brownfield)
 
@@ -73,3 +73,29 @@ MCP tool là **`xd://` device**, KHÔNG phải top-level tool: gọi bằng `wri
 - (b) Nếu subagent type có quyền đọc skill (đa số có tool Read) → thêm: "Đọc `~/.omp/skills/codegraph/SKILL.md` nếu cần chi tiết cách dùng."
 
 Vi phạm (subagent grep/Read tràn lan để survey thay vì code-intel, hoặc dump log thô >300 dòng vào báo cáo) = lệch quy tắc dự án, không phải style nit — sửa ngay khi phát hiện, không đợi review pass mới bắt.
+
+## R12 — Nguồn yêu cầu: đặc tả ngoài là gốc, kế hoạch chỉ trỏ về nó
+
+`REQUIREMENTS.md` ghi dòng **Nguồn yêu cầu** (đặt ở `new`):
+- **Không có đặc tả ngoài** → nguồn là chính `REQUIREMENTS.md`. Cột Nguồn của AC ghi `REQUIREMENTS`. Không cần `COVERAGE.md`.
+- **Có đặc tả ngoài** (file BA giữ: UC, BR, luồng, tiêu chí US·AC, mã kỹ thuật) → đặc tả là gốc, nằm trong `agents/planning/<slug>/` (giữ nguyên tên file, không chép nội dung sang file khác). Bắt buộc có `COVERAGE.md` (mỗi mã đặc tả 1 dòng: mã → phase → trạng thái) và gate `python3 ~/.omp/skills/feature/scripts/coverage.py <feature-dir>` PASS.
+
+Khi có đặc tả ngoài, chuỗi trace là: **mã đặc tả → COVERAGE (phase) → M<x>-CONTEXT AC (cột Nguồn) → PLAN task → prompt dev (đoạn đặc tả nguyên văn) → M<x>-VERIFICATION (cột Nguồn)**. Danh sách mã của 1 phase lấy bằng `coverage.py <feature-dir> --phase Mx` — KHÔNG chọn tay (chọn tay đã từng sót BR quan trọng). Mã chỉ có nguyên văn trong đặc tả: ai cần (plan, dev, reviewer, tester) phải nhận đoạn nguyên văn, không nhận bản viết lại.
+
+## R13 — Chèn/đổi phase giữa chừng
+
+Thêm phase mới (vd `MC` giữa M1 và M2) hoặc đổi phạm vi phase đã plan → làm đủ, cùng một lượt:
+1. `ROADMAP.md`: dòng phase + phụ thuộc + **Integration Contracts** — contract cũ bị thay thì đánh dấu "bị thay bởi M<y>" (không xoá), ghi contract mới.
+2. `COVERAGE.md`: gán lại cột Phase cho các mã phase mới gánh; chạy lại `coverage.py`.
+3. `REQUIREMENTS.md`: UC/NFR/out-of-scope bị ảnh hưởng; dòng "Đọc bắt buộc" của phase mới (sinh bằng `--phase`).
+4. `STATE.md`: `next_phases`, `progress.total_phases`, `percent`.
+5. `PROJECT.md` Key Decisions: 1 dòng ghi lý do chèn, cột "Ai quyết".
+6. Phase đã ship mà phase mới đổi phần nó giao → ghi rõ AC nào của phase cũ phải giữ PASS sau thay đổi (thành AC hồi quy của phase mới).
+
+## R14 — Đặc tả đổi (BA sửa) giữa chừng
+
+`REQUIREMENTS.md` ghi bản/ngày đặc tả đang dùng. BA gửi bản mới → (1) diff với bản cũ (giữ bản cũ đến khi đối soát xong); (2) mã mới/đổi/bỏ → cập nhật `COVERAGE.md`, chạy `coverage.py`; (3) mã đổi thuộc phase đã plan → sửa CONTEXT/PLAN của phase đó; thuộc phase đã ship → thành AC của phase kế hoặc task converge, hỏi user; (4) cập nhật bản/ngày. Không plan/ship phase mới trên đặc tả chưa đối soát.
+
+## R15 — Quyết định của user ≠ đề xuất của AI
+
+Key Decisions (`PROJECT.md`) và Decisions trong CONTEXT ghi cột/nhãn **Ai quyết**: `user` / `đề xuất` / `auto`. Chỉ ghi `user` khi user chốt rõ trong hội thoại hoặc qua `ask` — AI đề xuất mà user chưa trả lời = `đề xuất`. Dòng `đề xuất`/`auto` không phải ràng buộc: chạm tới thì trình lại user (auto-mode: giữ nguyên + NEEDS-CONFIRM).

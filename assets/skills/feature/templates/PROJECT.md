@@ -27,9 +27,11 @@
 
 ## Key Decisions (table — append khi chốt)
 
-| Ngày | Phase | Quyết định | Lý do |
-|------|-------|-----------|-------|
-| DATE | M0 | [decision] | [why] |
+> Cột "Ai quyết": `user` (user chốt rõ trong hội thoại / `ask`) · `đề xuất` (AI đề xuất, user chưa chốt) · `auto` (auto-mode tự quyết). Chỉ dòng `user` mới là ràng buộc; dòng `đề xuất`/`auto` phải trình lại user khi chạm tới.
+
+| Ngày | Phase | Quyết định | Lý do | Ai quyết |
+|------|-------|-----------|-------|----------|
+| DATE | M0 | [decision] | [why] | user |
 
 ## Requirements
 

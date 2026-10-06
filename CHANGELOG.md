@@ -12,6 +12,13 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-10-06
+
+### Added
+- `/feature` traces an external spec end to end. `new` records the requirement source in `REQUIREMENTS.md`; when a BA spec file exists it builds `COVERAGE.md` (new template: every spec code → phase → status) and a per-phase "must read" list. `plan` reads the phase's spec sections verbatim, adds a **Nguồn** (source) column to every AC, checks coverage both ways (every phase code has an AC or a "moved to phase" row), embeds the source in plan-review, re-checks inherited Integration Contracts against the latest decisions, and reads the design for UI phases. `go` embeds the verbatim spec excerpts in dev prompts. `ship` grades against the source, adds a source column to the VERIFICATION matrix, and defines conditional close for NEEDS-CONFIRM (Step 2.6) and shipping several phases together.
+- `skills/feature/scripts/coverage.py`: checks that every spec code and US·AC has a COVERAGE row (exit 1 on missing/GAP or when no code matches), and `--phase Mx` prints the codes a phase must read (ranges like `M4–M6`, letter phases like `MC`). Spec path and code regex come from anchored `> Spec:` / `> Codes:` lines in COVERAGE.md.
+- feature-rules R12 (requirement source), R13 (inserting/rescoping a phase mid-feature), R14 (spec revised by BA), R15 (user decision vs AI proposal: `PROJECT.md` Key Decisions gain an "Ai quyết" column).
+
 ## [0.1.28] - 2026-10-06
 
 ### Added
