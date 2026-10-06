@@ -37,7 +37,7 @@ Mỗi `M<x>-CONTEXT.md` PHẢI có 3 mục dưới TRƯỚC khi plan. Đây là 
    - **Tier**: must-test / verify-sql / verify-only.
    - **Task nguồn**: AC này do task nào trong PLAN thỏa.
    - AC phải phủ HẾT Goal + map về contract export (ROADMAP). Mỗi UC của phase ⇒ ≥1 AC. Có đặc tả ngoài: mỗi mã của phase (`--phase M<x>`) ⇒ ≥1 AC có mã đó ở cột Nguồn, hoặc 1 dòng ở mục **Chuyển phase** (mã → phase nhận + lý do; đồng thời sửa cột Phase trong COVERAGE).
-4. Cuối mục ghi: **"Phase DONE khi mọi AC PASS, ghi ở M<x>-VERIFICATION.md. AC FAIL → không ship."**
+4. Cuối mục ghi: **"Phase DONE khi mọi AC PASS, ghi ở M<x>-VERIFICATION.md (NEEDS-CONFIRM → `ship.md` Step 2.6). AC FAIL → không ship."**
 
 > Template Requirement scope: `| UC | Mô tả REQUIREMENTS.md | Trong phase này làm gì | Không làm ở phase này |`
 > Template AC: `| AC-01 | UC-15 | US-02·AC-03, BR-04 | GIVEN <tiền đề> WHEN <hành động> THEN <kết quả đo được> | <cách verify> | <tier> | <task> |`

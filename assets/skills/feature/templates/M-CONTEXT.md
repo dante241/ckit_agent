@@ -47,4 +47,4 @@
 
 ---
 
-**Phase DONE khi mọi AC PASS (ghi ở Mx-VERIFICATION.md). AC FAIL → không ship.**
+**Phase DONE khi mọi AC PASS (ghi ở Mx-VERIFICATION.md; NEEDS-CONFIRM → `ship.md` Step 2.6). AC FAIL → không ship.**

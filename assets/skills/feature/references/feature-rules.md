@@ -34,7 +34,7 @@ Task ghi `[skill: —]` mà vẫn là task code → DỪNG, xác minh thật s�
 
 ## R5 — AC là hợp đồng nghiệm thu xuyên phase
 
-Mỗi phase có 🎯 Goal + ✅ Acceptance Criteria (AC-NN, đo được) trong `M<x>-CONTEXT.md`. AC là nguồn chân lý: `plan` viết, `go` code bám, `ship` verify từng AC → `M<x>-VERIFICATION.md`. Phase done ⇔ MỌI AC PASS. Mọi AC PHẢI map về ≥1 UC trong `REQUIREMENTS.md`; mọi task PLAN truy được về ≥1 AC + ≥1 UC; mọi AC có ≥1 task thỏa. KHÔNG dùng "DoD" mơ hồ.
+Mỗi phase có 🎯 Goal + ✅ Acceptance Criteria (AC-NN, đo được) trong `M<x>-CONTEXT.md`. AC là nguồn chân lý: `plan` viết, `go` code bám, `ship` verify từng AC → `M<x>-VERIFICATION.md`. Phase done ⇔ MỌI AC PASS (NEEDS-CONFIRM → `ship.md` Step 2.6). Mọi AC PHẢI map về ≥1 UC trong `REQUIREMENTS.md`; mọi task PLAN truy được về ≥1 AC + ≥1 UC; mọi AC có ≥1 task thỏa. KHÔNG dùng "DoD" mơ hồ.
 
 ## R6 — Guardrail chống "đi 1 nẻo"
 

@@ -12,6 +12,12 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.30] - 2026-10-06
+
+### Fixed
+- `/feature`: every "phase done ⇔ all AC PASS" statement (SKILL.md, R5, plan.md, M-CONTEXT and M-VERIFICATION templates) now points to the NEEDS-CONFIRM conditional close in `ship.md` Step 2.6 instead of contradicting it.
+- `coverage.py`: a custom `Codes:` regex with capture groups now yields whole matches (was tuples from `findall`).
+
 ## [0.1.29] - 2026-10-06
 
 ### Added

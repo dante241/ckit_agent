@@ -1,7 +1,7 @@
 # Mx-VERIFICATION — <phase name>
 
 > Nghiệm thu phase Mx bám AC. Nguồn chân lý: REQUIREMENTS.md + Mx-CONTEXT.md.
-> Phase done ⇔ MỌI AC = PASS. Còn ≥1 FAIL hoặc UC chưa có verdict → phase CHƯA done.
+> Phase done ⇔ MỌI AC = PASS (NEEDS-CONFIRM → `ship.md` Step 2.6). Còn ≥1 FAIL hoặc UC chưa có verdict → phase CHƯA done.
 
 ## UC/AC verdicts
 

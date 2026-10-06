@@ -33,7 +33,7 @@ def active_feature_dir() -> Path:
 
 
 def spec_codes(spec: str, code_re):
-    codes = list(dict.fromkeys(code_re.findall(spec)))
+    codes = list(dict.fromkeys(m.group(0) for m in code_re.finditer(spec)))
     acs, us = [], None
     for line in spec.splitlines():
         m = re.search(r'\*\*(US-\d+)\*\*', line)

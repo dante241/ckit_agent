@@ -88,7 +88,7 @@ Chi tiết luật + cách spawn subagent discuss: `references/auto.md`.
 ## Flow chuẩn 1 feature
 
 ```
-/feature new zalo-group    -> điền 4 file (neo AGENTS.md + agents/) -> USER DUYỆT (gate 1)
+/feature new zalo-group    -> điền 4 file (neo AGENTS.md + agents/; có đặc tả ngoài → + COVERAGE.md, coverage.py PASS) -> USER DUYỆT (gate 1)
 mỗi phase:
   /feature plan            -> Discuss + Goal/AC (UAT) + Plan (task↔AC) -> USER DUYỆT plan (gate 2)
   /feature go              -> feed PLAN → engine_plan/next/verify/advance -> append STATE mỗi task
@@ -96,6 +96,6 @@ mỗi phase:
 lặp tới phase cuối -> ship (phase cuối) -> update agents/KNOWLEDGE.md + DECISIONS.md + archive
 ```
 
-> **Mỗi phase BẮT BUỘC có Requirement scope + Goal + Acceptance Criteria (AC-NN, đo được) trong `M<x>-CONTEXT.md`.** Requirement scope map từ `REQUIREMENTS.md` UC; AC = hợp đồng nghiệm thu: `plan` viết, `go` code bám (verify của mỗi engine task = lint/test/build thật), `ship` review+test verify từng UC/AC → `M<x>-VERIFICATION.md`. Phase done ⇔ mọi UC/AC PASS. KHÔNG dùng "DoD" mơ hồ.
+> **Mỗi phase BẮT BUỘC có Requirement scope + Goal + Acceptance Criteria (AC-NN, đo được, cột Nguồn) trong `M<x>-CONTEXT.md`.** Requirement scope map từ `REQUIREMENTS.md` UC (có đặc tả ngoài: mã đặc tả của phase qua `scripts/coverage.py --phase`); AC = hợp đồng nghiệm thu: `plan` viết, `go` code bám (verify của mỗi engine task = lint/test/build thật), `ship` review+test verify từng UC/AC → `M<x>-VERIFICATION.md`. Phase done ⇔ mọi UC/AC PASS (NEEDS-CONFIRM → `ship.md` Step 2.6). KHÔNG dùng "DoD" mơ hồ.
 
 Đọc `references/<subcommand>.md` để biết chi tiết từng bước.
