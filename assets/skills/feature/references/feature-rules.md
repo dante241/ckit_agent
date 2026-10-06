@@ -8,9 +8,21 @@
 ## R1 — config.X là chỉ thị cho ORCHESTRATOR, resolve về literal trước khi dùng
 
 `config.X` (đọc từ `agents/planning/config.json`) là tham số cho orchestrator (main thread), **KHÔNG phải chuỗi đưa cho subagent**. Subagent KHÔNG đọc được config.json và KHÔNG kế thừa context — nó chỉ thấy prompt bạn soạn. Vì vậy:
-- **Vai/role** → orchestrator tự chọn `agent: <role>` khi spawn `task` (explore/plan/reviewer/Tester/task). Subagent không cần biết role của chính nó; model do omp chọn qua `~/.config/8sync/models.toml`.
+- **Vai/role** → orchestrator tự chọn `agent: <role>` khi spawn `task` (xem bảng **Agent theo vai** dưới). Subagent không cần biết role của chính nó; model do omp chọn qua `~/.config/8sync/models.toml`.
 - **Tham số nội dung** (workflow.review_dimensions, tier, convention, ticket…) → nhúng **giá trị thật** vào prompt (vd "review dimension: security"). TUYỆT ĐỐI không viết chữ `config.workflow.review_dimensions` vào prompt subagent.
 - Thiếu key → dùng default rồi cảnh báo user.
+
+**Agent theo vai** (agent dự án ở `.omp/agents/` ưu tiên hơn bản có sẵn của omp; không có → dùng cột dự phòng):
+
+| Vai | Agent | Dự phòng |
+|---|---|---|
+| Khảo sát code (plan, auto-discuss) | `scout` | — |
+| Thư viện/API bên ngoài | `librarian` | `scout` + `web_search` |
+| Cân nhắc phương án, viết code (`go`) | `task` | — |
+| Review plan | `reviewer` | — |
+| Review code (`ship`) | `code-reviewer` | `reviewer` |
+| Viết test (`ship`) | `tester` | `task` + skill `testing` |
+| Bảo mật (PR đụng quyền/input) | `security-reviewer` | `reviewer` |
 
 ## R3 — Load skill repo theo cột [skill:] (2 lớp, BẮT BUỘC)
 
@@ -47,7 +59,7 @@ Commit **atomic mỗi task xong** trong `go`: sau `engine_verify` PASS → `engi
 
 ## R10 — Code-intelligence FIRST (mọi lookup code, ÁP DỤNG CẢ SUBAGENT — bắt buộc, không tuỳ chọn)
 
-Mọi thao tác TÌM/HIỂU/ĐỊNH VỊ code (không phải sắp EDIT ngay) → dùng code-intelligence engine TRƯỚC grep/Read thô, theo đúng RULE #0 (`~/.omp/agent/APPEND_SYSTEM.md`). Áp dụng cho **CẢ main thread LẪN MỌI subagent** (`explore` ở `plan.md` Step 2, `task` executor ở `execute.md`, `reviewer`/`Tester` ở `ship.md`, discuss subagent ở `auto.md`). Ưu tiên:
+Mọi thao tác TÌM/HIỂU/ĐỊNH VỊ code (không phải sắp EDIT ngay) → dùng code-intelligence engine TRƯỚC grep/Read thô, theo đúng RULE #0 (`~/.omp/agent/APPEND_SYSTEM.md`). Áp dụng cho **CẢ main thread LẪN MỌI subagent** (`scout` ở `plan.md` Step 2, `task` executor ở `execute.md`, reviewer/tester ở `ship.md`, discuss subagent ở `auto.md`). Ưu tiên:
 
 MCP tool là **`xd://` device**, KHÔNG phải top-level tool: gọi bằng `write` JSON args vào path (vd `write` path `xd://mcp__codebase_memory_mcp_search_graph`, content `{"project":"…","query":"…"}`); tool chưa rõ schema → `read xd://<tool>` trước.
 

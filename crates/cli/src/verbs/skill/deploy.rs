@@ -50,6 +50,17 @@ pub(crate) fn install_bundled_global(env: &env_detect::Env) -> Result<()> {
         if written > 0 {
             ui::ok(&format!("synced {} ({} file(s) written) → {}", name, written, target_dir.display()));
         }
+        // Older builds deployed under the asset name (`karpathy` beside
+        // `karpathy-guidelines`); that copy is never refreshed, so drop it.
+        let asset = asset_prefix.trim_start_matches("skills/");
+        let stale = skills_dir.join(asset);
+        if asset != name
+            && std::fs::read_to_string(stale.join("SKILL.md"))
+                .is_ok_and(|s| s.lines().any(|l| l.trim() == format!("name: {}", name)))
+        {
+            std::fs::remove_dir_all(&stale)?;
+            ui::ok(&format!("removed stale duplicate {} (served as {})", stale.display(), name));
+        }
     }
     Ok(())
 }
@@ -192,7 +203,7 @@ pub(crate) fn ensure_codegraph_mcp(env: &env_detect::Env) -> Result<()> {
         ui::warn("codegraph binary not on PATH — skipping codegraph MCP registration");
         return deregister_omp_mcp(&env.home, "codegraph");
     }
-    register_omp_mcp(&env.home, "codegraph", "codegraph", &["serve", "--mcp"], &[])
+    register_omp_mcp(&env.home, "codegraph", "codegraph", &["serve", "--mcp"], &[], &[])
 }
 
 /// If `<root>/.codegraph/` is missing and the `codegraph` binary is on PATH,
@@ -276,12 +287,21 @@ pub(crate) fn ensure_codebase_memory_mcp(env: &env_detect::Env) -> Result<()> {
     let _ = Command::new("codebase-memory-mcp")
         .args(["config", "set", "auto_index", "true"])
         .status();
-    register_omp_mcp(&env.home, "codebase-memory-mcp", "codebase-memory-mcp", &[], &[])
+    register_omp_mcp(&env.home, "codebase-memory-mcp", "codebase-memory-mcp", &[], &[], &[])
 }
 
-/// Idempotently add an MCP server `name` (stdio `command` + `args`) to omp's user
-/// MCP config (`~/.omp/agent/mcp.json`), preserving any servers already there.
-fn register_omp_mcp(home: &Path, name: &str, command: &str, args: &[&str], env: &[(&str, &str)]) -> Result<()> {
+/// Add an MCP server `name` (stdio `command` + `args`) to omp's user MCP config
+/// (`~/.omp/agent/mcp.json`), preserving any servers already there. An existing
+/// entry is replaced only when it is exactly one `legacy_args` ckit wrote earlier
+/// (old file saved as `mcp.json.bak`); any other entry is the user's and is kept.
+fn register_omp_mcp(
+    home: &Path,
+    name: &str,
+    command: &str,
+    args: &[&str],
+    env: &[(&str, &str)],
+    legacy_args: &[&[&str]],
+) -> Result<()> {
     let mcp_path = home.join(".omp/agent/mcp.json");
     if let Some(p) = mcp_path.parent() {
         std::fs::create_dir_all(p)?;
@@ -318,17 +338,26 @@ fn register_omp_mcp(home: &Path, name: &str, command: &str, args: &[&str], env: 
             .expect("stdio mcp server is an object")
             .insert("env".into(), serde_json::Value::Object(env_obj));
     }
-    if smap.get(name) == Some(&desired) {
-        ui::skip(name, "already in omp mcp.json");
+    if let Some(cur) = smap.get(name) {
+        if cur == &desired {
+            ui::skip(name, "already in omp mcp.json");
+            return Ok(());
+        }
+        let ckit_written =
+            legacy_args.iter().any(|a| cur == &serde_json::json!({ "type": "stdio", "command": command, "args": a }));
+        if !ckit_written {
+            ui::skip(name, "customized in omp mcp.json — kept");
+            return Ok(());
+        }
+        std::fs::copy(&mcp_path, mcp_path.with_extension("json.bak"))?;
+        smap.insert(name.to_string(), desired);
+        std::fs::write(&mcp_path, serde_json::to_string_pretty(&root)?)?;
+        ui::ok(&format!("updated {} MCP → {} (old file: mcp.json.bak)", name, mcp_path.display()));
         return Ok(());
     }
-    // Self-heal: update in place when the command/args changed (e.g. serena's
-    // executable rename) instead of skipping a stale entry.
-    let updating = smap.contains_key(name);
     smap.insert(name.to_string(), desired);
     std::fs::write(&mcp_path, serde_json::to_string_pretty(&root)?)?;
-    let verb = if updating { "updated" } else { "registered" };
-    ui::ok(&format!("{} {} MCP → {}", verb, name, mcp_path.display()));
+    ui::ok(&format!("registered {} MCP → {}", name, mcp_path.display()));
     Ok(())
 }
 
@@ -635,6 +664,12 @@ pub(crate) fn ensure_serena_mcp(env: &env_detect::Env) -> Result<()> {
                 "false",
             ],
             &[("SERENA_USAGE_REPORTING", "false")],
+            // Entries earlier ckit versions wrote; these are upgraded in place.
+            &[
+                &["--from", "git+https://github.com/oraios/serena", "serena", "start-mcp-server", "--context", "claude-code"],
+                &["--from", "git+https://github.com/oraios/serena", "start-mcp-server", "--context", "claude-code"],
+                &["--from", "git+https://github.com/oraios/serena", "serena-mcp-server", "--context", "ide-assistant"],
+            ],
         )
     } else {
         ui::skip("serena MCP", "needs `uv` (https://astral.sh/uv) — install failed, skipped");

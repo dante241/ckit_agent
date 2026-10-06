@@ -41,7 +41,7 @@ Mỗi `M<x>-CONTEXT.md` PHẢI có 3 mục dưới TRƯỚC khi plan. Đây là 
 **Áp dụng R10 (code-intelligence FIRST) — kể cả khi tự research ở main thread lẫn khi spawn subagent.**
 
 Nếu phase cần khảo nhiều mặt codebase (và `config.workflow.parallelization === true`):
-- Spawn ĐỒNG THỜI nhiều `task` subagent `agent: explore` (1 message, nhiều tool-call) — mỗi agent 1 khía cạnh:
+- Spawn ĐỒNG THỜI nhiều `task` subagent `agent: scout` (1 message, nhiều tool-call) — mỗi agent 1 khía cạnh:
   - "tìm pattern <X> trong codebase"
   - "schema/migration module tương tự"
   - "module tham khảo đã làm <Y>"

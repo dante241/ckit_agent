@@ -51,7 +51,7 @@ Nếu user gõ `/feature` không subcommand → đọc STATE → đề xuất ne
 ### ⚡ Cờ `--auto` (autonomous mode) — check NGAY khi parse lệnh
 
 Nếu args chứa `--auto` (dù có/không subcommand) → **BẮT BUỘC load `references/auto.md` TRƯỚC** rồi mới dispatch. Auto-mode đổi hành vi của `plan` + `go`:
-- **KHÔNG dùng `ask`** cho điểm-quyết-định triển khai → thay bằng spawn `task` subagent (`agent: explore` / `agent: plan` / `agent: task`) đóng vai discuss + tự quyết theo ràng buộc PROJECT/REQUIREMENTS. Tự tra repo/DB trước khi coi là "phải hỏi".
+- **KHÔNG dùng `ask`** cho điểm-quyết-định triển khai → thay bằng spawn `task` subagent (`agent: scout` / `agent: task`) đóng vai discuss + tự quyết theo ràng buộc PROJECT/REQUIREMENTS. Tự tra repo/DB trước khi coi là "phải hỏi".
 - **KHÔNG dừng ở user-gate** (gate 2 plan, gate cuối go) → tự duyệt (plan-review thay vai gate chất lượng) rồi chạy tiếp.
 - **Block** (thiếu credential/môi trường/dữ liệu thật subagent không tra được) → SKIP item đó, ghi NEEDS-CONFIRM vào VERIFICATION/STATE, **code nốt phần còn lại của phase**. Không stall cả phase vì 1 item.
 - **1 lệnh `--auto` = chạy TRỌN 1 phase**: `plan` (nếu chưa có PLAN) → `go` (hết task theo đồ thị phụ thuộc) → self-check AC. Dừng ở ranh giới phase kế (không tự nhảy phase sau trừ khi user nói "code hết các phase").
@@ -76,7 +76,7 @@ Chi tiết luật + cách spawn subagent discuss: `references/auto.md`.
 - **Cập nhật:** task xong → STATE.Log + next_action · phase xong → ROADMAP tick + STATE.progress · feature xong → `agents/KNOWLEDGE.md` + `agents/DECISIONS.md`.
 - **Parallel:** PLAN khai `[depends:]` + `[file:]` mỗi task → `go` dev song song mọi task đủ phụ thuộc + khác file (tối đa `config.workflow.max_parallel_tasks`, mặc định 4), task dev xong test ngay trong lúc task khác còn dev, test lỗi → dev lại. `parallelization === false` → cùng vòng nhưng 1 task một lúc (debug/máy yếu).
 - **Commit:** commit **atomic mỗi task xong** trong `go`: `engine_verify` PASS → `engine_advance {commit:true, files:[file của task]}` (engine chỉ commit các file đó; từ chối commit cả tree khi task khác đang chạy). Conventional Commits, tiếng Anh, `<type>: M<x> - T<n> <desc>`, no AI ref. Feature branch + ticket là **TUỲ CHỌN** (STATE `branch`/`ticket` có thể trống). **KHÔNG `git push`/PR trừ khi user yêu cầu**. Chi tiết: `references/execute.md` §Commit + R8.
-- **Model:** 8sync sở hữu chọn model qua `~/.config/8sync/models.toml` (xem/sửa: `8sync harness model`) + role của `task` subagent. Skill NEVER hardcode tên model; chỉ chọn `agent: <role>` (explore/plan/reviewer/Tester/task) đúng vai.
+- **Model:** 8sync sở hữu chọn model qua `~/.config/8sync/models.toml` (xem/sửa: `8sync harness model`) + role của `task` subagent. Skill NEVER hardcode tên model; chỉ chọn `agent: <role>` đúng vai (bảng **Agent theo vai** trong `references/feature-rules.md`).
 
 ## Neo vào codebase (brownfield) — R7
 

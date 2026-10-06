@@ -62,9 +62,10 @@ pub(crate) fn is_pack_installed(root: &Path, name: &str) -> bool {
     reg.get(name).is_some_and(|e| e.src == format!("pack:{}", name))
 }
 
-/// Deploy every skill in pack `name` into `<root>/.omp/skills/<sub>` and every
-/// rule file into `<root>/.omp/rules/`. Project-local only — packs carry
-/// domain convention (PHP/VTiger, …) that doesn't belong in `~/.omp/skills`.
+/// Deploy pack `name` into the project's `.omp/`: skills (`skills/<sub>`), rule
+/// files (`rules/`), agents (`agents/`) and the always-apply `RULES.md`.
+/// Project-local only — packs carry domain convention (PHP/VTiger, …) that
+/// doesn't belong in `~/.omp`.
 ///
 /// `.omp` is usually untracked, so a local edit must never be lost silently:
 /// `.omp/pack-<name>.lock` records the hash of every file as installed. A file
@@ -75,7 +76,10 @@ pub(crate) fn install_pack(root: &Path, name: &str, force: bool) -> Result<()> {
     let pack_prefix = format!("packs/{}/", name);
     let files: Vec<String> = assets::iter_under(&pack_prefix)
         .into_iter()
-        .filter(|p| p[pack_prefix.len()..].starts_with("skills/") || p[pack_prefix.len()..].starts_with("rules/"))
+        .filter(|p| {
+            let rel = &p[pack_prefix.len()..];
+            rel == "RULES.md" || ["skills/", "rules/", "agents/"].iter().any(|d| rel.starts_with(d))
+        })
         .collect();
     if files.is_empty() {
         anyhow::bail!("no bundled pack `{}` (assets/packs/{}/ not found)", name, name);
@@ -115,13 +119,6 @@ pub(crate) fn install_pack(root: &Path, name: &str, force: bool) -> Result<()> {
     write_lock(&lock_path, &lock)?;
     for sub in pack_skill_names(name) {
         audit_skill_layout(&omp.join("skills").join(sub));
-    }
-
-    // Pack-root `RULES.md` → project sticky always-apply rule (`.omp/RULES.md`).
-    // Backup-on-diff (assets::install) so a user's local edits are never clobbered.
-    let rules_md = format!("packs/{}/RULES.md", name);
-    if assets::read(&rules_md).is_some() {
-        assets::install(&rules_md, &omp.join("RULES.md"), force)?;
     }
 
     ui::ok(&format!("pack `{}` → {} file(s) written, {} unchanged → {}", name, written, unchanged, omp.display()));

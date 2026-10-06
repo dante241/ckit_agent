@@ -43,7 +43,7 @@ Lặp:
    2. **UC literal** task phục vụ.
    3. **AC literal** task gánh (Given/When/Then nguyên văn).
    4. **Decisions liên quan** (copy literal — KHÔNG ghi "theo D4").
-   5. **Skill (cột `[skill:]`) — 2 lớp:** (a) nhúng luật cốt lõi + anti-pattern; (b) ra lệnh Read `.omp/skills/<skill>/SKILL.md` TRƯỚC khi code.
+   5. **Skill (cột `[skill:]`) — 2 lớp:** (a) nhúng luật cốt lõi + anti-pattern; (b) ra lệnh Read `.omp/skills/<skill>/SKILL.md` (không có thì `~/.omp/skills/<skill>/SKILL.md`) TRƯỚC khi code.
    6. Convention: `AGENTS.md` + `agents/DECISIONS.md`/`PREFERENCES.md` liên quan.
    7. Ground-truth (schema/symbol thật) + **interface mà task phụ thuộc đã commit** (symbol, file:line).
    8. **R10 literal** (xem `feature-rules.md` R10 (a)).
@@ -78,7 +78,7 @@ Lặp:
 
 ## `--auto` (autonomous) — cùng vòng, không user-gate
 
-`/feature go --auto` = đúng vòng trên chạy tự động (mirror kỷ luật `/auto` trong `.omp/commands/auto.md`), **scoped 1 phase**, dừng ở ranh giới phase kế:
+`/feature go --auto` = đúng vòng trên chạy tự động (mirror kỷ luật `/auto` trong `~/.omp/agent/commands/auto.md`), **scoped 1 phase**, dừng ở ranh giới phase kế:
 - Không yield giữa các task; chạy tới khi vòng điều phối thoát.
 - Task block (dữ liệu/môi trường) → SKIP + NEEDS-CONFIRM vào VERIFICATION/STATE, nhánh khác chạy tiếp.
 - Ranh giới an toàn: KHÔNG push/merge ra ngoài, KHÔNG xoá data, KHÔNG gọi API production gửi tin thật — trừ khi user đã duyệt ở plan. Chi tiết: `references/auto.md`.

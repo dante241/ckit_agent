@@ -3,11 +3,11 @@
 > Cờ `--auto` biến `/feature` thành chế độ tự lái: chạy **trọn 1 phase** với tối thiểu gián đoạn user.
 > Load file này NGAY khi args chứa `--auto`, trước khi dispatch sang plan/go.
 > `references/feature-rules.md` (luật xuyên suốt, gồm **R10 code-intelligence FIRST**) VẪN áp — auto KHÔNG nới chuẩn code/skill/AC, chỉ thay user-gate bằng tự-quyết.
-> Kỷ luật engine-loop + guardrail lấy từ `/auto` (`.omp/commands/auto.md`) — mirror nó, đừng chế lại.
+> Kỷ luật engine-loop + guardrail lấy từ `/auto` (`~/.omp/agent/commands/auto.md`) — mirror nó, đừng chế lại.
 
 ## 3 luật cốt lõi
 
-1. **Auto-discuss qua subagent** — mọi điểm-quyết-định mà bình thường dùng `ask` → thay bằng **spawn 1 `task` subagent** (`agent: explore` cho "cái gì đang có / nên theo cái nào", `agent: plan` cho trade-off/approach) đóng vai đối tác trao đổi + tự quyết, bám ràng buộc `PROJECT.md` + `REQUIREMENTS.md` + `agents/KNOWLEDGE.md`/`DECISIONS.md`. KHÔNG hỏi user.
+1. **Auto-discuss qua subagent** — mọi điểm-quyết-định mà bình thường dùng `ask` → thay bằng **spawn 1 `task` subagent** (`agent: scout` cho "cái gì đang có / nên theo cái nào", `agent: task` cho trade-off/approach) đóng vai đối tác trao đổi + tự quyết, bám ràng buộc `PROJECT.md` + `REQUIREMENTS.md` + `agents/KNOWLEDGE.md`/`DECISIONS.md`. KHÔNG hỏi user.
 2. **Block thì không stall** — đánh giá: nếu vẫn code tiếp được → code; nếu không → **SKIP item, ghi NEEDS-CONFIRM**, code nốt phần còn lại. User confirm sau, rồi mới code item bị skip.
 3. **1 lệnh `--auto` = code trọn 1 phase** — `plan` (nếu chưa có PLAN) → `go` (hết task theo đồ thị phụ thuộc) → self-check AC → ghi VERIFICATION nếu có item defer. Dừng ở ranh giới phase kế (KHÔNG tự nhảy phase tiếp trừ khi user nói rõ "code hết các phase").
 
@@ -23,7 +23,7 @@
 ## Spawn subagent discuss (thay `ask`)
 
 Khi gặp điểm "cần phán đoán thiết kế":
-- Spawn `task` subagent: `agent: plan` cho trade-off/approach, hoặc `agent: explore` cho "cái gì đang có / nên theo cái nào".
+- Spawn `task` subagent: `agent: task` cho trade-off/approach, hoặc `agent: scout` cho "cái gì đang có / nên theo cái nào".
 - Prompt subagent BẮT BUỘC nhúng: câu hỏi cụ thể · ràng buộc liên quan (copy literal từ PROJECT/REQUIREMENTS/`agents/` memory) · các lựa chọn đang cân nhắc · R10 literal (code-intel FIRST) · "trả về 1 khuyến nghị + lý do ngắn, KHÔNG hỏi lại".
 - Orchestrator nhận khuyến nghị → **quyết** (có thể override nếu trái ràng buộc) → ghi `M<x>-CONTEXT.md` Decisions + STATE.Decisions với ghi chú `(auto-decided via <role>)`.
 - Nhiều câu độc lập → spawn song song (1 message, nhiều tool-call).

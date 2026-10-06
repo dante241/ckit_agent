@@ -16,9 +16,9 @@ description: "Primary Workflow các phase feature/bugfix end-to-end. Đọc khi 
   - `bugfix` → assess bug complexity (simple/medium/complex) → jump to **Debugging Flow** below
 - **Assess complexity level:**
   - `simple` (≤ 3 files, single concern) → **Lite mode**: Phase 1 → 3 (Quick Ref only) → 4 (lite todolist) → 7 → 8 → 9 → 10. Skip Phases 2, 5, 6, 7.5.
-  - `medium` (≤ 10 files, 2-3 concerns) → Skip Phase 4 Step 1 (planner), Phase 6 if no UI, Phase 7.5 (merge into 8).
-  - `complex` (> 10 files, 3+ concerns) → Full workflow with planner + subagents + todolist
-- Use `AskUserQuestion` if missing info — checklist: modules, UI needed, API/AJAX, DB changes, language strings, cron jobs
+  - `medium` (≤ 10 files, 2-3 concerns) → Skip Phase 4 Step 1 (planning agent), Phase 6 if no UI, Phase 7.5 (merge into 8).
+  - `complex` (> 10 files, 3+ concerns) → Full workflow with planning agent + subagents + todolist
+- Use `ask` if missing info — checklist: modules, UI needed, API/AJAX, DB changes, language strings, cron jobs
 - Propose approach in 1-2 sentences before proceeding
 
 ## Phase 1.5: Knowledge Base Lookup (MANDATORY)
@@ -62,9 +62,9 @@ Analyze requirements → activate matching skills automatically:
 
 ## Phase 3: Research & Context Gathering
 
-- Use **Serena** tools: `get_symbols_overview`, `find_symbol`, `find_referencing_symbols`, `search_for_pattern`
-- Spawn `researcher` agents for new APIs/libraries or complex architecture decisions
-- Use `Explore` agent or `Grep`/`Glob` as fallback
+- Use code intelligence first: `xd://mcp__codegraph_explore`, codebase-memory-mcp (`xd://mcp__codebase_memory_mcp_search_graph`), serena (`xd://mcp__serena_find_symbol`, `…_find_referencing_symbols`, `…_get_symbols_overview`)
+- Spawn `scout` agents to map unknown code; `librarian` for new external APIs/libraries
+- `grep`/`glob` only as fallback for plain-text lookups
 - Skip if task is simple and patterns are known
 
 ## Phase 4: Plan & Create TodoList
@@ -98,24 +98,24 @@ _(filled in Phase 10)_
 ```
 
 **Simple:** Lite todolist directly, no plan.md, no user review gate.
-**Medium:** Create plan.md → user reviews → create todolist. No planner agent.
-**Complex:** Spawn `planner` agent → plan.md → user reviews → todolist → `TaskCreate` for each task with `addBlockedBy`.
+**Medium:** Create plan.md → user reviews → create todolist. No planning agent.
+**Complex:** Spawn a `task` agent to draft plan.md (or run `/feature`) → user reviews → todolist → `todo` with one item per task, in dependency order.
 
 ## Phase 5: Gateway — User Confirmation
 
-- After todolist created, `AskUserQuestion` for final confirmation before coding
+- After todolist created, `ask` for final confirmation before coding
 - **DO NOT write code until user confirms**
 
 ## Phase 6: UI/UX Layout Confirmation (if UI involved)
 
 - Simple/medium: text/ASCII layout description → confirm → code
-- Complex: spawn `ui-ux-designer` agent for mockup
+- Complex: spawn `designer` agent for mockup (with the `impeccable` skill)
 - VTiger legacy views: prefer text description over full mockup
 
 ## Phase 7: Implementation
 
-- Simple/medium: implement directly. Complex: spawn `fullstack-developer` agents with strict file ownership.
-- `TaskUpdate` → `in_progress` when starting, `completed` when done
+- Simple/medium: implement directly. Complex: spawn `task` agents, one per task, each with its own file list (they never touch the plan/todolist; the orchestrator does).
+- `todo` → `start` when starting a task, `done` when finished
 - File separation per `cloudgo-development-rules.md` File Separation Rules section
 - **After each PHP file:** Run `php -l <file>`
 - **Method existence verification:** Before calling parent/base class methods, verify with Serena `find_symbol`. Do NOT trust skill references blindly.
@@ -169,7 +169,7 @@ Spawn `code-reviewer` per task. If review fails → fix and re-review. DO NOT pr
 
 ## Phase 10: Completion & Documentation
 
-1. `TaskUpdate` all tasks → `completed` (if used)
+1. `todo` → `done` for every task (if used)
 2. **Update todolist** `.omp/plans/<ticket-id>-<feature-name>/todolist.md`: status → Completed, check off tasks, fill Test Results + Completion Notes
 3. Summarize to user
 4. If docs impact → spawn `docs-manager`

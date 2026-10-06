@@ -16,7 +16,7 @@ Gate: review/test FAIL → fix → re-run. KHÔNG ship khi fail.
 
 **Gate:** `config.workflow.code_review === false` → BỎ Step 1, ghi STATE Log "review skipped per config" + cảnh báo user "review tắt theo config — chất lượng tự chịu". Ngược lại (`true`/thiếu) → chạy review:
 
-Spawn ĐỒNG THỜI `task` subagent `agent: reviewer`. Số agent = số phần tử `config.workflow.review_dimensions`; nhúng **tên dimension thật** vào prompt mỗi agent (vd "dimension: security"), KHÔNG ghi chữ `config.workflow.review_dimensions` vào prompt. Dimension mặc định (`["security","correctness","convention"]`):
+Spawn ĐỒNG THỜI `task` subagent `agent: code-reviewer` (dự án có `.omp/agents/code-reviewer.md`; không có → `agent: reviewer`). Số agent = số phần tử `config.workflow.review_dimensions`; nhúng **tên dimension thật** vào prompt mỗi agent (vd "dimension: security"), KHÔNG ghi chữ `config.workflow.review_dimensions` vào prompt. Dimension mặc định (`["security","correctness","convention"]`):
 - **security**: injection (query tham số hoá?), XSS/escape output, CSRF/permission check, type cast, secret leak.
 - **correctness**: symbol/method tồn tại (`xd://mcp__serena_find_symbol`), logic, runtime, config key/DB column đúng.
 - **convention**: `AGENTS.md` + `agents/DECISIONS.md`/`PREFERENCES.md`, naming, tách file, error-handling.
@@ -30,17 +30,17 @@ Có lỗi → fix (main thread hoặc spawn) → re-review tới sạch. Phase n
 
 **Gate:** `config.workflow.verifier === false` → bỏ tầng verify/test sâu, chỉ chạy lint/build của dự án + cảnh báo "verifier tắt theo config". Ngược lại → chạy đủ theo tier.
 
-**Tester agent là nguồn viết test authoritative** — spawn `task` subagent `agent: Tester` (NEVER tự viết test). Theo tier:
+**Tester là nguồn viết test authoritative** — spawn `task` subagent `agent: tester` (dự án có `.omp/agents/tester.md`; không có → `agent: task` + đọc skill `testing` nếu có) (NEVER tự viết test). Theo tier:
 
 | Tier | Áp dụng | Làm |
 |------|---------|-----|
-| must-test | logic/handler/model/helper cốt lõi | `Tester` agent → unit + edge/security theo AC. KHÔNG mock cái đang test. |
+| must-test | logic/handler/model/helper cốt lõi | tester agent → unit + edge/security theo AC. KHÔNG mock cái đang test. |
 | verify-sql | report/migration/SELECT | chạy SQL/script trên môi trường thật + build/lint |
 | verify-only | config/DDL/asset tĩnh | lint/build của dự án + review đủ |
 
-Nhiều component độc lập → spawn `Tester` song song (1 component/agent). Barrier.
+Nhiều component độc lập → spawn tester song song (1 component/agent). Barrier.
 
-**Test BÁM UC/AC, không test mò:** mỗi `Tester` nhận Requirement scope + bảng AC literal + chỉ thị "viết test chứng minh ĐÚNG các UC/AC được giao (dùng cột 'Cách verify' của AC làm kịch bản; Given/When/Then làm assertion). Mỗi AC must-test/verify-sql → ≥1 test thực thi, trả PASS/FAIL kèm output thật." Test bổ sung ngoài AC (edge/security) vẫn khuyến khích, nhưng KHÔNG được thiếu UC/AC nào.
+**Test BÁM UC/AC, không test mò:** mỗi tester nhận Requirement scope + bảng AC literal + chỉ thị "viết test chứng minh ĐÚNG các UC/AC được giao (dùng cột 'Cách verify' của AC làm kịch bản; Given/When/Then làm assertion). Mỗi AC must-test/verify-sql → ≥1 test thực thi, trả PASS/FAIL kèm output thật." Test bổ sung ngoài AC (edge/security) vẫn khuyến khích, nhưng KHÔNG được thiếu UC/AC nào.
 
 > Test lint/build đã chạy như GATE của từng task trong `/feature go` (engine `verify`); Step 2 là tầng nghiệm thu AC end-to-end, bổ sung chứ không thay verify-gate của engine.
 

@@ -12,6 +12,16 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Changed
+- `vtiger-php` pack ships its agents: `code-reviewer`, `debugger`, `tester`, `docs-manager`, `code-simplifier` install into `.omp/agents/` with the pack (the `fix`, `review-pr`, `commit`, `release-doc` skills call them). They now spawn `scout` (was the missing `explore`) and have `lsp`.
+- `vtiger-php` `primary-workflow` rule uses omp's own agents and tools (`scout`, `librarian`, `designer`, `task`, `todo`, `ask`) instead of `planner`/`researcher`/`ui-ux-designer`/`fullstack-developer` and Claude Code tool names.
+- `feature` skill: one "agent per role" table; `explore`/`plan`/`Tester` replaced by `scout`/`task`/`tester` (fallback `task`), code review uses `code-reviewer` when the project has it (fallback `reviewer`). Paths point at the global `~/.omp/skills/<name>/` and `~/.omp/agent/commands/auto.md` when the project has no copy.
+
+### Fixed
+- `harness` no longer overwrites a customized MCP entry in `~/.omp/agent/mcp.json`: an existing entry is replaced only when it is exactly what an earlier ckit wrote, and the old file is kept as `mcp.json.bak`.
+- Pack `RULES.md` is tracked by the pack lock like every other pack file: a locally edited copy is kept (was renamed to `.bak` and replaced), and `--force` keeps a `.bak` (was overwritten with none).
+- `harness global` removes the stale `~/.omp/skills/karpathy` duplicate left by older builds (previously only `skill update karpathy` did).
+
 ## [0.1.24] - 2026-10-06
 
 ### Removed
