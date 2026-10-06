@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-10-06
+
 ### Added
 - `/feature ship` converge step: every AC that fails acceptance is classified (missing code / wrong code / bad AC / blocked). Missing or wrong code becomes new tasks appended to the phase PLAN under `## Converge round <n>`, run through the `go` loop, then re-verified (plus a cheap regression re-run of every passing AC). Bad AC stops and asks the user; blocked items become NEEDS-CONFIRM. Bounded by `workflow.max_converge_rounds` (default 3); stops early when the same AC fails twice with the same evidence. `M<x>-VERIFICATION.md` gains a `Converge rounds` table.
 
