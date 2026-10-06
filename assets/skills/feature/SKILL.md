@@ -16,7 +16,7 @@ description: "Quản lý feature LỚN nhiều phase, nhiều ngày, xuyên sess
 /feature new <slug>     -> Scaffold agents/planning/<slug>/ + 4 file + set ACTIVE. Điền → user duyệt.
 /feature plan           -> Discuss + Plan phase hiện tại (fan-out research) -> M<x>-CONTEXT + M<x>-NN-PLAN.md
 /feature go             -> Execute phase: feed PLAN vào engine_plan → dev song song theo [depends:], dev xong test ngay, lỗi dev lại
-/feature ship           -> Verify (review multi-lens + test) BÁM AC -> M<x>-VERIFICATION + tick ROADMAP + archive
+/feature ship           -> Verify (review multi-lens + test) BÁM AC -> converge (AC FAIL -> task mới -> chạy lại) -> M<x>-VERIFICATION + tick ROADMAP + archive
 /feature status         -> In STATE.md hiện tại
 /feature switch <slug>  -> Đổi feature active (ghi ACTIVE.md + config.active_feature)
 
@@ -42,7 +42,7 @@ BẮT BUỘC trước mọi subcommand (trừ `new`) — đọc 3 file vào cont
 | `new` | `references/new.md` | luôn |
 | `plan` | `references/plan.md` | phase chưa có PLAN, hoặc cần re-plan |
 | `go` | `references/execute.md` | phase đã có PLAN (status=executing/planned) |
-| `ship` | `references/ship.md` | phase code xong (status=executing, plan tasks done) |
+| `ship` | `references/ship.md` | phase code xong (status=executing, plan tasks done) hoặc `next_action: converge` (resume vòng converge dở) |
 | `status` | — (in STATE trực tiếp) | luôn |
 | `switch` | sửa ACTIVE.md dòng đầu + config.active_feature | luôn |
 
@@ -92,7 +92,7 @@ Chi tiết luật + cách spawn subagent discuss: `references/auto.md`.
 mỗi phase:
   /feature plan            -> Discuss + Goal/AC (UAT) + Plan (task↔AC) -> USER DUYỆT plan (gate 2)
   /feature go              -> feed PLAN → engine_plan/next/verify/advance -> append STATE mỗi task
-  /feature ship            -> review+test BÁM AC -> M<x>-VERIFICATION (AC matrix) -> tick ROADMAP
+  /feature ship            -> review+test BÁM AC -> converge tới khi mọi AC PASS -> M<x>-VERIFICATION (AC matrix) -> tick ROADMAP
 lặp tới phase cuối -> ship (phase cuối) -> update agents/KNOWLEDGE.md + DECISIONS.md + archive
 ```
 

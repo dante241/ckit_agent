@@ -18,6 +18,12 @@
 - **correctness:** [...]
 - **convention:** [...]
 
+## Converge rounds
+
+| Round | AC/finding FAIL vào | Task sinh ra | Kết quả |
+|-------|---------------------|--------------|---------|
+| 1 | AC-05 (thiếu code), security: XSS `file:line` | T9, T10 | AC-05 PASS; finding fixed |
+
 ## Kết luận
 
 <N/M AC PASS>. Phase done? **YES / NO**

@@ -245,6 +245,7 @@ fn load_config(planning: &Path) -> serde_json::Value {
         "workflow": {
             "parallelization": true,
             "max_parallel_tasks": 4,
+            "max_converge_rounds": 3,
             "plan_review": "complex",
             "review_dimensions": ["security", "correctness", "convention"],
             "code_review": true,

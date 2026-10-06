@@ -56,7 +56,24 @@ Nhiều component độc lập → spawn tester song song (1 component/agent). B
 ## Review findings (per dimension) — đã fix / còn lại
 ## Kết luận: <N/M AC PASS>. Phase done? YES/NO
 ```
-**Gate cứng:** còn ≥1 UC/AC FAIL hoặc UC trong Requirement scope chưa có AC verdict → phase CHƯA done. Fix → re-verify UC/AC đó → mới sang Step 3. KHÔNG ship khi matrix còn FAIL.
+**Gate cứng:** còn ≥1 UC/AC FAIL hoặc UC trong Requirement scope chưa có AC verdict → phase CHƯA done → **Step 2.5 Converge**. KHÔNG ship khi matrix còn FAIL.
+
+## Step 2.5 — Converge (biến phần FAIL thành task, chạy lại tới khi hội tụ)
+
+Bỏ qua khi matrix đã toàn PASS. Ngược lại, lặp tối đa `config.workflow.max_converge_rounds` vòng (thiếu → 3):
+
+1. **Phân loại** mỗi AC FAIL, UC chưa có verdict và review finding chưa fix (đọc code thật bằng code-intel, không đoán từ tên file):
+   | Loại | Dấu hiệu | Xử lý |
+   |---|---|---|
+   | Thiếu code | AC đòi hành vi chưa có chỗ nào cài | task mới |
+   | Code sai | có code nhưng test/review chứng minh sai | task mới sửa đúng file đó |
+   | AC sai/mơ hồ | AC mâu thuẫn Decision, không đo được, hoặc vượt Goal | DỪNG → `ask` user sửa CONTEXT (R6). KHÔNG tự đổi AC |
+   | Bị chặn | thiếu data/môi trường/quyền | NEEDS-CONFIRM, không sinh task |
+2. **Sinh task** — append vào `M<x>-NN-PLAN.md` dưới `## Converge round <n>`, đánh số nối tiếp (`T<max+1>`…), đủ cột như task thường: `[file:]`, `[depends:]` (chỉ giữa các task converge với nhau — task cũ đã done), `[verify:]` = lệnh của cột "Cách verify" của AC đó (scoped), `[skill:]`, `[UC:]`, `[AC:]`. Mỗi task gánh ≥1 AC FAIL hoặc 1 finding; không thêm việc ngoài matrix.
+3. **Gate người duyệt** — không `--auto`: trình bảng task converge (AC ↔ task ↔ file) + `ask` (Chạy / Sửa / Dừng). `--auto`: chạy luôn.
+4. **Chạy** — `engine_plan` chỉ với các task converge (`goal` = "M<x> converge round <n>", slice = `Converge <n>`), rồi đúng vòng Bước 2 của `references/execute.md` (dev ∥ test, `engine_verify` → `engine_advance` commit từng task). STATE `next_action: converge` để session sau resume đúng chỗ.
+5. **Nghiệm thu lại** — chạy lại Step 2 cho các AC vừa FAIL + chạy lại lệnh "Cách verify" (rẻ) của mọi AC đã PASS để bắt hồi quy; review lại chỉ các file round này đụng. Cập nhật matrix + ghi round vào `## Converge rounds` của VERIFICATION.
+6. **Dừng** khi: matrix toàn PASS → Step 3; hoặc **cùng một AC FAIL với cùng bằng chứng 2 vòng liền** → coi là kẹt: ghi `failure:` vào `agents/KNOWLEDGE.md`, báo user AC đó + 2 lần thử; hoặc hết số vòng → báo user danh sách AC còn FAIL. Không đóng phase trong 2 trường hợp sau.
 
 ## Step 3 — Ship (đóng phase)
 
