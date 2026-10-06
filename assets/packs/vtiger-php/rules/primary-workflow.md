@@ -63,7 +63,7 @@ Analyze requirements → activate matching skills automatically:
 ## Phase 3: Research & Context Gathering
 
 - Use code intelligence first: `xd://mcp__codegraph_explore`, codebase-memory-mcp (`xd://mcp__codebase_memory_mcp_search_graph`), serena (`xd://mcp__serena_find_symbol`, `…_find_referencing_symbols`, `…_get_symbols_overview`)
-- Spawn `scout` agents to map unknown code; `librarian` for new external APIs/libraries
+- Spawn `scout` agents to map unknown code; `librarian` for new external APIs/libraries (not in the agent list → `scout` + `web_search`)
 - `grep`/`glob` only as fallback for plain-text lookups
 - Skip if task is simple and patterns are known
 
@@ -109,7 +109,7 @@ _(filled in Phase 10)_
 ## Phase 6: UI/UX Layout Confirmation (if UI involved)
 
 - Simple/medium: text/ASCII layout description → confirm → code
-- Complex: spawn `designer` agent for mockup (with the `impeccable` skill)
+- Complex: spawn `designer` agent for mockup with the `impeccable` skill (not in the agent list → `task` agent told to read `impeccable` first)
 - VTiger legacy views: prefer text description over full mockup
 
 ## Phase 7: Implementation

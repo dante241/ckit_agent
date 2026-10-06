@@ -1716,11 +1716,7 @@ async fn api_mcp_add(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
-    let raw = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut root: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::json!({}));
-    if !root.is_object() {
-        root = serde_json::json!({});
-    }
+    let mut root = crate::verbs::skill::deploy::load_omp_mcp(&path).map_err(|e| (StatusCode::CONFLICT, e))?;
     let obj = root.as_object_mut().unwrap();
     let servers = obj.entry("mcpServers").or_insert(serde_json::json!({}));
     if !servers.is_object() {

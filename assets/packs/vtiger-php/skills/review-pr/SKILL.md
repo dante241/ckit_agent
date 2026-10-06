@@ -105,7 +105,7 @@ git diff origin/<TARGET>..mr/<MR_NUMBER> --stat
 
 **Mục tiêu:** Hiểu rõ MR đang làm gì về **nghiệp vụ**, không chỉ về cú pháp. Tránh sót logic mới hoặc review lệch với ý đồ ticket.
 
-**Cách làm:** Spawn 1 subagent (`subagent_type: "code-reviewer"`, opus) với input:
+**Cách làm:** Spawn 1 subagent (`task`, `agent: code-reviewer`) với input:
 - MR title, description
 - Full diff
 - Ticket detail từ Step 0.6 (title, description từ PMS)
@@ -160,7 +160,7 @@ unknowns: [<câu hỏi nghiệp vụ agent chưa giải đáp được — sẽ 
 
 ### Step 3: Parallel Review (5 agents)
 
-Dùng `subagent_type: "code-reviewer"` cho tất cả agents. Launch 5 agents song song, mỗi agent nhận: MR title, description, full diff, knowledge context, và **`$BUSINESS_MANIFEST` từ Step 2.5**.
+Dùng `agent: code-reviewer` cho tất cả agents. Launch 5 agents song song (1 lời gọi `task`, 5 item), mỗi agent nhận: MR title, description, full diff, knowledge context, và **`$BUSINESS_MANIFEST` từ Step 2.5**.
 
 **Yêu cầu CHUNG cho mọi agent:** Ngoài list lỗi, mỗi agent PHẢI trả về **Coverage Report** cho cả `business_rules` VÀ `ticket_requirements`:
 
@@ -197,7 +197,7 @@ Orchestrator tổng hợp coverage + requirement_check từ 5 agents:
 - Nếu có `req_id` không agent nào verify được (`status: not_verifiable` từ tất cả) → flag `unknowns` trong comment.
 - Mỗi `req_id` lấy status "tệ nhất" trong các agent (missing > partial > done) để tránh false-positive done.
 
-**Agent 1: Performance review (opus) — ƯU TIÊN CAO NHẤT**
+**Agent 1: Performance review — ƯU TIÊN CAO NHẤT**
 Đây là agent quan trọng nhất. Review tất cả vấn đề hiệu năng:
 
 - **N+1 queries**: DB queries bên trong vòng lặp → phải batch fetch với `IN (?)`
@@ -210,7 +210,7 @@ Orchestrator tổng hợp coverage + requirement_check từ 5 agents:
 - **LIMIT/OFFSET không cast (int)**: Giá trị từ request phải cast `(int)` trước khi đưa vào SQL
 - **Expensive operations không có guard**: Kiểm tra feature flag/config TRƯỚC khi query DB hoặc gọi API
 
-**Agent 2: Rules compliance & Security (opus)**
+**Agent 2: Rules compliance & Security**
 Audit changes against `cloudgo-development-rules.md`:
 
 - **File separation (NON-NEGOTIABLE)**: No inline CSS/JS in PHP/TPL files. No HTML in PHP classes.
@@ -303,7 +303,7 @@ Dùng knowledge context từ Step 2 + `ticket_requirements` từ Step 2.5 để 
 ### Step 4: Validate Issues
 
 For each issue from Step 3:
-- Launch validation subagent với `subagent_type: "code-reviewer"` (opus cho bugs/performance, sonnet cho rules)
+- Launch validation subagent với `agent: code-reviewer` (model do omp chọn qua `~/.config/ckit/models.toml`)
 - Subagent nhận: MR context + mô tả lỗi + source code liên quan
 - Phải xác nhận với độ tin cậy cao rằng lỗi là thật
 - Loại bỏ những issue không được xác nhận
@@ -326,7 +326,7 @@ Score each validated issue 0-100:
 | Tình huống | Hành động |
 |-----------|-----------|
 | Không có lỗi CRITICAL/HIGH/PERFORMANCE | **Tự động** post comment (Step 6) + gán label "Dev done" (Step 6.5) + **tự động** merge (Step 7). KHÔNG hỏi user. |
-| Có lỗi CRITICAL/HIGH/PERFORMANCE | Trình kết quả cho user + dùng `AskUserQuestion` hỏi trước khi post. KHÔNG merge. |
+| Có lỗi CRITICAL/HIGH/PERFORMANCE | Trình kết quả cho user + dùng `ask` hỏi trước khi post. KHÔNG merge. |
 | Có `--dry-run` flag | Chỉ in kết quả ra terminal, KHÔNG post, KHÔNG merge. |
 | Có `--no-merge` flag | Post comment + gán label, nhưng KHÔNG merge kể cả khi clean. |
 
@@ -338,7 +338,7 @@ Score each validated issue 0-100:
    - Số lỗi phát hiện theo severity
    - Danh sách từng lỗi: file, dòng, mô tả ngắn
 
-2. Dùng `AskUserQuestion`:
+2. Dùng `ask`:
    - **"Đồng ý post comment lên GitLab"** → tiếp tục Step 6 (không merge)
    - **"Chỉnh sửa trước khi post"** → user sửa nội dung, rồi post
    - **"Không post, chỉ xem"** → dừng lại, không post
@@ -404,7 +404,7 @@ Do NOT flag these:
 | **High signal** | Confidence threshold 80 — no noise |
 | **Validate all** | Every issue gets a validation subagent |
 | **Auto post + merge khi clean** | Default: không có CRITICAL/HIGH → tự động post comment + merge, không hỏi user |
-| **Ask user khi có blocker** | Có CRITICAL/HIGH → trình kết quả + `AskUserQuestion` trước khi post |
+| **Ask user khi có blocker** | Có CRITICAL/HIGH → trình kết quả + `ask` trước khi post |
 | **Post always** | Always post comment, even if clean (trừ khi `--dry-run`) |
 | **Merge convention** | `[Category] #Ticket: Description` format |
 | **Squash merge** | Use `--squash --yes` when merging |

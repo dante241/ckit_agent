@@ -51,7 +51,7 @@ Lặp:
    10. "Báo cáo cuối: danh sách file đã sửa/tạo + kết quả lệnh verify."
    Lần dev lại sau test lỗi: nhúng thêm **output lỗi nguyên văn** + "sửa NGUYÊN NHÂN, không lặp cách sửa cũ".
 3. **Dev xong 1 task → test ngay** (các agent khác vẫn đang dev):
-   - Đối chiếu file agent báo với `[file:]` + `git status --porcelain`; sửa file ngoài phạm vi → coi như test lỗi, nêu rõ file.
+   - **Kiểm phạm vi** — các agent dùng CHUNG working tree, nên `git status --porcelain` có cả file của task khác đang dev. File ngoài phạm vi của task = (file agent báo ∪ file mới thay đổi trong `git status --porcelain`) − `[file:]` của task − `files` của các task còn `in_progress` (liệt kê trong output `engine_ready`/`engine_status`) − file đã bẩn sẵn trước khi `go` bắt đầu (chụp `git status --porcelain` 1 lần lúc vào Bước 2). Còn file nào → coi như test lỗi, nêu rõ file. Agent báo đã sửa file nằm trong `files` của task khác → cũng là lỗi (đè việc task đó).
    - **`engine_verify {taskId}`** — gate chạy đúng `[verify:]`.
 4. **Kết quả test:**
    - **PASS** → **`engine_advance {taskId, commit:true, files:[đúng các file agent báo đã sửa/tạo], message:"<type>: M<x> - T<n> <English desc>"}`** — engine chỉ stage + commit các file đó (R8). KHÔNG truyền thư mục của `[file:]` (task khác có thể đang tạo file trong cùng thư mục). → Bookkeeping (Bước 3) → quay lại 1 (task phụ thuộc vừa được mở khóa).

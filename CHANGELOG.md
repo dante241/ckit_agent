@@ -12,6 +12,13 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Fixed
+- `/push-now`, `/pull-now` read and write `agents/STATE.md`, `agents/KNOWLEDGE.md` and `agents/planning/` (they still pointed at the pre-rename `su-code/`).
+- `harness` no longer wipes `~/.omp/agent/mcp.json` when it does not parse (hand edit with a comment or trailing comma): it warns and leaves the file untouched. Same guard for the web dashboard's "add MCP".
+- `/feature go` parallel mode: the out-of-scope check subtracts files of tasks still in progress and files dirty before `go` started, since all dev agents share one working tree. `engine_status` and `engine_ready` now list the files of in-progress tasks.
+- Claude Code leftovers in `/cook` and the `vtiger-php` pack: `AskUserQuestion` → `ask`, `subagent_type: "code-reviewer"` → `agent: code-reviewer`, `.claude/plans/` → `.omp/plans/`, `WebFetch` → `read <url>`; `primary-workflow` names a fallback when `librarian`/`designer` are not in the agent list.
+- `harness global` removes the retired `~/.omp/skills/00-force-load.md` (superseded by `APPEND_SYSTEM.md`).
+
 ## [0.1.25] - 2026-10-06
 
 ### Changed

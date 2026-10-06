@@ -50,7 +50,7 @@ user-invokable: true
      - `bug/#10283-schedule-report-error-save-tracking`
      - `hotfix/#19396-release-uiux-cxday-hotfix`
      - `refactor/#15600-missing-user-privileges`
-   - Use `AskUserQuestion` to confirm branch name with user
+   - Use `ask` to confirm branch name with user
    - Create and checkout the new branch **from the freshly-pulled master**: `git checkout -b <branch-name>`
 5. If already on a feature/bug branch → stay on current branch (do NOT switch to master; syncing mid-feature risks merge conflicts the user didn't ask for)
 
@@ -66,7 +66,7 @@ Unless `--no-review` flag is passed:
    - No hardcoded secrets or credentials
    - No debug code (`var_dump`, `print_r`, `console.log` for debugging)
 3. If issues found:
-   - Present issues to user via `AskUserQuestion`:
+   - Present issues to user via `ask`:
      - "Fix issues before commit" (recommended)
      - "Commit anyway"
      - "Cancel commit"

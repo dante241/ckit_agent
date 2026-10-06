@@ -61,7 +61,7 @@ Step 9: Error Pattern Capture      ->  Propose EP-NNN entry -> USER GATE -> appe
 
 ### Clarification Checklist
 
-If missing info, ask user (use `AskUserQuestion`):
+If missing info, ask user (use `ask`):
 - Which module(s) affected?
 - Steps to reproduce?
 - When did it start happening? (recent change? always broken?)
@@ -144,7 +144,7 @@ Auto-detect required skills from bug context:
 
 **MANDATORY for ALL bug complexity levels.**
 
-All plans live in `.claude/plans/<ticket-id>-<bug-slug>/` directory.
+All plans live in `.omp/plans/<ticket-id>-<bug-slug>/` directory.
 
 ### Bug Slug Derivation
 
@@ -189,7 +189,7 @@ _(filled in Step 8)_
 
 - **Simple bugs:** No user gate — proceed directly to fix
 - **Medium/Complex bugs:** Present root cause analysis and fix strategy to user
-  - Use `AskUserQuestion`: "Root cause: X. Fix strategy: Y. Proceed?"
+  - Use `ask`: "Root cause: X. Fix strategy: Y. Proceed?"
   - **NEVER code a complex fix without user confirmation**
 
 ## Step 5: Fix Implementation
@@ -307,7 +307,7 @@ If tests fail:
 
 **MANDATORY — every fix ends here.**
 
-1. **Update todolist** `.claude/plans/<ticket-id>-<bug-slug>/todolist.md`:
+1. **Update todolist** `.omp/plans/<ticket-id>-<bug-slug>/todolist.md`:
    - Status: `In progress` -> `Completed`
    - Check off `[x]` all done tasks
    - Fill `## Test Results` with: tier used, pass/fail, details
@@ -350,7 +350,7 @@ Skip nếu: bug đơn lẻ do business logic riêng module, fix typo nhỏ chỉ
    ```
    Báo user 1 dòng: "Đã draft PEND-<ticket>". Trigger keywords = chuỗi nguyên văn trong code (hook grep substring), không phải mô tả trừu tượng.
 
-2. **Promote (USER GATE):** cuối flow, show entry pending qua `AskUserQuestion`: `Promote` / `Sửa rồi promote` / `Để ở pending`. Approved → gán `EP-NNN` (max+1), append `.omp/rules/error-patterns.md`, xoá khỏi pending. Từ đó hook `posttooluse-error-patterns.sh` enforce tự động.
+2. **Promote (USER GATE):** cuối flow, show entry pending qua `ask`: `Promote` / `Sửa rồi promote` / `Để ở pending`. Approved → gán `EP-NNN` (max+1), append `.omp/rules/error-patterns.md`, xoá khỏi pending. Từ đó hook `posttooluse-error-patterns.sh` enforce tự động.
 
 3. **KHÔNG ghi thẳng `error-patterns.md` khi chưa approve** — pending thì tự do.
 
@@ -358,7 +358,7 @@ Skip nếu: bug đơn lẻ do business logic riêng module, fix typo nhỏ chỉ
 
 When `--resume` is passed:
 
-1. Search `.claude/plans/` for the ticket number in existing todolists
+1. Search `.omp/plans/` for the ticket number in existing todolists
 2. Read the todolist → find first unchecked `[ ]` task
 3. Resume from that step
 4. Continue normal flow

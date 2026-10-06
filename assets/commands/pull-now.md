@@ -1,7 +1,7 @@
 ---
 name: pull-now
 argument-hint: '[go]'
-description: Cold-resume on this machine — git pull the latest, then read su-code/STATE.md (HANDOFF block) + recent KNOWLEDGE learnings + CHANGELOG to understand exactly where the project is, prepare the workspace (rebuild/harness + per-machine gotchas from the handoff), and report current state + the next concrete action. The receiving end of /push-now. `go` = also start the next action; default = orient + prepare, then wait.
+description: Cold-resume on this machine — git pull the latest, then read agents/STATE.md (HANDOFF block) + recent KNOWLEDGE learnings + CHANGELOG to understand exactly where the project is, prepare the workspace (rebuild/harness + per-machine gotchas from the handoff), and report current state + the next concrete action. The receiving end of /push-now. `go` = also start the next action; default = orient + prepare, then wait.
 ---
 
 # /pull-now — pull + understand + prepare (arriving on a machine)
@@ -15,10 +15,10 @@ description: Cold-resume on this machine — git pull the latest, then read su-c
 
 ## 2. Understand where the project is (the important part — read, don't guess)
 Read, in order (token-lean; summarize anything > ~50 lines):
-1. **`su-code/STATE.md`** — especially the `## 🚚 HANDOFF` block (what changed last session, Done/Next/Blockers, per-machine gotchas, runbook) and `## Current step` / `## Next`.
-2. **`su-code/KNOWLEDGE.md`** — the most recent `validated:` / `failure:` entries (append-only, at the tail) so I don't repeat a known dead-end.
+1. **`agents/STATE.md`** — especially the `## 🚚 HANDOFF` block (what changed last session, Done/Next/Blockers, per-machine gotchas, runbook) and `## Current step` / `## Next`.
+2. **`agents/KNOWLEDGE.md`** — the most recent `validated:` / `failure:` entries (append-only, at the tail) so I don't repeat a known dead-end.
 3. **`CHANGELOG.md`** `## [Unreleased]` + top released version; **`git log --oneline -5`** to see what just landed.
-4. If a large feature is active: `su-code/planning/ACTIVE.md` → the active slug's `STATE.md`.
+4. If a large feature is active: `agents/planning/ACTIVE.md` → the active slug's `STATE.md`.
 Explore code with **codegraph / codebase-memory-mcp / serena** — never grep/Read-all.
 
 ## 3. Prepare the workspace (make it actually runnable HERE)

@@ -94,13 +94,13 @@ After the plan is approved, **delegate execution to the engine** (like `/feature
   if any migration was created; offer `/commit #NNNNN`.
 - **Phase 10.5 Knowledge (USER GATE)** — new business / changed logic / important discovery /
   new-or-touched module without a knowledge file, or a decision the user locked this session →
-  draft a proposal (show FULL text) and ask via `AskUserQuestion`
+  draft a proposal (show FULL text) and ask via `ask`
   (Approve all / Edit / Skip / Approve partial). **NEVER write to `docs/knowledge/` (or a `D-NNN`
   to `agents/DECISIONS.md`) without approval.** Skip for label/CSS/typo-only changes.
 - **Phase 10.6 Error pattern** — mostly `bugfix`. On a generalizable anti-pattern / framework
   misuse / semantic bug: **auto-draft `PEND-<ticket>` into `.omp/rules/error-patterns-pending.md`
   (no ask)** with `Trigger keywords` = verbatim substrings from the buggy code. At flow end, if
-  pending has new entries → `AskUserQuestion` to **promote** (assign real `EP-NNN`, append to
+  pending has new entries → `ask` to **promote** (assign real `EP-NNN`, append to
   `.omp/rules/error-patterns.md`, remove from pending). **NEVER write `error-patterns.md` without
   approval; pending is free.**
 

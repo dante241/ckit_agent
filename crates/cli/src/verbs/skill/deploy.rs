@@ -62,6 +62,13 @@ pub(crate) fn install_bundled_global(env: &env_detect::Env) -> Result<()> {
             ui::ok(&format!("removed stale duplicate {} (served as {})", stale.display(), name));
         }
     }
+    // Older builds wrote a master force-load file here; APPEND_SYSTEM.md replaced
+    // it and nothing reads it anymore. Drop it only while it is still ckit's own.
+    let orphan = skills_dir.join("00-force-load.md");
+    if std::fs::read_to_string(&orphan).is_ok_and(|s| s.starts_with("# 00 — Force Load Skills (managed by")) {
+        std::fs::remove_file(&orphan)?;
+        ui::ok(&format!("removed retired {}", orphan.display()));
+    }
     Ok(())
 }
 
@@ -290,6 +297,22 @@ pub(crate) fn ensure_codebase_memory_mcp(env: &env_detect::Env) -> Result<()> {
     register_omp_mcp(&env.home, "codebase-memory-mcp", "codebase-memory-mcp", &[], &[], &[])
 }
 
+/// Load omp's `mcp.json` for an in-place edit: missing file → `{}`. A file that
+/// exists but is not a JSON object (hand edit with a comment / trailing comma)
+/// is an error — rewriting it would wipe every server the user configured.
+pub(crate) fn load_omp_mcp(path: &Path) -> std::result::Result<serde_json::Value, String> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(serde_json::json!({})),
+        Err(e) => return Err(format!("{}: {}", path.display(), e)),
+    };
+    match serde_json::from_str::<serde_json::Value>(&raw) {
+        Ok(v) if v.is_object() => Ok(v),
+        Ok(_) => Err(format!("{} is not a JSON object — fix it by hand, left untouched", path.display())),
+        Err(e) => Err(format!("{} does not parse ({}) — fix it by hand, left untouched", path.display(), e)),
+    }
+}
+
 /// Add an MCP server `name` (stdio `command` + `args`) to omp's user MCP config
 /// (`~/.omp/agent/mcp.json`), preserving any servers already there. An existing
 /// entry is replaced only when it is exactly one `legacy_args` ckit wrote earlier
@@ -306,13 +329,13 @@ fn register_omp_mcp(
     if let Some(p) = mcp_path.parent() {
         std::fs::create_dir_all(p)?;
     }
-    let mut root: serde_json::Value = std::fs::read_to_string(&mcp_path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
-    if !root.is_object() {
-        root = serde_json::json!({});
-    }
+    let mut root = match load_omp_mcp(&mcp_path) {
+        Ok(v) => v,
+        Err(e) => {
+            ui::warn(&format!("cannot register {} MCP: {}", name, e));
+            return Ok(());
+        }
+    };
     let obj = root.as_object_mut().unwrap();
     obj.entry("$schema").or_insert_with(|| {
         serde_json::Value::String(

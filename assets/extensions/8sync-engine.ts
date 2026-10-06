@@ -293,7 +293,8 @@ export default function (pi: ExtensionAPI) {
           const deps = t.depends.length ? ` (depends: ${t.depends.join(",")})` : "";
           const retries = t.retries ? ` (retries:${t.retries})` : "";
           const note = t.status === "blocked" && t.note ? ` — ${t.note}` : "";
-          lines.push(`  [${t.status}] ${t.id}${key} ${t.title}${deps}${retries}${note}`);
+          const files = t.status === "in_progress" && t.files.length ? ` [files: ${t.files.join(", ")}]` : "";
+          lines.push(`  [${t.status}] ${t.id}${key} ${t.title}${deps}${retries}${files}${note}`);
         }
       }
       return text(lines.join("\n"));
@@ -356,7 +357,7 @@ export default function (pi: ExtensionAPI) {
         return `  ${t.id} ${t.key} ${t.title}${files}${verify}`;
       };
       const lines = [`READY ${ready.length} (now in_progress — dispatch in parallel):`, ...ready.map(fmt)];
-      if (running.length) lines.push(`STILL IN PROGRESS ${running.length}:`, ...running.map((t) => `  ${t.id} ${t.key} ${t.title}`));
+      if (running.length) lines.push(`STILL IN PROGRESS ${running.length}:`, ...running.map((t) => `  ${t.id} ${t.key} ${t.title}${t.files.length ? ` [files: ${t.files.join(", ")}]` : ""}`));
       lines.push("Per task: engine_verify → engine_advance {files:[changed files]}; call engine_ready again after each advance.");
       return text(lines.join("\n") + blockedNote);
     },
