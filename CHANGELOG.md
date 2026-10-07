@@ -12,6 +12,9 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Added
+- `/feature` R16 knowledge map: `plan` reads `docs/knowledge/INDEX.md` and the map of the code area a phase touches before code-intel/scouts, and embeds the relevant excerpt in scout/dev/reviewer prompts so scouts only cover what the map lacks. Scouts report a "Bổ sung bản đồ" section that `plan` copies into the new `🗺 Bổ sung bản đồ` section of `M<x>-CONTEXT.md`. `ship` Step 3 now starts by updating `docs/knowledge/` (flow, "to do X → edit A → B → C", gotchas, verify; anchored by symbol names, never line numbers) from that section plus the phase diff, before the `docs: M<x> close phase` commit — every phase, not only at feature end, so later phases and later features stop re-scouting the same code.
+
 ## [0.1.31] - 2026-10-07
 
 ### Added

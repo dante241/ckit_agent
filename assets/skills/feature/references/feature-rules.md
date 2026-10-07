@@ -46,7 +46,7 @@ Mỗi phase có 🎯 Goal + ✅ Acceptance Criteria (AC-NN, đo được) trong 
 ## R7 — Neo vào codebase (brownfield)
 
 - Tổng thể: `AGENTS.md` + `agents/PROJECT.md` — KHÔNG mô tả lại.
-- Nghiệp vụ/kiến trúc: `agents/KNOWLEDGE.md` + codebase-memory-mcp (`xd://mcp__codebase_memory_mcp_get_architecture`, `xd://mcp__codebase_memory_mcp_search_graph`) — tra trước khi code module.
+- Nghiệp vụ/kiến trúc: bản đồ `docs/knowledge/INDEX.md` (R16) + `agents/KNOWLEDGE.md` + codebase-memory-mcp (`xd://mcp__codebase_memory_mcp_get_architecture`, `xd://mcp__codebase_memory_mcp_search_graph`) — tra trước khi code module.
 - Convention + quyết định: `AGENTS.md` + `agents/DECISIONS.md` + `agents/PREFERENCES.md`.
 - Không mô tả lại thứ đã có trong các nguồn trên; trích dẫn (vd "theo `agents/DECISIONS.md` đã chốt X").
 
@@ -99,3 +99,12 @@ Thêm phase mới (vd `MC` giữa M1 và M2) hoặc đổi phạm vi phase đã 
 ## R15 — Quyết định của user ≠ đề xuất của AI
 
 Key Decisions (`PROJECT.md`) và Decisions trong CONTEXT ghi cột/nhãn **Ai quyết**: `user` / `đề xuất` / `auto`. Chỉ ghi `user` khi user chốt rõ trong hội thoại hoặc qua `ask` — AI đề xuất mà user chưa trả lời = `đề xuất`. Dòng `đề xuất`/`auto` không phải ràng buộc: chạm tới thì trình lại user (auto-mode: giữ nguyên + NEEDS-CONFIRM).
+
+## R16 — Bản đồ kiến thức: đọc khi plan, cập nhật sau MỖI phase ship
+
+Bản đồ là tri thức dài hạn về vùng code, sống lâu hơn feature (`agents/planning/<slug>` bị archive khi xong): `docs/knowledge/INDEX.md` → `modules/<Module>.md` / `flows/<flow>.md`. Repo có `docs/knowledge/CONTRIBUTING.md` → theo template của nó; repo chưa có `docs/knowledge/` → tạo theo cấu trúc này ở lần ship đầu.
+
+- **Nội dung mỗi vùng:** luồng (mermaid hoặc các bước) từ điểm vào tới nơi lưu/UI · bảng "muốn làm X → sửa A → B → C" · bẫy đã gặp · cách verify đã chạy được.
+- **Neo bằng tên** symbol / key dữ liệu / chuỗi grep được, KHÔNG số dòng (số dòng trôi). Mô tả hành vi hiện tại, không ghi mã phase/ticket/plan hay lịch sử thảo luận. Rules/convention đã có → chỉ link tên rule, không chép lại.
+- **Đọc:** `plan` đọc bản đồ của vùng phase sẽ đụng TRƯỚC code-intel/scout; scout chỉ dò phần bản đồ chưa có hoặc nghi lệch. Subagent không tự đọc → prompt scout/dev/reviewer nhúng đoạn bản đồ liên quan. Symbol trong bản đồ không còn tồn tại → sửa bản đồ ngay trong task đang làm.
+- **Ghi:** `ship` mỗi phase (`ship.md` Step 3 mục 1), không đợi hết feature. Đầu vào chỉ lấy từ repo (mục 🗺 của CONTEXT + `git diff`), không phụ thuộc nơi harness lưu transcript.

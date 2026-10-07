@@ -34,7 +34,7 @@ BẮT BUỘC trước mọi subcommand (trừ `new`) — đọc 3 file vào cont
 1. Đọc `agents/planning/ACTIVE.md` dòng đầu (không comment, không blank) → slug active. Trống → báo user chạy `/feature new` hoặc `/feature switch`.
 2. Đọc `agents/planning/<slug>/STATE.md` → frontmatter `active_phase`, `status`, `next_action`, `ticket`, `branch` (ticket/branch có thể trống — không sao).
 3. Đọc `agents/planning/config.json` → giữ trong context cả lệnh: `workflow.*` (parallelization, max_parallel_tasks, review_dimensions, plan_review, code_review, verifier), `paths.*` (planning_root, archive). Thiếu key → dùng default rồi cảnh báo user.
-4. **Load `references/feature-rules.md` NGAY** (luật xuyên suốt mọi subcommand: R1 resolve config→literal, R3 2-lớp load skill, R5 AC discipline, R6 guardrail, R7 codebase anchor, R8 commit, R10 code-intelligence FIRST, R12 nguồn yêu cầu/đặc tả ngoài + `scripts/coverage.py`, R13 chèn phase, R14 đặc tả đổi, R15 user chốt ≠ đề xuất). Reference từng subcommand chỉ thêm bước RIÊNG, KHÔNG lặp luật này.
+4. **Load `references/feature-rules.md` NGAY** (luật xuyên suốt mọi subcommand: R1 resolve config→literal, R3 2-lớp load skill, R5 AC discipline, R6 guardrail, R7 codebase anchor, R8 commit, R10 code-intelligence FIRST, R12 nguồn yêu cầu/đặc tả ngoài + `scripts/coverage.py`, R13 chèn phase, R14 đặc tả đổi, R15 user chốt ≠ đề xuất, R16 bản đồ kiến thức `docs/knowledge/`). Reference từng subcommand chỉ thêm bước RIÊNG, KHÔNG lặp luật này.
 5. Dispatch theo bảng:
 
 | Subcommand | Load reference | Khi nào hợp lệ |
@@ -73,7 +73,7 @@ Chi tiết luật + cách spawn subagent discuss: `references/auto.md`.
 - **Phase** = mảng nghiệp vụ, đặt tên `M<n>-<slug>` (M0-foundation, M1-ket-ban...).
 - **Plan** = batch task trong 1 phase: `M<x>-NN-PLAN.md`.
 - **STATE.md < 100 dòng** — digest, không archive. Frontmatter ràng buộc: `---` đầu file · không comment trong `progress:` · `next_phases` single-line.
-- **Cập nhật:** task xong → STATE.Log + next_action · phase xong → ROADMAP tick + STATE.progress · feature xong → `agents/KNOWLEDGE.md` + `agents/DECISIONS.md`.
+- **Cập nhật:** task xong → STATE.Log + next_action · phase xong → ROADMAP tick + STATE.progress + bản đồ `docs/knowledge/` (R16) · feature xong → `agents/KNOWLEDGE.md` + `agents/DECISIONS.md`.
 - **Parallel:** PLAN khai `[depends:]` + `[file:]` mỗi task → `go` dev song song mọi task đủ phụ thuộc + khác file (tối đa `config.workflow.max_parallel_tasks`, mặc định 4), task dev xong test ngay trong lúc task khác còn dev, test lỗi → dev lại. `parallelization === false` → cùng vòng nhưng 1 task một lúc (debug/máy yếu).
 - **Commit:** commit **atomic mỗi task xong** trong `go`: `engine_verify` PASS → `engine_advance {commit:true, files:[file của task]}` (engine chỉ commit các file đó; từ chối commit cả tree khi task khác đang chạy). Conventional Commits, tiếng Anh, `<type>: M<x> - T<n> <desc>`, no AI ref. Feature branch + ticket là **TUỲ CHỌN** (STATE `branch`/`ticket` có thể trống). **KHÔNG `git push`/PR trừ khi user yêu cầu**. Chi tiết: `references/execute.md` §Commit + R8.
 - **Model:** 8sync sở hữu chọn model qua `~/.config/8sync/models.toml` (xem/sửa: `8sync harness model`) + role của `task` subagent. Skill NEVER hardcode tên model; chỉ chọn `agent: <role>` đúng vai (bảng **Agent theo vai** trong `references/feature-rules.md`).
@@ -81,7 +81,7 @@ Chi tiết luật + cách spawn subagent discuss: `references/auto.md`.
 ## Neo vào codebase (brownfield) — R7
 
 - Tổng thể dự án: `AGENTS.md` + `agents/PROJECT.md` — KHÔNG mô tả lại.
-- Nghiệp vụ/kiến trúc module: `agents/KNOWLEDGE.md` + `xd://mcp__codebase_memory_mcp_get_architecture` / `xd://mcp__codebase_memory_mcp_search_graph` (MCP tool = `xd://` device, gọi bằng `write` JSON args) — đọc/tra trước khi code.
+- Nghiệp vụ/kiến trúc module: bản đồ `docs/knowledge/INDEX.md` (R16) + `agents/KNOWLEDGE.md` + `xd://mcp__codebase_memory_mcp_get_architecture` / `xd://mcp__codebase_memory_mcp_search_graph` (MCP tool = `xd://` device, gọi bằng `write` JSON args) — đọc/tra trước khi code.
 - Convention + quyết định: `AGENTS.md` + `agents/DECISIONS.md` + `agents/PREFERENCES.md`.
 - Project-local skill: `.omp/skills/<name>/SKILL.md`; global: `~/.omp/skills/<name>/SKILL.md`.
 

@@ -45,7 +45,7 @@ Lặp:
    4. **Decisions liên quan** (copy literal — KHÔNG ghi "theo D4").
    5. **Skill (cột `[skill:]`) — 2 lớp:** (a) nhúng luật cốt lõi + anti-pattern; (b) ra lệnh Read `.omp/skills/<skill>/SKILL.md` (không có thì `~/.omp/skills/<skill>/SKILL.md`) TRƯỚC khi code.
    6. Convention: `AGENTS.md` + `agents/DECISIONS.md`/`PREFERENCES.md` liên quan.
-   7. Ground-truth (schema/symbol thật) + **interface mà task phụ thuộc đã commit** (symbol, file:line).
+   7. Ground-truth (schema/symbol thật) + **interface mà task phụ thuộc đã commit** (symbol, file:line) + **đoạn bản đồ (R16)** của vùng task đụng (điểm cắm, bẫy).
    8. **R10 literal** (xem `feature-rules.md` R10 (a)).
    9. Lệnh `[verify:]` của task — agent tự chạy trước khi báo xong.
    10. "Báo cáo cuối: danh sách file đã sửa/tạo + kết quả lệnh verify."

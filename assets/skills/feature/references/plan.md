@@ -14,7 +14,7 @@ Discuss + Plan cho phase hiện tại (`active_phase` trong STATE). Output: `M<x
 - **Contract nhận từ phase trước**: đối chiếu Integration Contracts mà phase này dùng với Key Decisions mới nhất + code thật (code-intel). Contract đã bị thay (phase chèn, quyết định mới) → sửa ROADMAP trước khi plan (R13).
 - **Phase có UI**: đọc thiết kế của phase (node Figma ghi ở ROADMAP / mockup) trước khi viết AC giao diện; AC giao diện trích từ thiết kế + mã SCR.
 - Trích **Requirement scope** cho phase: liệt kê UC-ID + mô tả từ REQUIREMENTS.md mà phase này chịu trách nhiệm; nếu ROADMAP và REQUIREMENTS lệch phase/UC → sửa/hỏi trước khi plan.
-- Đọc knowledge liên quan: `agents/KNOWLEDGE.md` + (R10) `xd://mcp__codegraph_explore` / `xd://mcp__codebase_memory_mcp_get_architecture` cho module sẽ đụng.
+- **Đọc bản đồ kiến thức (R16) TRƯỚC khi dò code:** `docs/knowledge/INDEX.md` → file module/flow của vùng phase sẽ đụng; + `agents/KNOWLEDGE.md`. Rồi mới (R10) `xd://mcp__codegraph_explore` / `xd://mcp__codebase_memory_mcp_get_architecture` cho phần bản đồ chưa có. Ghi file + mục bản đồ đã dùng vào mục **📖 Nguồn yêu cầu đã đọc** của CONTEXT.
 - Chốt quyết định triển khai mơ hồ (API nào, schema, pattern). Mơ hồ → dùng `ask` (tương tác). Auto-mode: thay `ask` bằng spawn `task` discuss (xem `auto.md`).
 - Ghi `agents/planning/<slug>/phases/M<x>-<name>/M<x>-CONTEXT.md`: quyết định riêng phase + Requirement scope (dùng `templates/M-CONTEXT.md`).
 - Append quyết định lớn vào STATE.Decisions + PROJECT Key Decisions table.
@@ -52,8 +52,9 @@ Nếu phase cần khảo nhiều mặt codebase (và `config.workflow.paralleliz
   - "tìm pattern <X> trong codebase"
   - "schema/migration module tương tự"
   - "module tham khảo đã làm <Y>"
+- **Prompt mỗi subagent nhúng đoạn bản đồ (R16) của vùng nó dò** + "chỉ dò phần bản đồ chưa có hoặc nghi lệch; báo cáo thêm mục **Bổ sung bản đồ** (điểm cắm, công thức 'muốn làm X → sửa A → B', bẫy — neo bằng tên symbol)".
 - **Prompt mỗi subagent nhúng chỉ thị R10 literal**: MCP tool là `xd://` device (gọi bằng `write` JSON args vào path); dùng `xd://mcp__codegraph_explore` / CLI `codegraph query/callers/impact "<query>"` hoặc codebase-memory-mcp (`xd://mcp__codebase_memory_mcp_search_graph` / `_trace_path` / `_get_architecture`) / serena (`xd://mcp__serena_find_symbol`) để tìm/hiểu code TRƯỚC grep/read thô; chỉ read khi cần xem chi tiết 1 file cụ thể đã định vị; kết quả dài (>300 dòng) → tóm tắt phần liên quan trong báo cáo cuối, không dump thô.
-- Barrier → tổng hợp ở main thread.
+- Barrier → tổng hợp ở main thread; chép mục **Bổ sung bản đồ** của mọi scout vào mục **🗺 Bổ sung bản đồ** của `M<x>-CONTEXT.md` (đầu vào `ship.md` Step 3 mục 1 — transcript subagent không sống qua session/harness).
 - Phase nhỏ/pattern đã rõ, hoặc `parallelization === false` → skip, không spawn (chạy tuần tự main thread).
 
 ## Step 3 — Plan (decompose + đồ thị phụ thuộc)

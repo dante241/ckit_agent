@@ -2,7 +2,7 @@
 
 > Đã load `references/feature-rules.md` (R1 config-resolve, R5 AC nghiệm thu, **R10 code-intelligence FIRST — áp dụng cả reviewer/tester subagent**) ở Dispatch chưa? Nếu chưa → load trước.
 
-Verify (review + test) → close phase → archive khi hết feature → cập nhật bản đồ. = GSD Verify + Ship.
+Verify (review + test) → close phase → cập nhật bản đồ kiến thức (mỗi phase) → archive khi hết feature. = GSD Verify + Ship.
 Gate: review/test FAIL → fix → re-run. KHÔNG ship khi fail.
 
 ## Step 0 — Load hợp đồng nghiệm thu (BẮT BUỘC trước review/test)
@@ -25,7 +25,7 @@ Spawn ĐỒNG THỜI `task` subagent `agent: code-reviewer` (dự án có `.omp/
 Scope = file phase này đụng (từ PLAN). Barrier → gộp findings.
 Có lỗi → fix (main thread hoặc spawn) → re-review tới sạch. Phase nhỏ → 1 reviewer tổng hợp cũng được.
 
-**Nhúng UC + AC + nguồn vào prompt reviewer:** mỗi prompt kèm Requirement scope + bảng AC literal (từ Step 0) + đoạn đặc tả nguyên văn mà các AC trỏ tới + yêu cầu: "Ngoài lens <dimension>, soát code có thỏa đúng UC/AC và nguyên văn nguồn thuộc lens này không (vd security lens ↔ AC/BR nào về permission/inject); báo UC/AC/mã nguồn nào code KHÔNG thỏa kèm `file:line`." Reviewer trả findings gắn UC-ID/AC-NN/mã nguồn khi liên quan. Nhúng R10 literal (dùng code-intel qua `xd://` device định vị, tóm tắt output dài).
+**Nhúng UC + AC + nguồn vào prompt reviewer:** mỗi prompt kèm Requirement scope + bảng AC literal (từ Step 0) + đoạn đặc tả nguyên văn mà các AC trỏ tới + đoạn bản đồ (R16) của vùng phase đụng + yêu cầu: "Ngoài lens <dimension>, soát code có thỏa đúng UC/AC và nguyên văn nguồn thuộc lens này không (vd security lens ↔ AC/BR nào về permission/inject); báo UC/AC/mã nguồn nào code KHÔNG thỏa kèm `file:line`." Reviewer trả findings gắn UC-ID/AC-NN/mã nguồn khi liên quan. Nhúng R10 literal (dùng code-intel qua `xd://` device định vị, tóm tắt output dài).
 
 ## Step 2 — Test (theo tier, fan-out per-component nếu nhiều)
 
@@ -87,12 +87,16 @@ NEEDS-CONFIRM chỉ dành cho AC **bị chặn ngoài tầm** (môi trường pr
 
 ## Step 3 — Ship (đóng phase)
 
-1. **Commit**: code đã commit atomic per-task trong `/feature go` (qua `engine_advance`) rồi — KHÔNG commit gộp lại. Ship chỉ:
-   - Commit nốt phần phụ của phase chưa thuộc task nào (`M<x>-VERIFICATION.md`/STATE/ROADMAP đổi): `docs: M<x> close phase <tên>` (Conventional Commits, tiếng Anh, milestone ở đầu — xem `execute.md` §Commit).
+1. **Bản đồ kiến thức (R16)** — sau khi AC matrix đã đóng, TRƯỚC commit ở mục 2:
+   - Đầu vào (đều nằm trong repo): mục **🗺 Bổ sung bản đồ** của `M<x>-CONTEXT.md` (plan đã chép từ báo cáo scout) + `git diff <first>..<last>` của phase + Decisions của CONTEXT làm đổi hành vi vùng code.
+   - Ghi vào `docs/knowledge/modules/<Module>.md` / `flows/<flow>.md` của vùng phase đụng (sửa tại chỗ, không append nhật ký); file mới → thêm dòng `INDEX.md`. Đúng format R16; mọi symbol/key ghi vào phải tồn tại ở HEAD (kiểm bằng code-intel/grep); tên đã bỏ chỉ được nhắc ở mục bẫy.
+   - Không `--auto`: trình diff bản đồ + `ask` (Ghi / Sửa / Bỏ qua). `--auto`: ghi luôn, STATE Log ghi file bản đồ đã đổi. Nhiều vùng → spawn `task` (`agent: task`), prompt nhúng R16 literal + mục Bổ sung bản đồ.
+2. **Commit**: code đã commit atomic per-task trong `/feature go` (qua `engine_advance`) rồi — KHÔNG commit gộp lại. Ship chỉ:
+   - Commit nốt phần phụ của phase chưa thuộc task nào (`M<x>-VERIFICATION.md`/STATE/ROADMAP đổi + file bản đồ của mục 1): `docs: M<x> close phase <tên>` (Conventional Commits, tiếng Anh, milestone ở đầu — xem `execute.md` §Commit).
    - Verify **AC matrix trong M<x>-VERIFICATION.md MỌI AC = PASS** (Step 0+1+2) TRƯỚC khi tính phase done. Còn FAIL → KHÔNG đóng phase. Còn NEEDS-CONFIRM → chỉ đóng có điều kiện theo Step 2.6.
    - **KHÔNG `git push` / mở PR** — chỉ push khi user yêu cầu rõ.
-2. **ROADMAP**: phase `[~]` → `[x]` + ghi Phase log (range commit `<first>..<last>` của phase, contract đã export).
-3. **STATE cập nhật**:
+3. **ROADMAP**: phase `[~]` → `[x]` + ghi Phase log (range commit `<first>..<last>` của phase, contract đã export).
+4. **STATE cập nhật**:
    - `progress.completed_phases` +1, `percent` lại.
    - `active_phase` → phase tiếp (unblocked theo dependency) hoặc `null` nếu hết.
    - `next_action` → `plan-phase` cho phase sau, hoặc `done`.

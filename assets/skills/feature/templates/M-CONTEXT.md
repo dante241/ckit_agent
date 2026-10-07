@@ -16,6 +16,7 @@
 - Đặc tả: [§ tên mục đã đọc]
 - Mã của phase: [BR-xx, D-xx, P-xx, SCR-xx, US-0x·AC-yy…]
 - Integration Contracts nhận từ phase trước: [contract — còn khớp Key Decisions mới nhất? có / đã sửa ROADMAP]
+- Bản đồ kiến thức (R16): [file + mục `docs/knowledge/...` đã dùng / "chưa có — scout dò"]
 - Thiết kế (phase có UI): [node/link Figma hoặc mockup đã đọc]
 
 ## 🎯 Goal
@@ -40,6 +41,10 @@
 ## Decisions (D1, D2… — quyết định riêng phase, append khi chốt)
 
 - D1: [quyết định — vì sao]. (nguồn: discuss / `ask` / (auto-decided via <role>))
+
+## 🗺 Bổ sung bản đồ (plan chép từ báo cáo scout sau barrier — đầu vào `ship.md` Step 3 mục 1)
+
+- [vùng] điểm cắm / công thức "muốn làm X → sửa A → B" / bẫy — neo bằng tên symbol
 
 ## Plan-review notes (điền sau Step 3.5 nếu có chạy)
 
