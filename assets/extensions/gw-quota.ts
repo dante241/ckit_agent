@@ -1,29 +1,35 @@
-// gw-quota — omp/pi extension: show the 9router ai-gateway per-key usage quota
-// on its own line under the editor via ctx.ui.setWidget(placement:"belowEditor").
+// gw-quota — omp/pi extension: show the active provider's usage quota on its
+// own line under the editor via ctx.ui.setWidget(placement:"belowEditor").
 //
-// It reads the ACTIVE model's provider from ctx.model.provider, looks up that
-// provider's { baseUrl, apiKey } in ~/.omp/agent/models.yml, and polls
-// `${baseUrl}/quota` (the gateway's GET /claude/v1/quota | /codex/v1/quota).
-// Auth: sends BOTH x-api-key (Anthropic path) and Authorization: Bearer (Codex
-// path) so one file works for cloudgo-cc and cloudgo-cx.
+// Two sources, picked from ctx.model.provider:
 //
-// The endpoint returns NO dollar amounts — only used percentages, for two
-// independent budgets: the refilling per-key bucket (`used_percent`, refilled
-// over `window_seconds`) and the calendar day (`daily_used_percent`). Widget:
-// `Quota 4h <bar> <pct>% · Day <bar> <pct>%` (no reset clock: the bucket
-// refills continuously, so there is no rollover to show) — each segment
-// shown only when that budget applies; the meter bar + color track the
-// percentage (success/warning/error). Keys with neither budget and non-gateway
-// providers are hidden. All failures are swallowed (session never affected): a
-// non-200 just clears the slot. `/gwquota` forces a refresh and reports detail
-// via a notification.
+// 1. 9router ai-gateway providers (cloudgo-cc / cloudgo-cx): look up the
+//    provider's { baseUrl, apiKey } in ~/.omp/agent/models.yml and poll
+//    `${baseUrl}/quota`. Auth sends BOTH x-api-key (Anthropic path) and
+//    Authorization: Bearer (Codex path). The endpoint returns only used
+//    percentages for the refilling per-key bucket (`used_percent` over
+//    `window_seconds`) and the calendar day (`daily_used_percent`) — the
+//    bucket refills continuously, so no reset clock is shown:
+//    `Quota 4h ▰▰▱▱▱ 40% · Day ▰▰▱▱▱ 47%`.
+// 2. `anthropic` with a Claude subscription (OAuth login): run omp's own
+//    `omp usage --provider anthropic --json` (the extension ctx exposes no
+//    usage API) and show every window it reports, incl. model-scoped weekly
+//    buckets the built-in `usage` status-line segment drops:
+//    `Claude 5h ▰▱▱▱▱ 2% 4h52m · 7d Fable ▱▱▱▱▱ 0% 16h`. These windows roll
+//    over, so each carries its reset countdown. An API-key `anthropic` login
+//    yields no report → hidden.
+//
+// Meter + color track the percentage (green/yellow/red). Unlimited keys and
+// other providers are hidden. All failures are swallowed (session never
+// affected). `/gwquota` forces a refresh and reports detail via a notification.
+import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 
 const STATUS_KEY = "gw-quota";
-const REFRESH_MS = 180_000; // poll the gateway at most once every 3 minutes
+const REFRESH_MS = 180_000; // poll at most once every 3 minutes
 
 export interface ProviderConf {
   baseUrl: string;
@@ -41,11 +47,23 @@ export interface Quota {
 }
 
 // One budget normalized for display.
-interface Budget {
-  label: string; // "4h" | "Day"
+export interface Budget {
+  label: string; // "4h" | "Day" | "5h" | "7d Fable"
   source: string;
   pct: number;
   exceeded: boolean;
+  resetsAt?: number; // ms epoch; only for windows that roll over (subscription)
+}
+
+// Subset of `omp usage --json` output this extension reads.
+interface UsageLimit {
+  id?: string;
+  scope?: { windowId?: string; tier?: string };
+  window?: { id?: string; resetsAt?: number };
+  amount?: { usedFraction?: number };
+}
+export interface UsageJson {
+  reports?: Array<{ provider?: string; metadata?: { email?: string }; limits?: UsageLimit[] }>;
 }
 
 // Indent-aware scan of the `providers:` block in ~/.omp/agent/models.yml,
@@ -133,6 +151,84 @@ async function fetchQuota(p: ProviderConf): Promise<Quota | undefined> {
   return (await res.json()) as Quota;
 }
 
+// Every window `omp usage` reports for the first Anthropic subscription
+// account, in API order (5h first). Tier-scoped weekly buckets are labeled by
+// tier ("7d Fable") because they only count usage of that model family.
+export function claudeBudgets(j: UsageJson | undefined): Budget[] {
+  const rep = j?.reports?.find((r) => r.provider === "anthropic");
+  const out: Budget[] = [];
+  for (const l of rep?.limits ?? []) {
+    const f = l.amount?.usedFraction;
+    if (typeof f !== "number") continue;
+    const win = l.scope?.windowId ?? l.window?.id ?? "";
+    const tier = l.scope?.tier ? l.scope.tier[0].toUpperCase() + l.scope.tier.slice(1) : "";
+    out.push({
+      label: [win, tier].filter(Boolean).join(" "),
+      source: rep?.metadata?.email ?? "anthropic",
+      pct: Math.round(f * 100),
+      exceeded: f >= 1,
+      resetsAt: l.window?.resetsAt,
+    });
+  }
+  return out;
+}
+
+// omp's compiled binary is process.execPath; under `bun cli.js` fall back to PATH.
+function ompBin(): string {
+  return /(^|[\\/])omp(\.exe)?$/.test(process.execPath) ? process.execPath : "omp";
+}
+
+function fetchClaudeUsage(): Promise<UsageJson | undefined> {
+  return new Promise((resolve) => {
+    execFile(
+      ompBin(),
+      // --no-extensions: `omp usage` would otherwise load every extension (this one included) per poll.
+      ["usage", "--provider", "anthropic", "--json", "--no-extensions"],
+      { timeout: 10_000, maxBuffer: 4 << 20 },
+      (err, stdout) => {
+        if (err) return resolve(undefined);
+        try {
+          resolve(JSON.parse(stdout) as UsageJson);
+        } catch {
+          resolve(undefined);
+        }
+      },
+    );
+  });
+}
+
+// "4h52m" / "16h" / "2d3h" until the window resets.
+export function fmtReset(resetsAt: number, now = Date.now()): string {
+  const mins = Math.max(0, Math.round((resetsAt - now) / 60_000));
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  if (h < 24) return mins % 60 ? `${h}h${mins % 60}m` : `${h}h`;
+  return h % 24 ? `${Math.floor(h / 24)}d${h % 24}h` : `${Math.floor(h / 24)}d`;
+}
+
+// A quota source for the active provider: widget title + fetcher.
+interface Source {
+  title: string;
+  fetch(): Promise<Budget[] | undefined>; // undefined = fetch failed → keep last shown
+}
+
+function sourceFor(provider: string | undefined, providers: Record<string, ProviderConf>): Source | undefined {
+  const prov = providers[provider ?? ""];
+  if (isGatewayProvider(prov)) {
+    return { title: "Quota", fetch: async () => budgets(await fetchQuota(prov)) };
+  }
+  if (provider === "anthropic") {
+    return {
+      title: "Claude",
+      fetch: async () => {
+        const j = await fetchClaudeUsage();
+        return j ? claudeBudgets(j) : undefined;
+      },
+    };
+  }
+  return undefined;
+}
+
 // Raw ANSI SGR so color is emitted regardless of which theme object the
 // extension receives (ctx.ui.theme can be a no-color stub in some render
 // contexts; i0 text components render inline ANSI directly — omp itself does
@@ -158,16 +254,16 @@ function bar(pct: number, sgr: string): string {
 function segment(b: Budget): string {
   const sgr = levelSgr(b.pct, b.exceeded);
   const head = b.label ? `${paint("90", b.label)} ` : "";
-  return `${head}${bar(b.pct, sgr)} ${paint(sgr, b.pct + "%")}`;
+  const reset = b.resetsAt ? ` ${paint("90", fmtReset(b.resetsAt))}` : "";
+  return `${head}${bar(b.pct, sgr)} ${paint(sgr, b.pct + "%")}${reset}`;
 }
 
-function statusText(bs: Budget[]): string {
-  return "Quota " + bs.map(segment).join(paint("90", " · "));
+export function statusText(title: string, bs: Budget[]): string {
+  return `${title} ` + bs.map(segment).join(paint("90", " · "));
 }
 
-function render(ctx: ExtensionContext, q: Quota | undefined): void {
+function render(ctx: ExtensionContext, title: string, bs: Budget[]): void {
   try {
-    const bs = budgets(q);
     if (bs.length === 0) {
       ctx.ui.setWidget(STATUS_KEY, undefined); // unlimited / unknown → hide
       return;
@@ -176,7 +272,7 @@ function render(ctx: ExtensionContext, q: Quota | undefined): void {
     // surrounding blank-line spacer. The footer hook-status slot (setStatus)
     // sits above omp's mandatory status→editor gap, so a quota there always
     // looks like it has a dangling empty line under it — this avoids that.
-    ctx.ui.setWidget(STATUS_KEY, [statusText(bs)], { placement: "belowEditor" });
+    ctx.ui.setWidget(STATUS_KEY, [statusText(title, bs)], { placement: "belowEditor" });
   } catch {
     /* stale/torn-down context — ignore */
   }
@@ -188,7 +284,7 @@ export default function gwQuotaExtension(pi: ExtensionAPI): void {
   let providers = loadProviders();
   let timer: NodeJS.Timeout | undefined;
   let generation = 0;
-  let lastFetch = 0; // ms epoch of the last actual gateway poll (throttle gate)
+  let lastFetch = 0; // ms epoch of the last actual poll (throttle gate)
 
   async function tick(ctx: ExtensionContext, myGen: number): Promise<void> {
     if (myGen !== generation) return;
@@ -197,15 +293,15 @@ export default function gwQuotaExtension(pi: ExtensionAPI): void {
     const now = Date.now();
     if (now - lastFetch < REFRESH_MS) return;
     lastFetch = now;
-    const prov = providers[ctx.model?.provider ?? ""];
-    if (!isGatewayProvider(prov)) {
-      render(ctx, undefined);
+    const src = sourceFor(ctx.model?.provider, providers);
+    if (!src) {
+      render(ctx, "", []);
       return;
     }
     try {
-      const q = await fetchQuota(prov);
-      if (myGen !== generation) return;
-      render(ctx, q);
+      const bs = await src.fetch();
+      if (myGen !== generation || !bs) return; // failed fetch → keep last shown value
+      render(ctx, src.title, bs);
     } catch {
       /* network error → keep last shown value */
     }
@@ -239,25 +335,33 @@ export default function gwQuotaExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("gwquota", {
-    description: "Refresh + show ai-gateway usage quota for the active provider",
+    description: "Refresh + show usage quota (ai-gateway or Claude subscription) for the active provider",
     handler: async (_args, ctx) => {
       providers = loadProviders();
       const provId = ctx.model?.provider;
-      const prov = providers[provId ?? ""];
-      if (!isGatewayProvider(prov)) {
-        ctx.ui.notify(`gw-quota: no gateway provider for active model (${provId ?? "?"})`, "warning");
+      const src = sourceFor(provId, providers);
+      if (!src) {
+        ctx.ui.notify(`gw-quota: no quota source for active model (${provId ?? "?"})`, "warning");
         return;
       }
       try {
-        const q = await fetchQuota(prov);
-        render(ctx, q);
-        const bs = budgets(q);
+        const bs = await src.fetch();
+        if (!bs) {
+          ctx.ui.notify("gw-quota: fetch failed", "error");
+          return;
+        }
+        render(ctx, src.title, bs);
         if (bs.length === 0) {
-          ctx.ui.notify("gw-quota: unlimited (no budget on this key/team)", "info");
+          ctx.ui.notify("gw-quota: no usage limits reported (unlimited or API-key login)", "info");
           return;
         }
         const detail = bs
-          .map((b) => `${b.label || "window"} [${b.source}]: ${b.pct}% used${b.exceeded ? " — EXCEEDED" : ""}`)
+          .map(
+            (b) =>
+              `${b.label || "window"} [${b.source}]: ${b.pct}% used` +
+              (b.resetsAt ? `, resets in ${fmtReset(b.resetsAt)}` : "") +
+              (b.exceeded ? " — EXCEEDED" : ""),
+          )
           .join("; ");
         ctx.ui.notify(`gw-quota ${detail}`, bs.some((b) => b.exceeded) ? "error" : "info");
       } catch (err) {

@@ -12,6 +12,11 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.31] - 2026-10-07
+
+### Added
+- `gw-quota` extension now also shows the Claude subscription quota when the active provider is `anthropic`: `Claude 5h ▰▱▱▱▱ 4% 4h41m · 7d Fable ▱▱▱▱▱ 0% 16h31m`, in the same belowEditor widget and `▰▱` meter as the gateway quota. It reads `omp usage --provider anthropic --json --no-extensions` (every 3 min, only while an `anthropic` model is active; gateway providers keep their `/quota` path), shows every window omp reports including model-scoped weekly buckets (which the built-in `usage` status-line segment drops), and adds a reset countdown because subscription windows roll over. `/gwquota` covers both sources. The widget reflects the first logged-in Claude OAuth account; with no OAuth login it stays hidden.
+
 ## [0.1.30] - 2026-10-06
 
 ### Fixed

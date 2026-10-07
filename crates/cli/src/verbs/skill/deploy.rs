@@ -1095,8 +1095,9 @@ pub(crate) fn ensure_engine(home: &Path, root: Option<&Path>) -> Result<()> {
 }
 
 /// Deploy the `gw-quota` omp extension — a belowEditor widget showing the
-/// 9router ai-gateway per-key usage quota (bucket + daily percentages) for the
-/// active model's provider. GLOBAL-ONLY: it reads `~/.omp/agent/models.yml`
+/// active provider's usage quota: 9router ai-gateway per-key bucket + daily
+/// percentages, or the Claude subscription windows (via `omp usage --json`) for
+/// `anthropic` OAuth. GLOBAL-ONLY: it reads `~/.omp/agent/models.yml`
 /// (not project-scoped), so it lands only in `~/.omp/agent/extensions/gw-quota.ts`
 /// — never brand-namespaced (it is a standalone tool, not the ckit engine) and
 /// never mirrored into a project. Piggybacks on `ensure_engine` so it deploys at
