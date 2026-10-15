@@ -1,107 +1,113 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   EndpointMissingError,
   type SkillEntry,
   type Engines,
-  type ModelConfig,
-  type ModelRole,
-  type WfData,
-  type WfKind,
-  type WfNode,
-  type WfEdge,
   type CgSearchResult,
   type MarketItem,
 } from "./api";
 import { Markdown } from "./markdown";
-import { NavIcon, LogoMark, Glyph } from "./icons";
+import { NavIcon, Glyph } from "./icons";
+import { Page, Loading, isMissing, ErrorState, EndpointMissing, EmptyState } from "./ui";
+import { BoardPage, BoardNavBadge } from "./Board";
+import { SidebarProjects } from "./SidebarProjects";
+import { ModelsPage } from "./Models";
 import {
-  ReactFlow, Background, Controls, MiniMap, addEdge, Handle, Position,
+  ReactFlow, Background, Controls,
   useNodesState, useEdgesState,
-  type Node, type Edge, type Connection, type NodeTypes, type NodeProps,
+  type Node, type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
+// Layered layout for the Codegraph package graph.
+const elk = new ELK();
 
 type Page =
-  | "state" | "context" | "models" | "skills" | "memory" | "rules"
+  | "board" | "state" | "context" | "models" | "skills" | "memory" | "rules"
   | "engines" | "codegraph" | "mcp" | "submodules"
-  | "bench" | "eval" | "team" | "workspaces" | "workflow" | "marketplace" | "knowledge";
+  | "bench" | "eval" | "team" | "workspaces" | "marketplace" | "knowledge";
 
-const NAV_GROUPS: { label: string; items: { id: Page; label: string }[] }[] = [
+// The dashboard is a task-management tool: Board (tasks across projects) and
+// Models (which model runs each Board step) are primary. Everything else opens
+// from the ⚙ item at the sidebar bottom; deep links (?page=x) still reach it.
+const PRIMARY_NAV: { id: Page; label: string }[] = [
+  { id: "board", label: "Board" },
+  { id: "models", label: "Models" },
+];
+const TOOL_GROUPS: { label: string; items: { id: Page; label: string }[] }[] = [
   { label: "Session", items: [{ id: "state", label: "State" }, { id: "context", label: "Context" }] },
-  { label: "Configure", items: [{ id: "models", label: "Models" }, { id: "skills", label: "Skills" }, { id: "memory", label: "Memory" }, { id: "rules", label: "Rules" }] },
+  { label: "Configure", items: [{ id: "skills", label: "Skills" }, { id: "memory", label: "Memory" }, { id: "rules", label: "Rules" }] },
   { label: "Runtime", items: [{ id: "engines", label: "Engines" }, { id: "codegraph", label: "Codegraph" }, { id: "mcp", label: "MCP" }, { id: "submodules", label: "Submodules" }] },
   { label: "Discover", items: [{ id: "marketplace", label: "Marketplace" }, { id: "knowledge", label: "Knowledge" }] },
   { label: "Quality", items: [{ id: "bench", label: "Bench" }, { id: "eval", label: "Readiness" }, { id: "team", label: "Team" }] },
   { label: "Projects", items: [{ id: "workspaces", label: "Workspaces" }] },
-  { label: "Build", items: [{ id: "workflow", label: "Workflow" }] },
 ];
 
 const MEMORY_FILES = ["STATE", "KNOWLEDGE", "PLAYBOOKS", "DECISIONS", "PROJECT", "NOTES"] as const;
 
-// Known model shorthands surfaced as quick-pick options in the Models page.
-const MODEL_HINTS = ["opus", "glm", "haiku", "codex"] as const;
-
-const ROLE_HINTS: Record<string, string> = {
-  default: "fallback", plan: "planning", smol: "cheap calls", slow: "deep", vision: "images",
-};
-const TASK_HINTS: Record<string, string> = {
-  plan: "thinking", review: "thinking", debug: "thinking", code: "mechanical", trivial: "mechanical",
-};
-
 // Deep-linkable routing: `?page=codegraph` (or `/codegraph`) selects the initial
-// page so `ckit shot http://127.0.0.1:8731/?page=codegraph` captures that view
-// (nav is in-memory, so without this a headless load always renders State).
-const ALL_PAGES: Page[] = NAV_GROUPS.flatMap((g) => g.items.map((i) => i.id));
+// page so `ckit shot http://127.0.0.1:8731/?page=codegraph` captures that view.
+// Anything else (incl. `/`) lands on the Board.
+const TOOL_PAGES: Page[] = TOOL_GROUPS.flatMap((g) => g.items.map((i) => i.id));
+const ALL_PAGES: Page[] = [...PRIMARY_NAV.map((i) => i.id), ...TOOL_PAGES];
 function pageFromUrl(): Page {
   const q = new URLSearchParams(window.location.search).get("page");
   const cand = q ?? window.location.pathname.replace(/^\/+/, "");
-  return (ALL_PAGES as string[]).includes(cand) ? (cand as Page) : "state";
+  return (ALL_PAGES as string[]).includes(cand) ? (cand as Page) : "board";
 }
 export default function App() {
   const [page, setPageState] = useState<Page>(pageFromUrl);
   const setPage = useCallback((p: Page) => {
     setPageState(p);
-    window.history.replaceState(null, "", p === "state" ? "." : `?page=${p}`);
+    window.history.replaceState(null, "", p === "board" ? "." : `?page=${p}`);
+    // Board listens for history changes (task page levels live in the URL).
+    window.dispatchEvent(new PopStateEvent("popstate"));
   }, []);
+  // Back / Forward across pages and the Board's task levels.
+  useEffect(() => {
+    const on = () => setPageState(pageFromUrl());
+    window.addEventListener("popstate", on);
+    return () => window.removeEventListener("popstate", on);
+  }, []);
+  const toolActive = (TOOL_PAGES as string[]).includes(page);
+  const navItem = (n: { id: Page; label: string }) => (
+    <button
+      key={n.id}
+      className="nav-item"
+      onClick={() => setPage(n.id)}
+      aria-current={page === n.id ? "page" : undefined}
+    >
+      <span className="nav-ico"><NavIcon name={n.id} /></span>
+      <span className="nav-label">{n.label}</span>
+      {n.id === "board" && <BoardNavBadge />}
+    </button>
+  );
   return (
     <div className="app">
       <nav className="sidebar" aria-label="Sections">
         <div className="brand">
-          <span className="brand-mark"><LogoMark /></span>
+          <span className="brand-mark" aria-hidden="true">ck</span>
           <span className="brand-text">
             <span className="brand-name">ckit</span>
-            <span className="brand-sub">harness</span>
+            <span className="brand-sub">Đội AI của bạn</span>
           </span>
         </div>
         <ProjectSwitcher />
         <div className="nav-scroll">
-          {NAV_GROUPS.map((g) => (
-            <div className="nav-section" key={g.label}>
-              <div className="nav-section-label">{g.label}</div>
-              {g.items.map((n) => (
-                <button
-                  key={n.id}
-                  className="nav-item"
-                  onClick={() => setPage(n.id)}
-                  aria-current={page === n.id ? "page" : undefined}
-                >
-                  <span className="nav-ico"><NavIcon name={n.id} /></span>
-                  <span className="nav-label">{n.label}</span>
-                </button>
-              ))}
-            </div>
-          ))}
+          <div className="nav-section">{PRIMARY_NAV.map(navItem)}</div>
+          <SidebarProjects />
         </div>
+        <ToolsMenu page={page} active={toolActive} onPick={setPage} />
         <div className="side-foot">
-          <span className="live-dot" aria-hidden="true" />
-          agent-team dashboard
+          <span className="side-foot-label">Giao diện</span>
+          <ThemeToggle />
         </div>
       </nav>
       <main className="main">
         <div className="main-inner">
+          {page === "board" && <BoardPage />}
           {page === "state" && <StatePage />}
           {page === "context" && <ContextPage />}
           {page === "models" && <ModelsPage />}
@@ -116,7 +122,6 @@ export default function App() {
           {page === "eval" && <EvalPage />}
           {page === "team" && <TeamPage />}
           {page === "workspaces" && <WorkspacesPage />}
-          {page === "workflow" && <WorkflowPage />}
           {page === "marketplace" && <MarketplacePage />}
           {page === "knowledge" && <KnowledgePage />}
         </div>
@@ -169,7 +174,8 @@ function ProjectSwitcher() {
   // the backend's first "active". Keeps the trigger label consistent with the
   // page content even when several projects report active.
   const currentPath = ws.data?.project;
-  const current = list.find((p) => p.current) ?? (currentPath ? list.find((p) => p.path === currentPath) : null) ?? list.find((p) => p.active) ?? null;
+  // Only fall back to "any active project" when the server reports no current project at all.
+  const current = list.find((p) => p.current) ?? (currentPath ? list.find((p) => p.path === currentPath) ?? null : list.find((p) => p.active) ?? null);
   const currentName = current?.name ?? (currentPath ? currentPath.split("/").pop() : null) ?? "no project";
   const missing = projects.error instanceof EndpointMissingError;
 
@@ -221,73 +227,124 @@ function ProjectSwitcher() {
   );
 }
 
-// ── Shared scaffolding + interaction states ───────────────────────────────
-function Page({ title, sub, action, children }: { title: string; sub?: ReactNode; action?: ReactNode; children: ReactNode }) {
+// ── Theme (Sáng / Tối) ────────────────────────────────────────────────────
+// Light is the default; index.html applies a saved "dark" before first paint.
+const THEME_KEY = "ckit.theme";
+type Theme = "light" | "dark";
+function ThemeToggle() {
+  const [theme, setTheme] = useState<Theme>(() => (document.documentElement.dataset.theme === "dark" ? "dark" : "light"));
+  const pick = (t: Theme) => {
+    setTheme(t);
+    if (t === "dark") document.documentElement.dataset.theme = "dark";
+    else delete document.documentElement.dataset.theme;
+    try {
+      localStorage.setItem(THEME_KEY, t);
+    } catch {
+      /* private mode: the choice just won't persist */
+    }
+  };
   return (
-    <section className="page">
-      <header className="page-head">
-        <div>
-          <h2>{title}</h2>
-          {sub ? <p className="sub">{sub}</p> : null}
+    <div className="seg theme-seg" role="group" aria-label="Giao diện">
+      <button type="button" aria-pressed={theme === "light"} className={theme === "light" ? "seg-on" : ""} onClick={() => pick("light")}>Sáng</button>
+      <button type="button" aria-pressed={theme === "dark"} className={theme === "dark" ? "seg-on" : ""} onClick={() => pick("dark")}>Tối</button>
+    </div>
+  );
+}
+
+// ── Tools menu (sidebar-bottom ⚙) ─────────────────────────────────────────
+// Every non-task page, grouped. Fixed-position so the sidebar's overflow can't
+// clip it: beside the rail on desktop, under the top bar on narrow screens.
+function ToolsMenu({ page, active, onPick }: { page: Page; active: boolean; onPick: (p: Page) => void }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<CSSProperties | null>(null);
+  const trigRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const current = TOOL_GROUPS.flatMap((g) => g.items).find((i) => i.id === page);
+
+  useLayoutEffect(() => {
+    if (!open || !trigRef.current) return;
+    const r = trigRef.current.getBoundingClientRect();
+    const rail = trigRef.current.closest(".sidebar")?.getBoundingClientRect();
+    setPos(window.innerWidth > 900
+      ? { left: (rail?.right ?? r.right) + 8, bottom: Math.max(8, window.innerHeight - r.bottom) }
+      : { top: r.bottom + 8, right: 12 });
+  }, [open]);
+
+  // Land focus inside: the current page if listed, else the first item.
+  useEffect(() => {
+    if (!open || !pos) return;
+    const m = menuRef.current;
+    (m?.querySelector<HTMLButtonElement>("[aria-current='page']") ?? m?.querySelector<HTMLButtonElement>("button"))?.focus();
+  }, [open, pos]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest(".tools-menu") && !t.closest(".tools-trigger")) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      close();
+      trigRef.current?.focus();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  // Up/Down walk the items; Tab still works.
+  const onMenuKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = items[(at + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length];
+    next?.focus();
+    e.preventDefault();
+  };
+
+  return (
+    <div className="nav-foot">
+      <button
+        ref={trigRef}
+        className="nav-item tools-trigger"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls="tools-menu"
+        aria-current={active ? "page" : undefined}
+        title="Cài đặt & công cụ"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="nav-ico"><NavIcon name="settings" /></span>
+        <span className="nav-label">Cài đặt & công cụ</span>
+        {current ? <span className="tools-current">{current.label}</span> : null}
+      </button>
+      {open && pos ? (
+        <div id="tools-menu" ref={menuRef} className="tools-menu" role="dialog" aria-label="Cài đặt & công cụ" style={pos} onKeyDown={onMenuKey}>
+          {TOOL_GROUPS.map((g) => (
+            <div className="tools-group" role="group" aria-labelledby={`tools-g-${g.label}`} key={g.label}>
+              <div className="tools-group-label" id={`tools-g-${g.label}`}>{g.label}</div>
+              {g.items.map((i) => (
+                <button
+                  key={i.id}
+                  className="nav-item"
+                  aria-current={page === i.id ? "page" : undefined}
+                  onClick={() => { onPick(i.id); setOpen(false); }}
+                >
+                  <span className="nav-ico"><NavIcon name={i.id} /></span>
+                  <span className="nav-label">{i.label}</span>
+                </button>
+              ))}
+            </div>
+          ))}
         </div>
-        {action ? <div className="page-action">{action}</div> : null}
-      </header>
-      {children}
-    </section>
-  );
-}
-
-function Loading({ rows = 4 }: { rows?: number }) {
-  return (
-    <div className="card" aria-busy="true" aria-live="polite">
-      <div className="skeleton">
-        {Array.from({ length: rows }).map((_, i) => (
-          <div className="skeleton-row" key={i}>
-            <span className="skel" style={{ width: `${68 - i * 9}%` }} />
-            <span className="skel skel-tag" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// Type guard — keeps EndpointMissingError narrowing live at call sites.
-function isMissing(e: unknown): boolean {
-  return e instanceof EndpointMissingError;
-}
-
-function ErrorState({ message }: { message: string }) {
-  return (
-    <div className="card state-msg state-error" role="alert">
-      <span className="state-ico" aria-hidden="true">!</span>
-      <div>
-        <strong>Couldn’t load this</strong>
-        <p className="mono">{message}</p>
-      </div>
-    </div>
-  );
-}
-
-// Honest "endpoint not ready" banner — used when the backend route isn't live.
-function EndpointMissing({ endpoint }: { endpoint: string }) {
-  return (
-    <div className="card missing state-msg">
-      <span className="state-ico" aria-hidden="true"><Glyph name="alert" /></span>
-      <div>
-        <strong>Waiting on the backend</strong>
-        <p>{endpoint} isn’t live in the running server yet. The screen fills in automatically once it ships; nothing to do here.</p>
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({ title, hint, icon }: { title: string; hint?: ReactNode; icon?: ReactNode }) {
-  return (
-    <div className="card empty">
-      <span className="empty-orb" aria-hidden="true">{icon}</span>
-      <strong>{title}</strong>
-      {hint ? <p className="muted">{hint}</p> : null}
+      ) : null}
     </div>
   );
 }
@@ -352,7 +409,7 @@ function ContextPage() {
           {stale && <span className="tag info" style={{ marginRight: 8 }}>idle snapshot</span>}
           compact at <strong>{d.thresholdPct}%</strong> ({fmt((d.thresholdPct * d.windowTok) / 100)} tok) ·{" "}
           {over ? (
-            <span className={stale ? "warn" : "err"}>over threshold — compacts on next turn</span>
+            <span className={stale ? "warn" : "err"}>over threshold, compacts on next turn</span>
           ) : (
             <span>{headroom}% headroom</span>
           )}
@@ -367,123 +424,11 @@ function ContextPage() {
       </div>
       <div className="card">
         <div className="card-title">Session</div>
-        <div className="kv"><span className="kv-k">model</span><span className="kv-v mono">{d.model || "—"}</span></div>
-        <div className="kv"><span className="kv-k">project</span><span className="kv-v mono">{d.project || "—"}</span></div>
-        <div className="kv"><span className="kv-k">session</span><span className="kv-v mono">{d.session || "—"}</span></div>
+        <div className="kv"><span className="kv-k">model</span><span className="kv-v mono">{d.model || "not set"}</span></div>
+        <div className="kv"><span className="kv-k">project</span><span className="kv-v mono">{d.project || "not set"}</span></div>
+        <div className="kv"><span className="kv-k">session</span><span className="kv-v mono">{d.session || "not set"}</span></div>
       </div>
     </Page>
-  );
-}
-
-// ── Models (new) — inline-editable role/task routing ──────────────────────
-function ModelsPage() {
-  const qc = useQueryClient();
-  const { data, isLoading, error } = useQuery({ queryKey: ["models"], queryFn: api.models });
-  const setMut = useMutation({
-    mutationFn: (v: { section: "roles" | "tasks"; key: string; value: string }) =>
-      api.modelSet(v.section, v.key, v.value),
-    onSuccess: (updated: ModelConfig) => qc.setQueryData(["models"], updated),
-  });
-
-  if (isLoading) return <Page title="Models" sub="Which model each task runs on."><Loading rows={5} /></Page>;
-  if (error) {
-    return (
-      <Page title="Models" sub="Which model each task runs on.">
-        {isMissing(error) ? <EndpointMissing endpoint="/api/models" /> : <ErrorState message={(error as Error).message} />}
-      </Page>
-    );
-  }
-  if (!data) return <Page title="Models"><EmptyState title="No model config" /></Page>;
-
-  const roleOrder: ModelRole[] = ["default", "plan", "smol", "slow", "vision"];
-  const roles = roleOrder.filter((r) => data.roles[r] !== undefined || r === "default");
-  const classes = data.classes ?? ["plan", "review", "debug", "code", "trivial"];
-  return (
-    <Page
-      title="Models"
-      sub={<>Routing config at <code>{data.path || "~/.config/ckit/models.toml"}</code>. Thinking work goes to Opus; mechanical work to GLM.</>}
-    >
-      <div className="card">
-        <div className="card-title">Routing philosophy</div>
-        <div className="model-philosophy">
-          <div className="model-track">
-            <span className="model-track-label">thinking</span>
-            <span className="model-track-models">
-              <span className="tag accent">plan</span>
-              <span className="tag accent">review</span>
-              <span className="tag accent">debug</span>
-              <span className="muted">→</span>
-              <span className="tag accent">opus</span>
-            </span>
-          </div>
-          <div className="model-track">
-            <span className="model-track-label">mechanical</span>
-            <span className="model-track-models">
-              <span className="tag">code</span>
-              <span className="tag">edit</span>
-              <span className="tag">default</span>
-              <span className="tag">trivial</span>
-              <span className="muted">→</span>
-              <span className="tag">glm</span>
-            </span>
-          </div>
-        </div>
-        <p className="hint faint">Quick picks: opus · glm · haiku · codex. Changes write to the config immediately.</p>
-      </div>
-
-      <div className="models-grid">
-        <div className="card">
-          <div className="card-title">Roles</div>
-          <div className="model-table">
-            {roles.map((r) => (
-              <ModelRow
-                key={r}
-                name={r}
-                hint={ROLE_HINTS[r]}
-                value={data.roles[r] ?? ""}
-                saving={setMut.isPending && setMut.variables?.section === "roles" && setMut.variables?.key === r}
-                onChange={(v) => setMut.mutate({ section: "roles", key: r, value: v })}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="card">
-          <div className="card-title">Tasks by class</div>
-          <div className="model-table">
-            {classes.map((cls) => (
-              <ModelRow
-                key={cls}
-                name={cls}
-                hint={TASK_HINTS[cls] ?? "per-class"}
-                value={data.tasks[cls] ?? ""}
-                saving={setMut.isPending && setMut.variables?.section === "tasks" && setMut.variables?.key === cls}
-                onChange={(v) => setMut.mutate({ section: "tasks", key: cls, value: v })}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-    </Page>
-  );
-}
-
-function ModelRow({ name, hint, value, saving, onChange }: {
-  name: string; hint?: string; value: string; saving: boolean; onChange: (v: string) => void;
-}) {
-  const opts = Array.from(new Set([...MODEL_HINTS, value].filter(Boolean) as string[]));
-  return (
-    <div className="model-row">
-      <div className="model-key">
-        <span className="model-key-name">{name}</span>
-        {hint ? <span className="model-key-hint">{hint}</span> : null}
-      </div>
-      <div className="model-val">
-        <select className="model-select" value={value} onChange={(e) => onChange(e.target.value)} disabled={saving}>
-          {opts.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-        {saving && <span className="model-saving">saving…</span>}
-      </div>
-    </div>
   );
 }
 
@@ -541,7 +486,7 @@ function SkillsPage() {
         <div className="toolbar">
           <input
             className="grow"
-            placeholder="Import skill — github URL, gh:owner/repo, path:/abs/dir, or builtin:name"
+            placeholder="Import skill: github URL, gh:owner/repo, path:/abs/dir, or builtin:name"
             value={spec}
             onChange={(e) => setSpec(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && spec) add.mutate(spec); }}
@@ -568,7 +513,7 @@ function SkillsPage() {
             <div className="row" key={s.name}>
               <div className="row-main">
                 <div className="row-title mono">{s.name}</div>
-                <div className="row-meta mono">{s.source || "—"}{s.global ? " · global" : ""}{s.local ? " · project" : ""}</div>
+                <div className="row-meta mono">{s.source || "not set"}{s.global ? " · global" : ""}{s.local ? " · project" : ""}</div>
               </div>
               <button
                 className={`tag tag-btn ${s.tier === "always" ? "ok" : s.tier === "off" ? "muted" : "accent"}`}
@@ -604,7 +549,7 @@ function MemoryPage() {
   return (
     <Page
       title="Memory"
-      sub="The project memory spine (agents/*.md). Writes are sandboxed — no path escape."
+      sub="The project memory spine (agents/*.md). Writes are sandboxed (no path escape)."
       action={
         <button className={preview ? "ghost" : ""} onClick={() => setPreview((p) => !p)}>
           {preview ? "Edit" : "Preview"}
@@ -693,7 +638,7 @@ function EngineRunBoard() {
     return (
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="tile-head"><strong>/auto engine</strong><span className="tag warn">idle</span></div>
-        <p className="tile-hint">No active run. Start one in omp with <code>/auto &lt;goal&gt;</code> — this board mirrors the real <code>.cache/8sync/engine/state.json</code>.</p>
+        <p className="tile-hint">No active run. Start one in omp with <code>/auto &lt;goal&gt;</code>; this board mirrors the real <code>.cache/8sync/engine/state.json</code>.</p>
       </div>
     );
   }
@@ -704,12 +649,12 @@ function EngineRunBoard() {
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="tile-head">
-        <strong>/auto engine — live run</strong>
+        <strong>/auto engine: live run</strong>
         <span className="tag ok">{done}/{total} done{blocked ? ` · ${blocked} blocked` : ""}</span>
       </div>
       {data.goal && <p className="tile-hint" style={{ marginTop: 0 }}>{data.goal}</p>}
-      <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,.08)", overflow: "hidden", margin: "8px 0" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: "#7c5cff" }} />
+      <div style={{ height: 6, borderRadius: 3, background: "var(--surface-3)", overflow: "hidden", margin: "8px 0" }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: "var(--accent)" }} />
       </div>
       {data.current && (
         <p className="tile-sub">▸ current: <strong>{data.current.task}</strong> <span className="tag">{data.current.slice}</span></p>
@@ -874,7 +819,7 @@ function CodegraphPage() {
   return (
     <Page
       title="Codegraph"
-      sub={`${fmt(data.total_nodes)} nodes · ${fmt(data.total_edges)} edges · ${data.languages.length} languages — live from codebase-memory-mcp.`}
+      sub={`${fmt(data.total_nodes)} nodes · ${fmt(data.total_edges)} edges · ${data.languages.length} languages, live from codebase-memory-mcp.`}
     >
       <div className="card" style={{ padding: 0, height: 340, overflow: "hidden" }}>
         <ReactFlow
@@ -890,10 +835,10 @@ function CodegraphPage() {
           <Controls showInteractive={false} />
         </ReactFlow>
       </div>
-      <p className="muted list-count">Package call graph — box size/tint ≈ node count, edge label = call count between packages.</p>
+      <p className="muted list-count">Package call graph: box size/tint ≈ node count, edge label = call count between packages.</p>
 
       <div className="card">
-        <div className="card-title">Clusters ({data.clusters.length}) — de-facto modules from Leiden community detection</div>
+        <div className="card-title">Clusters ({data.clusters.length}): de-facto modules from Leiden community detection</div>
         <div className="grid">
           {data.clusters.slice(0, 12).map((c) => (
             <div className="card tile" key={c.id} style={{ margin: 0 }}>
@@ -942,7 +887,7 @@ function CodegraphPage() {
                 {search.data!.results.map((r) => (
                   <li key={r.qualified_name}>
                     <button className="link" onClick={() => setSelected(r)}>
-                      {r.name} <span className="muted">— {r.file_path}:{r.start_line}</span>
+                      {r.name} <span className="muted">· {r.file_path}:{r.start_line}</span>
                     </button>
                   </li>
                 ))}
@@ -954,7 +899,7 @@ function CodegraphPage() {
             {data.hotspots.slice(0, 8).map((h) => (
               <li key={h.qualified_name}>
                 <button className="link" onClick={() => setSelected({ name: h.name, qualified_name: h.qualified_name, label: "Function", file_path: "", start_line: 0, end_line: 0, rank: 0 })}>
-                  {h.name} <span className="muted">— {h.fan_in} callers</span>
+                  {h.name} <span className="muted">· {h.fan_in} callers</span>
                 </button>
               </li>
             ))}
@@ -983,7 +928,7 @@ function BenchPage() {
   return (
     <Page
       title="Bench"
-      sub="Per-session context budget — what the agent pays upfront vs. what progressive disclosure defers."
+      sub="Per-session context budget: what the agent pays upfront vs. what progressive disclosure defers."
       action={
         <button className="primary" onClick={() => refetch()} disabled={isFetching}>
           {isFetching ? "Running…" : "Re-run"}
@@ -1068,7 +1013,7 @@ function WorkspacesPage() {
   return (
     <Page
       title="Workspaces"
-      sub={<>omp profiles + current project. Activate records the choice (advisory — run omp with <code>--profile</code> in that dir to isolate).</>}
+      sub={<>omp profiles + current project. Activate records the choice (advisory: run omp with <code>--profile</code> in that dir to isolate).</>}
       action={<button className="primary" onClick={() => setCreating(true)}><Glyph name="plus" /> New project</button>}
     >
       {creating ? <NewProjectModal onClose={() => setCreating(false)} onCreated={() => { setCreating(false); qc.invalidateQueries(); }} /> : null}
@@ -1077,8 +1022,8 @@ function WorkspacesPage() {
       ) : (
         <>
           <div className="card">
-            <div className="kv"><span className="kv-k">current project</span><span className="kv-v mono">{data.project || "—"}</span></div>
-            <div className="kv"><span className="kv-k">session</span><span className="kv-v mono">{data.session || "—"}</span></div>
+            <div className="kv"><span className="kv-k">current project</span><span className="kv-v mono">{data.project || "not set"}</span></div>
+            <div className="kv"><span className="kv-k">session</span><span className="kv-v mono">{data.session || "not set"}</span></div>
           </div>
           <div className="card">
             <div className="card-title">Profiles</div>
@@ -1258,7 +1203,7 @@ function TeamPage() {
       ) : null}
       {data ? (
         <div className="card list">
-          <div className="row row-total"><strong>Readiness</strong><span className="pct">{data.readiness ? `${data.readiness.overall}%` : "—"}</span></div>
+          <div className="row row-total"><strong>Readiness</strong><span className="pct">{data.readiness ? `${data.readiness.overall}%` : "not set"}</span></div>
           {data.roster.map((r) => (
             <div className="row" key={r.type}>
               <div className="row-main">
@@ -1339,7 +1284,7 @@ function McpPage() {
           <input type="text" placeholder="name" value={name} onChange={(e) => setName(e.target.value)} aria-label="server name" style={{ maxWidth: 160 }} />
           <input
             className="grow"
-            placeholder="Install — `npx -y pkg`, `uvx pkg`, or an https remote URL"
+            placeholder="Install: `npx -y pkg`, `uvx pkg`, or an https remote URL"
             value={spec}
             onChange={(e) => setSpec(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && name && spec) add.mutate(); }}
@@ -1350,7 +1295,7 @@ function McpPage() {
           </button>
         </div>
         {add.isError ? <p className="hint hint-err">Install failed: {(add.error as Error).message}</p> : null}
-        {add.isSuccess ? <p className="hint hint-ok">Installed{add.data?.note ? ` — ${add.data.note}` : ". omp loads it next session."}</p> : null}
+        {add.isSuccess ? <p className="hint hint-ok">Installed{add.data?.note ? `: ${add.data.note}` : ". omp loads it next session."}</p> : null}
       </div>
       {isLoading ? <Loading rows={3} /> : error ? <ErrorState message={(error as Error).message} /> : !data || data.servers.length === 0 ? (
         <EmptyState title="No MCP servers registered" hint="Install one above, or browse the Marketplace." />
@@ -1445,39 +1390,6 @@ function RulesPage() {
   );
 }
 
-// ── Workflow (react-flow editor + sample templates) ────────────────────────
-// Node = one workflow step (skill / subagent / tool call). Export generates a
-// standalone omp extension registering a model-callable `<name>_run` tool.
-const WF_KIND_LABEL: Record<WfKind, string> = { step: "skill", subagent: "subagent", tool: "tool" };
-let wfCounter = 0;
-
-function makeWfNode(kind: WfKind): Node<WfData> {
-  wfCounter += 1;
-  return {
-    id: `n${Date.now()}_${wfCounter}`,
-    type: "wf",
-    position: { x: 80 + Math.round(Math.random() * 160), y: 80 + Math.round(Math.random() * 120) },
-    data: { label: `New ${WF_KIND_LABEL[kind]}`, kind, ref: "" },
-  };
-}
-
-function WfNodeView({ data }: NodeProps<Node<WfData>>) {
-  const color = data.kind === "subagent" ? "var(--accent-bright)" : data.kind === "tool" ? "var(--warn)" : "var(--ok)";
-  return (
-    <div className="wf-node" style={{ borderColor: color }}>
-      <Handle type="target" position={Position.Top} />
-      <div className="wf-node-kind" style={{ color }}>{WF_KIND_LABEL[data.kind]}</div>
-      <div className="wf-node-label">{data.label}</div>
-      {data.ref ? <div className="wf-node-ref">{data.ref}</div> : null}
-      <Handle type="source" position={Position.Bottom} />
-    </div>
-  );
-}
-
-// react-flow's NodeTypes is invariant over the Node generic; cast through unknown.
-const wfNodeTypes = { wf: WfNodeView } as unknown as NodeTypes;
-const elk = new ELK();
-
 // ── Marketplace (discover + install skills / MCP from external registries) ───
 function MarketplacePage() {
   const qc = useQueryClient();
@@ -1507,7 +1419,7 @@ function MarketplacePage() {
   return (
     <Page
       title="Marketplace"
-      sub={<>Discover &amp; install <b>MCP servers</b> and <b>skills</b> from public registries — one click into this project.</>}
+      sub={<>Discover &amp; install <b>MCP servers</b> and <b>skills</b> from public registries, one click into this project.</>}
       action={
         <div className="mk-toolbar">
           <div className="seg">
@@ -1556,7 +1468,7 @@ function MarketplacePage() {
                     {it.stars > 0 ? <span className="tag muted">★ {it.stars.toLocaleString()}</span> : null}
                   </div>
                 </div>
-                <p className="mk-desc">{it.description || "—"}</p>
+                <p className="mk-desc">{it.description || "No description"}</p>
                 <div className="mk-foot">
                   <span className="tag muted mono">{it.install.type}</span>
                   <button
@@ -1615,7 +1527,7 @@ function KnowledgePage() {
   return (
     <Page
       title="Knowledge"
-      sub={<>Curated from <b>sindresorhus/awesome</b> — pick high-signal resources, save them into this project's <code>agents/REFERENCES.md</code>.</>}
+      sub={<>Curated from <b>sindresorhus/awesome</b>: pick high-signal resources, save them into this project's <code>agents/REFERENCES.md</code>.</>}
       action={
         <button className="ghost" disabled={isFetching}
           onClick={async () => { await api.knowledge(search, true); refetch(); }}>
@@ -1680,142 +1592,6 @@ function KnowledgePage() {
       ) : null}
       {saved ? <p className="hint hint-ok">{saved}</p> : null}
       {apply.error ? <p className="hint hint-err">{(apply.error as Error).message}</p> : null}
-    </Page>
-  );
-}
-
-function WorkflowPage() {
-  const qc = useQueryClient();
-  const [name, setName] = useState("demo");
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<WfData>>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [selId, setSelId] = useState<string | null>(null);
-
-  const list = useQuery({ queryKey: ["workflows"], queryFn: api.workflows });
-  const templates = useQuery({ queryKey: ["wf-templates"], queryFn: api.workflowTemplates });
-  const saveMut = useMutation({
-    mutationFn: (v: { name: string; nodes: WfNode[]; edges: WfEdge[] }) => api.workflowSave(v.name, v.nodes, v.edges),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["workflows"] }),
-  });
-  const exportMut = useMutation({ mutationFn: (n: string) => api.workflowExport(n) });
-
-  const selected = nodes.find((n) => n.id === selId) ?? null;
-  const onConnect = useCallback((c: Connection) => setEdges((eds) => addEdge(c, eds)), [setEdges]);
-  const addNode = (kind: WfKind) => setNodes((ns) => [...ns, makeWfNode(kind)]);
-  const updateSel = (patch: Partial<WfData>) => {
-    if (!selected) return;
-    setNodes((ns) => ns.map((n) => (n.id === selected.id ? { ...n, data: { ...n.data, ...patch } } : n)));
-  };
-  const loadGraph = (g: { nodes?: WfNode[]; edges?: WfEdge[] } | null) => {
-    if (!g) return;
-    setNodes((g.nodes ?? []).map((x) => ({ id: x.id, type: "wf", position: x.position, data: x.data })));
-    setEdges(g.edges ?? []);
-    setSelId(null);
-  };
-  const load = async (n: string) => { setName(n); loadGraph(await api.workflowGet(n)); };
-  const autoLayout = async () => {
-    const graph: ElkNode = {
-      id: "root",
-      layoutOptions: { "elk.algorithm": "layered", "elk.direction": "DOWN" },
-      children: nodes.map((n) => ({ id: n.id, width: 184, height: 74 })),
-      edges: edges.map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
-    };
-    const laid = await elk.layout(graph);
-    const pos = new Map((laid.children ?? []).map((c) => [c.id, { x: c.x ?? 0, y: c.y ?? 0 }]));
-    setNodes((ns) => ns.map((n) => ({ ...n, position: pos.get(n.id) ?? n.position })));
-  };
-  const save = () => {
-    const wfNodes: WfNode[] = nodes.map((n) => ({ id: n.id, type: n.type, position: n.position, data: n.data }));
-    const wfEdges: WfEdge[] = edges.map((e) => ({ id: e.id, source: e.source, target: e.target }));
-    saveMut.mutate({ name, nodes: wfNodes, edges: wfEdges });
-  };
-
-  return (
-    <Page title="Workflow" sub="Visual agent workflow. Export generates a model-callable omp extension tool.">
-      <div className="wf-toolbar card">
-        <label className="field">
-          <span className="field-label">Name</span>
-          <input className="mono" value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <span className="wf-toolbar-spacer" />
-        <button onClick={() => addNode("step")}>+ Skill step</button>
-        <button onClick={() => addNode("subagent")}>+ Subagent</button>
-        <button onClick={() => addNode("tool")}>+ Tool call</button>
-        <button onClick={autoLayout}>Auto-layout</button>
-        <button className="primary" onClick={save} disabled={saveMut.isPending}>Save workflow</button>
-        <button onClick={() => exportMut.mutate(name)} disabled={exportMut.isPending}>Export to omp</button>
-      </div>
-      {exportMut.data ? (
-        <p className="hint hint-ok mono">exported → {exportMut.data.path} (tool: {exportMut.data.tool})</p>
-      ) : saveMut.data ? (
-        <p className="hint hint-ok mono">saved → {saveMut.data.path}</p>
-      ) : null}
-      <div className="wf-layout">
-        <div className="wf-canvas card">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={wfNodeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodeClick={(_, n) => setSelId(n.id)}
-            fitView
-            minZoom={0.2}
-          >
-            <Background />
-            <Controls />
-            <MiniMap />
-          </ReactFlow>
-        </div>
-        <div className="wf-side card">
-          <h3>Edit node</h3>
-          {selected ? (
-            <>
-              <label className="field">
-                <span className="field-label">Label</span>
-                <input className="mono" value={selected.data.label} onChange={(e) => updateSel({ label: e.target.value })} />
-              </label>
-              <label className="field">
-                <span className="field-label">Kind</span>
-                <select value={selected.data.kind} onChange={(e) => updateSel({ kind: e.target.value as WfKind })}>
-                  <option value="step">skill</option>
-                  <option value="subagent">subagent</option>
-                  <option value="tool">tool</option>
-                </select>
-              </label>
-              <label className="field">
-                <span className="field-label">Ref (skill / tool / subagent id)</span>
-                <input className="mono" value={selected.data.ref} onChange={(e) => updateSel({ ref: e.target.value })} />
-              </label>
-            </>
-          ) : (
-            <p className="muted wf-empty">Select a node to edit, or add one from the toolbar.</p>
-          )}
-          <h3>Templates</h3>
-          {templates.error instanceof EndpointMissingError ? (
-            <p className="wf-empty">Templates endpoint not live yet.</p>
-          ) : templates.isLoading ? (
-            <p className="wf-empty">Loading…</p>
-          ) : (templates.data ?? []).length === 0 ? (
-            <p className="wf-empty">(none)</p>
-          ) : (
-            <ul className="wf-list">
-              {templates.data?.map((t) => (
-                <li key={t.name}><button className="link" onClick={() => { setName(t.name); loadGraph(t); }}>{t.name}</button></li>
-              ))}
-            </ul>
-          )}
-          <h3>Saved workflows</h3>
-          {list.isLoading ? <p className="wf-empty">Loading…</p> : (
-            <ul className="wf-list">
-              {(list.data ?? []).length === 0 ? <li className="wf-empty">(none yet)</li> : list.data?.map((n) => (
-                <li key={n}><button className="link" onClick={() => load(n)}>{n}</button></li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
     </Page>
   );
 }

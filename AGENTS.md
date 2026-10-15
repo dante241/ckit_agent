@@ -4,7 +4,7 @@
 <!-- ckit:skills:begin -->
 ## 🚨 Rules always-on → `~/.omp/agent/APPEND_SYSTEM.md`
 
-Code-intel-first (codegraph · codebase-memory-mcp · serena TRƯỚC grep/read) · headroom cho output dài · memory + `agents/STATE.md` · loop C/D/E · doc-hygiene — **định nghĩa đầy đủ, KHÔNG lặp ở đây**: omp nhúng `~/.omp/agent/APPEND_SYSTEM.md` vào MỌI system prompt (không compact). Đọc file đó là luật bất biến.
+Code-intel-first (codegraph · codebase-memory-mcp · serena qua `xd://` TRƯỚC grep/read) · memory + `agents/STATE.md` · loop C/D/E · doc-hygiene — **định nghĩa đầy đủ, KHÔNG lặp ở đây**: omp nhúng `~/.omp/agent/APPEND_SYSTEM.md` vào MỌI system prompt (không compact). Đọc file đó là luật bất biến.
 
 ## 🧩 Skills — CORE đọc ngay · SPECIALIST + on-demand đọc khi task khớp
 
@@ -12,17 +12,24 @@ Mỗi skill = 1 directory (Agent Skills open standard) có `SKILL.md` (frontmatt
 
 ### ⛔ CORE always-on — mở `SKILL.md` NGAY, trước tool call đầu tiên (thứ tự = ưu tiên, đọc top-down)
 
-  _(no core skills — run `ckit harness init`)_
+  1. `/Users/tungnt2401/.omp/skills/codegraph/SKILL.md`
+  2. `/Users/tungnt2401/.omp/skills/karpathy-guidelines/SKILL.md`
+  3. `/Users/tungnt2401/.omp/skills/ponytail/SKILL.md`
+  4. `/Users/tungnt2401/.omp/skills/8sync-cli/SKILL.md`
 
 ### 🧩 SPECIALIST always-on — biết khả năng, đọc body KHI task khớp
 
 `impeccable` BẮT BUỘC mở body ngay khi có việc UI/design/redesign/audit (kèm `references/house/*`); `assp` copy/offer; `taste` chống slop; `image-routing` ảnh/diff/PDF.
 
-- _(none)_
+- `assp-skill` — `/Users/tungnt2401/.omp/skills/assp-skill/SKILL.md`
+- `impeccable` — `/Users/tungnt2401/.omp/skills/impeccable/SKILL.md`
+- `design-taste-frontend` — `/Users/tungnt2401/.omp/skills/taste-skill/SKILL.md`
+- `image-routing` — `/Users/tungnt2401/.omp/skills/image-routing/SKILL.md`
+- `locate-anything` — `/Users/tungnt2401/.omp/skills/locate-anything/SKILL.md`
 
 ### 🔎 On-demand — tên = trigger; mở `SKILL.md` khi description khớp task
 
-- _(none — add via `ckit skill add <github-url>`)_
+omp tự liệt kê mọi skill (name + description) trong system prompt — không lặp ở đây; đọc `skill://<name>` khi description khớp task.
 <!-- ckit:skills:end -->
 
 > File này dành cho AI tool (omp, claude-code, cursor, opencode, aider, …)

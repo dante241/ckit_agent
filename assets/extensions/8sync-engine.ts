@@ -11,7 +11,7 @@
 // The `/auto` slash command orchestrates these tools into a run-to-done loop.
 // This is THE automation path: a single `/auto` command (no competing `/gs`).
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -506,6 +506,118 @@ export default function (pi: ExtensionAPI) {
       return text(`Removed worktree ${wt}${r.ok ? ` and branch ${branch}` : ""}.`);
     },
   });
+
+  // ── board_ask — Board team members ask each other mid-step ─────────────────
+  // Only inside a Board run (the board sets CKIT_BOARD_ASK_DIR). The question is
+  // a file the board worker routes to the BA / PO (a short read-only session) or
+  // to the boss (dashboard); this tool waits for the answer file. Waiting costs
+  // no tokens; the board pauses the step's timeout while a question is open.
+  const askDir = process.env.CKIT_BOARD_ASK_DIR;
+  if (askDir) {
+    const MAX_ASKS = 5;
+    const timeoutMs = (Number(process.env.CKIT_BOARD_ASK_TIMEOUT) || 1200) * 1000;
+    const from = process.env.CKIT_BOARD_STAGE ?? "dev";
+    let asked = 0;
+    const sleep = (ms: number, signal?: AbortSignal) =>
+      new Promise<void>((res) => {
+        const t = setTimeout(res, ms);
+        signal?.addEventListener("abort", () => (clearTimeout(t), res()), { once: true });
+      });
+    pi.registerTool({
+      name: "board_ask",
+      label: "Board: ask the team",
+      description:
+        "Ask a teammate and WAIT for the answer (this run is headless; `ask` is unavailable). `to`: `ba` = requirements / acceptance criteria / scope detail; `po` = product decision or trade-off (the Leader answers or escalates to the boss); `boss` = only what nobody else can decide (money, data, security, business rules). Ask only when the answer changes what you build — never for things the code, docs or planning tree answer. Give your recommended default in the question. Max 5 per run; on timeout decide yourself and mark it `(auto-decided)`.",
+      parameters: z.object({
+        to: z.enum(["ba", "po", "boss"]),
+        question: z.string().min(5),
+        options: z.array(z.string()).max(5).default(() => []),
+      }),
+      async execute(_id, params, signal) {
+        if (asked >= MAX_ASKS) return text(`Question limit (${MAX_ASKS}) reached for this run — decide yourself and mark it (auto-decided).`);
+        asked++;
+        mkdirSync(askDir, { recursive: true });
+        // Exclusive create (`wx`): parallel askers in this run never share a number.
+        const q = (n: number) =>
+          JSON.stringify({ id: `Q-${n}`, from, to: params.to, question: params.question, options: params.options, at: new Date().toISOString() });
+        let n = 1;
+        for (;;) {
+          try {
+            writeFileSync(join(askDir, `Q-${n}.json`), q(n), { flag: "wx" });
+            break;
+          } catch (e) {
+            if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+            n++;
+          }
+        }
+        const id = `Q-${n}`;
+        const answerPath = join(askDir, `A-${n}.json`);
+        const readAnswer = () => {
+          try {
+            return JSON.parse(readFileSync(answerPath, "utf8")) as { answer: string; by: string };
+          } catch {
+            return null; // absent (the board publishes it complete, via link)
+          }
+        };
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline && !signal?.aborted) {
+          // A pause request beats waiting: return so the steer can be delivered.
+          if (existsSync(join(askDir, "inbox", "PAUSE"))) return text(`The boss asked to pause — ${id} is left open; follow the pause instruction that follows.`);
+          const a = readAnswer();
+          if (a) return text(`Answer from ${a.by} (${id}):\n${a.answer}`);
+          await sleep(2000, signal);
+        }
+        // Aborted (cancel): leave it unanswered — the board closes it.
+        if (signal?.aborted) return text(`${id} cancelled.`);
+        // Claim the timeout exclusively; an answer that landed first wins.
+        try {
+          writeFileSync(answerPath, JSON.stringify({ answer: "", by: "timeout", at: new Date().toISOString() }), { flag: "wx" });
+        } catch {
+          const a = readAnswer();
+          if (a && a.by !== "timeout") return text(`Answer from ${a.by} (${id}):\n${a.answer}`);
+        }
+        return text(`No answer to ${id} in time — decide yourself (take your recommended default), mark it (auto-decided) and say so in your result message.`);
+      },
+    });
+  }
+
+  // ── Inbox: the boss / coordinator interjects into this running step ─────────
+  // Each `inbox/M-<n>.json` is injected into the live session as a steer (at the
+  // next tool boundary). Rename-to-claim makes delivery exactly-once.
+  if (askDir) {
+    const inbox = join(askDir, "inbox");
+    const resultPath = process.env.CKIT_BOARD_RESULT ?? "result.json";
+    const who = (f: string) => (f === "coordinator" ? "the coordinator (acting for the boss)" : "the boss");
+    const deliver = () => {
+      let names: string[] = [];
+      try {
+        names = readdirSync(inbox).filter((n) => /^M-\d+\.json$/.test(n)).sort((a, b) => parseInt(a.slice(2)) - parseInt(b.slice(2)));
+      } catch {
+        return;
+      }
+      for (const name of names) {
+        const sent = join(inbox, name.replace(/\.json$/, ".sent"));
+        try {
+          renameSync(join(inbox, name), sent);
+        } catch {
+          continue; // already claimed
+        }
+        let m: { kind: string; text: string; from: string };
+        try {
+          m = JSON.parse(readFileSync(sent, "utf8"));
+        } catch {
+          continue;
+        }
+        const msg =
+          m.kind === "pause"
+            ? `PAUSE requested by ${who(m.from)}${m.text ? `: ${m.text}` : "."}\nStop at a safe point NOW: finish only the tool call already in progress and start nothing new. If the current engine task's verify already passed, engine_advance it with its files; otherwise leave the edits uncommitted. Then write ${resultPath} = {"verdict": "paused", "message": "<done so far · half-done (files) · next step>"} and end your turn. The step is resumed later in this same session.`
+            : `Message from ${who(m.from)} while you work (it overrides the plan where they conflict): ${m.text}\nAcknowledge it in one line, adjust, and continue.`;
+        pi.sendUserMessage(msg, { deliverAs: "steer" });
+      }
+    };
+    const iv = setInterval(deliver, 2000);
+    (iv as unknown as { unref?: () => void }).unref?.();
+  }
 
   pi.registerCommand("engine", {
     description: "ckit engine status — show plan progress",

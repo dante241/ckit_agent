@@ -28,6 +28,10 @@ fn main() {
         println!("cargo:warning=ckit: web FE not built (no bun/pnpm/npm found) — embedded fallback page; install bun then rebuild for the full dashboard");
     }
     println!("cargo:rerun-if-changed=../../web/dist/index.html");
+    // rust-embed's `compression` (include-flate) does not make cargo track assets/,
+    // so an edited prompt/skill could ship stale. Any change under assets/ reruns
+    // this script, which recompiles the crate and re-embeds.
+    println!("cargo:rerun-if-changed=../../assets");
     println!("cargo:rerun-if-changed=../../web/src");
     println!("cargo:rerun-if-changed=../../web/index.html");
     println!("cargo:rerun-if-changed=../../web/package.json");

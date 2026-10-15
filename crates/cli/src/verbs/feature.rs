@@ -81,7 +81,7 @@ pub fn run(a: Args) -> Result<()> {
 // subcommands
 // ═════════════════════════════════════════════════════════════════
 
-fn new(root: &Path, slug: &str) -> Result<()> {
+pub(crate) fn new(root: &Path, slug: &str) -> Result<()> {
     if !is_kebab(slug) {
         bail!("invalid slug '{}' — use kebab-case (a-z, 0-9, '-'; e.g. zalo-group)", slug);
     }
@@ -151,6 +151,15 @@ fn switch(root: &Path, slug: &str) -> Result<()> {
     write_active_pointer(root, slug);
     ui::ok(&format!("active feature → {}", slug));
     Ok(())
+}
+
+/// Point the ACTIVE slot back at `slug` if something cleared or moved it (a board
+/// task resuming its plan). No-op when it already points there.
+pub(crate) fn ensure_active(root: &Path, slug: &str) -> Result<()> {
+    if active_slug(&root.join(PLANNING_REL)).as_deref() == Some(slug) {
+        return Ok(());
+    }
+    switch(root, slug)
 }
 
 fn status(root: &Path) -> Result<()> {

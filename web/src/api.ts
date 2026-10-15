@@ -93,12 +93,6 @@ export type KnowledgeCategory = { name: string; count: number; entries: Knowledg
 export type KnowledgeCatalog = { source: string; categories: KnowledgeCategory[]; category_count: number; total: number };
 export type KnowledgeApplyResult = { ok: boolean; added: number; path: string };
 export type ProjectCreateResult = { ok: boolean; path: string; skills: { spec: string; ok: boolean }[]; mcp_added: number; knowledge_added: number };
-export type WfKind = "step" | "subagent" | "tool";
-export type WfData = { label: string; kind: WfKind; ref: string };
-export type WfNode = { id: string; type?: string; position: { x: number; y: number }; data: WfData };
-export type WfEdge = { id: string; source: string; target: string };
-export type Workflow = { name?: string; nodes: WfNode[]; edges: WfEdge[] };
-export type WorkflowExport = { ok: boolean; path: string; tool: string };
 
 // Codegraph — codebase-memory-mcp knowledge graph, bridged read-only for viz.
 export type CgPackage = { name: string; node_count: number; fan_in: number; fan_out: number };
@@ -149,17 +143,166 @@ export type ProjectEntry = {
   lastModified?: number | null;
 };
 
-// Model routing config. roles = named slots; tasks = {class: model} keyed by
-// class. Philosophy: thinking (plan/review/debug) → Opus; mechanical
-// (code/edit/default/trivial) → GLM.
+// Model routing config (`~/.config/ckit/models.toml`). roles = named slots;
+// tasks = {class: model} keyed by class. Values are omp role refs (`@task`),
+// model ids, or "" (omp default). `board` = what each Board step really runs,
+// resolved through omp `modelRoles` (`~/.omp/agent/config.yml`).
 export type ModelRole = "default" | "plan" | "smol" | "slow" | "vision";
 export type ModelTask = "plan" | "review" | "debug" | "code" | "trivial";
+export type ModelResolved = {
+  setting: string;
+  model: string | null;
+  via: string;
+};
+export type ModelBoardRow = ModelResolved & {
+  step: string;
+  label: string;
+  who: string;
+  class: ModelTask | null;
+};
 export type ModelConfig = {
   path: string;
   roles: Partial<Record<ModelRole, string>>;
   tasks: Partial<Record<string, string>>;
   classes?: string[];
+  advisor?: boolean;
+  resolved?: Partial<Record<ModelTask, ModelResolved>>;
+  board?: ModelBoardRow[];
+  omp_config?: string;
+  omp_roles?: Record<string, string>;
+  omp_reviewer?: string | null;
 };
+
+// ── Board (AI delivery pipeline). User talks only to the Leader; two user
+// gates (approval, acceptance) sit between the AI stages.
+export type BoardStage =
+  | "investigate" | "intake" | "solution" | "review" | "approval" | "dev" | "test" | "security" | "report" | "acceptance"
+  | "done" | "cancelled";
+/** One step of the fixed catalog (GET /api/board/steps). */
+export type BoardStepDef = { key: BoardStage; label: string; who: string; gate: boolean; requires: BoardStage[] };
+export type BoardStepPreset = { name: string; steps: BoardStage[] };
+export type BoardStepCatalog = { catalog: BoardStepDef[]; presets: BoardStepPreset[] };
+// waiting = needs the USER (questions at intake, approval gate, acceptance gate).
+export type BoardStatus = "queued" | "running" | "waiting" | "failed" | "done" | "cancelled";
+/** `from`: "user" | "leader" | "system", team members "ba" | "po" | "boss", or a mid-step question "dev → po". */
+export type BoardMsg = { from: string; text: string; at: string };
+/** A mid-step question from a running step to the BA, the PO (Leader) or the boss (board_ask). */
+export type BoardAsk = {
+  id: string;
+  from: BoardStage;
+  to: "ba" | "po" | "boss";
+  question: string;
+  options: string[];
+  at: string;
+  /** answering = BA/PO session answering; boss = waiting for the boss; closed = run ended unanswered */
+  status: "answering" | "boss" | "answered" | "timeout" | "closed";
+  answer: string | null;
+  by: string | null;
+  answered_at: string | null;
+};
+export type BoardRun = {
+  stage: BoardStage;
+  n: number;
+  started: string;
+  ended: string | null;
+  exit: number | null;
+  cost: number;
+  verdict: string | null;
+  log: string;
+};
+export type BoardTaskSummary = {
+  id: string;
+  title: string;
+  stage: BoardStage;
+  status: BoardStatus;
+  note: string | null;
+  branch: string | null;
+  /** active `/feature` phase (e.g. "M1"), null before planning or after the last ship */
+  phase: string | null;
+  /** sub-task progress of the active phase (null before a PLAN exists) */
+  progress: { done: number; total: number } | null;
+  cost: number;
+  /** open questions waiting for the boss (asks with status `boss`); absent on old servers */
+  asking?: number;
+  /** paused at a safe point (status `waiting`); absent on summaries of old servers, see `isPaused` */
+  paused?: boolean;
+  /** has run at least once; false → parked as "Chưa bắt đầu" */
+  started?: boolean;
+  /** start of the current run while running (for elapsed time) */
+  run_started?: string | null;
+  created: string;
+  updated: string;
+  /** workflow command name (`cook`) of a slash-command task; null = `/feature` */
+  workflow?: string | BoardWorkflow | null;
+};
+export type BoardTask = BoardTaskSummary & {
+  request: string;
+  base: string | null;
+  /** `/feature` slug; planning tree at agents/planning/<feature>/ */
+  feature: string | null;
+  thread: BoardMsg[];
+  runs: BoardRun[];
+  rounds: { solution: number };
+  /** enabled steps, catalog order; absent on old tasks = Feature đầy đủ */
+  steps?: BoardStage[];
+  /** mid-step questions (board_ask); absent on old tasks */
+  asks?: BoardAsk[];
+  /** the boss's slash-command workflow; absent/null = the `/feature` pipeline */
+  workflow?: BoardWorkflow | null;
+};
+/** A workflow task's command (`/cook`) and the plan file its plan step wrote. */
+export type BoardWorkflow = { name: string; path: string; plan?: string | null };
+/** An omp slash command the board can run as a task's workflow, per project. */
+export type BoardCommand = { name: string; path: string; description: string; argument_hint: string; board: boolean; enabled: boolean };
+/** One document of the task: `/feature` tree file (PROJECT, ROADMAP, M0-CONTEXT…) or board REVIEW/REPORT. */
+export type BoardDoc = { name: string; content: string };
+export type BoardDetail = {
+  task: BoardTask; docs: BoardDoc[]; focus: string | null; phase: string | null;
+  progress: { done: number; total: number } | null;
+  /** finished plan-only task whose branch is still unmerged: "Code theo kế hoạch này" applies; absent on old servers */
+  can_continue?: boolean;
+};
+export type BoardLogLine = { kind: "text" | "tool" | "error"; text: string };
+export type BoardLog = { run: BoardRun | null; running: boolean; lines: BoardLogLine[] };
+export type BoardPhase = { id: string; name: string; state: "done" | "active" | "todo"; ac_pass: number; ac_total: number };
+export type BoardSubTask = {
+  key: string; title: string; files: string; depends: string; ac: string;
+  status: "todo" | "in_progress" | "done" | "blocked"; retries: number; note: string;
+};
+/** One step chip of a phase: done / now / todo. */
+export type PhaseStep = { key: BoardStage; state: "done" | "now" | "todo" };
+/** Sub-task row of the epic view; `commit` = short hash of the branch commit naming the task key. */
+export type SubTaskRow = BoardSubTask & { commit: string | null };
+/** Phase of the epic view; `planned=false` → its tasks are not written yet. */
+export type PhaseBoard = BoardPhase & { goal: string; planned: boolean; steps: PhaseStep[]; tasks: SubTaskRow[] };
+/** GET /api/board/:id/phases. Quick presets (no `/feature` tree): `phases: []`, tasks in `flat`. */
+export type BoardPhases = { phases: PhaseBoard[]; flat: SubTaskRow[]; live: boolean };
+/** Global Telegram bridge: bot token + pairing with the boss's chat. */
+export type TelegramState =
+  | { configured: false }
+  | { configured: true; bot: string; paired: boolean; pair_code: string | null };
+// Every project with board tasks + the current one, sorted by need.
+export type ProjectBoard = {
+  /** absolute root; pass as ?root= to every per-task call */
+  project: string;
+  name: string;
+  current: boolean;
+  waiting: number;
+  failed: number;
+  running: number;
+  queued: number;
+  cost: number;
+  /** ALL tasks, newest first */
+  tasks: BoardTaskSummary[];
+};
+export type BoardAll = { current: string; projects: ProjectBoard[] };
+/** Coordinator chat line, oldest first. `event` = something the coordinator did. */
+export type ChatMsg = { from: "boss" | "coordinator" | "event"; text: string; at: string; cost: number };
+export type CoordState = { enabled: boolean; busy: boolean; chat: ChatMsg[] };
+// PM: deterministic status lines every interval, AI alerts on anomalies, and
+// markdown board reports. Entries arrive newest LAST.
+export type PmEntry = { at: string; task: string | null; stage: BoardStage | null; kind: "status" | "alert" | "report"; text: string };
+export type PmFeed = { entries: PmEntry[]; reporting: boolean; interval_secs: number; last_tick: string | null };
 
 // Error thrown when a backend endpoint is not implemented yet (SPA fallback).
 export class EndpointMissingError extends Error {
@@ -261,14 +404,6 @@ export const api = {
   ruleAdd: (name: string, content: string, scope?: string) =>
     json<{ ok: boolean; path: string }>("/api/rules/add", POST_JSON({ name, content, scope })),
   ruleDelete: (path: string) => json<{ ok: boolean }>("/api/rules/delete", POST_JSON({ path })),
-  workflows: () => json<string[]>("/api/workflows"),
-  workflowGet: (name: string) => json<Workflow>(`/api/workflows/${encodeURIComponent(name)}`),
-  workflowSave: (name: string, nodes: WfNode[], edges: WfEdge[]) =>
-    json<{ ok: boolean; path: string }>(`/api/workflows/${encodeURIComponent(name)}`, POST_JSON({ nodes, edges })),
-  workflowDelete: (name: string) =>
-    json<{ ok: boolean }>(`/api/workflows/${encodeURIComponent(name)}`, { method: "DELETE" }),
-  workflowExport: (name: string) =>
-    json<WorkflowExport>(`/api/workflows/${encodeURIComponent(name)}/export`, { method: "POST" }),
 
   // ── New endpoints (backend ships these in parallel; FE degrades cleanly) ──
   projects: () => json<ProjectEntry[]>("/api/projects"),
@@ -277,11 +412,6 @@ export const api = {
   models: () => json<ModelConfig>("/api/models"),
   modelSet: (section: "roles" | "tasks", key: string, value: string) =>
     json<ModelConfig>("/api/models", POST_JSON({ section, key, value })),
-  // Templates arrive wrapped: [{ name, graph: { name, nodes, edges } }]. Unwrap.
-  workflowTemplates: () =>
-    json<{ name: string; graph: Workflow }[]>("/api/workflows/templates").then((ts) =>
-      ts.map((t) => ({ ...t.graph, name: t.name })),
-    ),
 
   // ── Codegraph (codebase-memory-mcp bridge) ──
   codegraphOverview: () => json<CgOverview>("/api/codegraph/overview"),
@@ -318,4 +448,60 @@ export const api = {
     knowledge?: (KnowledgeEntry & { category: string })[];
   }) =>
     json<ProjectCreateResult>("/api/projects/create", POST_JSON(body)),
+
+  // ── Board (AI delivery pipeline) ──
+  // Every call after the list carries the `project` the list returned (`root`):
+  // task ids repeat across repos, and the dashboard's active project can change
+  // while a task page is open — actions must hit the task that was shown.
+  board: () =>
+    json<{ project: string; tasks: BoardTaskSummary[]; others: { project: string; active: number; waiting: number }[] }>("/api/board"),
+  boardAll: () => json<BoardAll>("/api/board/all"),
+  /** `workflow`: the boss's slash command (`cook`) instead of `/feature`; fixed steps, `steps` ignored. */
+  boardCreate: (root: string, title: string, request: string, steps?: BoardStage[], workflow?: string | null) =>
+    json<BoardTask>(`/api/board?${rootQ(root)}`, POST_JSON({ title, request, steps, workflow: workflow ?? undefined })),
+  boardWorkflows: (root: string) => json<{ commands: BoardCommand[] }>(`/api/board/workflows?${rootQ(root)}`),
+  boardWorkflowToggle: (root: string, name: string, enabled: boolean) =>
+    json<{ commands: BoardCommand[] }>(`/api/board/workflows?${rootQ(root)}`, POST_JSON({ name, enabled })),
+  boardSteps: (root: string, id: string, steps: BoardStage[]) =>
+    json<BoardTask>(`/api/board/${encodeURIComponent(id)}/steps?${rootQ(root)}`, POST_JSON({ steps })),
+  boardStepCatalog: () => json<BoardStepCatalog>("/api/board/steps"),
+  boardTask: (root: string, id: string) => json<BoardDetail>(`/api/board/${encodeURIComponent(id)}?${rootQ(root)}`),
+  boardLog: (root: string, id: string, run?: number) =>
+    json<BoardLog>(`/api/board/${encodeURIComponent(id)}/log?${rootQ(root)}${run != null ? `&run=${run}` : ""}`),
+  boardReply: (root: string, id: string, text: string) =>
+    json<BoardTask>(`/api/board/${encodeURIComponent(id)}/reply?${rootQ(root)}`, POST_JSON({ text })),
+  /** `thenCode`: a plan-only task also turns on Dev, Test, Report, Acceptance (→ Dev queued). */
+  boardApprove: (root: string, id: string, thenCode = false) =>
+    json<BoardTask>(`/api/board/${encodeURIComponent(id)}/approve?${rootQ(root)}${thenCode ? "&then=code" : ""}`, { method: "POST" }),
+  /** A finished plan-only task goes on to code its approved plan (→ Dev queued). */
+  boardContinue: (root: string, id: string) =>
+    json<BoardTask>(`/api/board/${encodeURIComponent(id)}/continue?${rootQ(root)}`, { method: "POST" }),
+  boardRetry: (root: string, id: string) =>
+    json<BoardTask>(`/api/board/${encodeURIComponent(id)}/retry?${rootQ(root)}`, { method: "POST" }),
+  boardCancel: (root: string, id: string) =>
+    json<BoardTask>(`/api/board/${encodeURIComponent(id)}/cancel?${rootQ(root)}`, { method: "POST" }),
+  boardAskAnswer: (root: string, id: string, qid: string, answer: string) =>
+    json<BoardTask>(`/api/board/${encodeURIComponent(id)}/asks/${encodeURIComponent(qid)}?${rootQ(root)}`, POST_JSON({ answer })),
+  boardPm: (root: string, limit = 100) => json<PmFeed>(`/api/board/pm?${rootQ(root)}&limit=${limit}`),
+  boardInbox: (root: string, id: string, kind: "note" | "pause", text: string) =>
+    json<BoardTask>(`/api/board/${encodeURIComponent(id)}/inbox?${rootQ(root)}`, POST_JSON({ kind, text })),
+  boardResume: (root: string, id: string, text: string) =>
+    json<BoardTask>(`/api/board/${encodeURIComponent(id)}/resume?${rootQ(root)}`, POST_JSON({ kind: "note", text })),
+  coordGet: (root: string) => json<CoordState>(`/api/board/coord?${rootQ(root)}`),
+  coordSay: (root: string, text: string) => json<{ ok: boolean }>(`/api/board/coord?${rootQ(root)}`, POST_JSON({ text })),
+  coordEnabled: (root: string, enabled: boolean) =>
+    json<{ enabled: boolean }>(`/api/board/coord/enabled?${rootQ(root)}`, POST_JSON({ enabled })),
+  boardPmReport: (root: string) => json<{ ok: boolean }>(`/api/board/pm/report?${rootQ(root)}`, { method: "POST" }),
+  boardPhases: (root: string, id: string) =>
+    json<BoardPhases>(`/api/board/${encodeURIComponent(id)}/phases?${rootQ(root)}`),
+
+  // ── Telegram (global, not per project) ──
+  telegramGet: () => json<TelegramState>("/api/board/telegram"),
+  telegramConnect: (token: string) => json<TelegramState>("/api/board/telegram", POST_JSON({ token })),
+  telegramTest: () => json<TelegramState>("/api/board/telegram/test", { method: "POST" }),
+  telegramOff: () => json<TelegramState>("/api/board/telegram/off", { method: "POST" }),
 };
+
+function rootQ(root: string): string {
+  return `root=${encodeURIComponent(root)}`;
+}

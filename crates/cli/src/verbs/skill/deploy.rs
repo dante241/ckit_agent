@@ -1091,6 +1091,10 @@ pub(crate) fn ensure_engine(home: &Path, root: Option<&Path>) -> Result<()> {
         ".omp/commands/cook.md",
         "/cook command",
     )?;
+    // Shared task agents (`task {agent:"ba"}`). Global only — root None so a
+    // project's own `.omp/agents/<name>.md` (packs, user overrides) is never removed;
+    // omp already lets the project copy win.
+    deploy_omp_pair(home, None, "agents/ba.md", ".omp/agent/agents/ba.md", "", "ba agent")?;
     ensure_gw_quota(home)
 }
 
