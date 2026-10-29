@@ -1,5 +1,8 @@
 # Comment Templates (post lên GitLab MR)
 
+**Nếu có lỗi:**
+
+````markdown
 ## Code Review — MR !<NUMBER>
 
 **Reviewer:** Dante | **Files:** <COUNT> | **Dòng thay đổi:** +<ADD>/-<DEL>
@@ -130,7 +133,7 @@ Danh sách tiêu chí (chỉ hiển thị những tiêu chí áp dụng cho MR):
 
 ---
 :robot: Reviewed by Dante
-```
+````
 
 **Nếu không có lỗi:**
 

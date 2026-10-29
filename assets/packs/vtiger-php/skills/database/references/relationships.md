@@ -72,72 +72,61 @@ WHERE pbr.pricebookid = ? AND e.deleted = 0
 
 ## Create Relationships via Code
 
-### Define in Extensions.php
+### Declare in RelationshipsRegister.php
+
+Relations are declared per module in `modules/<Module>/RelationshipsRegister.php` (`Extensions.php` is unrelated — it holds addLink scripts). QuickRepair calls `RelationshipUtils::repairRelationships()`, which reads every register and creates missing `vtiger_relatedlists` rows; Settings → Layout Editor → Relation writes the same file.
 
 ```php
-// File: modules/CPAdvertisingAccount/Extensions.php
+// File: modules/CPAutomaticTaskList/RelationshipsRegister.php (real)
 <?php
 
-return [
-    'relationships' => [
-        // 1:N relationship (CPAdvertisingAccount → Campaigns)
-        [
-            'relatedModule' => 'Campaigns',
-            'label' => 'Campaigns',
-            'relationshipType' => '1:N',
-        ],
-
-        // N:N relationship (CPAdvertisingAccount ↔ Contacts)
-        [
-            'relatedModule' => 'Contacts',
-            'label' => 'Related Contacts',
-            'relationshipType' => 'N:N',
-        ],
-    ],
-];
+$relationships = array(
+    // N:N (junction vtiger_crmentityrel)
+    array(
+        'leftSideModule' => 'CPAutomaticTaskList',
+        'rightSideModule' => 'Documents',
+        'relationshipType' => 'N:N',
+        'relationshipName' => 'LBL_DOCUMENT_LIST',
+        'enabledActions' => array(
+            'ADD',
+            'SELECT'
+        ),
+        'listingFunctionName' => 'get_related_list',
+        'leftSideReferenceFieldName' => null,
+        'rightSideReferenceFieldName' => null
+    ),
+    // 1:N (reference field on the right-side module)
+    array(
+        'leftSideModule' => 'CPAutomaticTaskList',
+        'rightSideModule' => 'CPEventPRMessageLog',
+        'relationshipType' => '1:N',
+        'relationshipName' => 'LBL_EVENT_PR_MESSAGE_LOG_LIST',
+        'enabledActions' => array(),
+        'listingFunctionName' => 'get_dependents_list',
+        'leftSideReferenceFieldName' => null,
+        'rightSideReferenceFieldName' => 'related_cpautomatictasklist'
+    ),
+);
 ```
 
 ### RelatedList Function in Entity
 
-```php
-// File: modules/Accounts/Accounts.php
-class Accounts extends CRMEntity {
-
-    public function get_contacts($id, $cur_tab_id, $rel_tab_id, $actions = false) {
-        global $adb;
-
-        $query = "SELECT vtiger_contactdetails.contactid, vtiger_contactdetails.firstname,
-                         vtiger_contactdetails.lastname, vtiger_contactdetails.email
-                  FROM vtiger_contactdetails
-                  INNER JOIN vtiger_crmentity ON vtiger_crmentity.crmid = vtiger_contactdetails.contactid
-                  WHERE vtiger_crmentity.deleted = 0
-                  AND vtiger_contactdetails.accountid = ?";
-
-        $result = $adb->pquery($query, [$id]);
-
-        $returnData = [];
-        while ($row = $adb->fetchByAssoc($result)) {
-            $row = decodeUTF8($row);
-            $returnData[] = $row;
-        }
-
-        return $returnData;
-    }
-}
-```
+Generic relations use `get_related_list` (N:N) / `get_dependents_list` (1:N). Legacy core modules keep custom listing functions such as `Accounts::get_contacts` (`modules/Accounts/Accounts.php:191`): they build the related-list SQL and return `GetRelatedList($this_module, $related_module, $other, $query, $button, $returnset)` — not a row array. Do not copy their `$id` concatenation into new code; new relations should use the generic functions.
 
 ## Register in vtiger_relatedlists
 
 Relationships are stored in `vtiger_relatedlists` table:
 
 ```sql
+-- relation_id is not AUTO_INCREMENT: take it from $adb->getUniqueID('vtiger_relatedlists')
 INSERT INTO vtiger_relatedlists
-(tabid, related_tabid, name, sequence, label, presence, actions)
+(relation_id, tabid, related_tabid, name, sequence, label, presence, actions)
 VALUES
-(?, ?, ?, ?, ?, 0, 'ADD,SELECT');
+(?, ?, ?, ?, ?, ?, 0, 'ADD,SELECT');
 ```
 
 **Parameters:**
+- `relation_id`: from `getUniqueID('vtiger_relatedlists')`
 - `tabid`: Parent module ID
 - `related_tabid`: Related module ID
 - `name`: Function name in Entity (e.g., `get_contacts`)
@@ -182,7 +171,7 @@ $relationModel->addRelation($sourceRecordModel->getId(), $relatedRecordModel->ge
 
 ```php
 // Unlink records
-$relationModel->removeRelation($sourceRecordModel->getId(), $relatedRecordModel->getId());
+$relationModel->deleteRelation($sourceRecordModel->getId(), $relatedRecordModel->getId());
 ```
 
 ### Get Related Records
@@ -201,6 +190,8 @@ $relatedRecords = $relationListView->getEntries($pagingModel);
 
 ## Migration Example
 
+Prefer adding the entry to `RelationshipsRegister.php` and letting QuickRepair create it. When a migration must insert the row directly, use `getTabid()` and `$this->db` (`CPMigration_Base_Model` only wraps `pquery()`):
+
 ```php
 // File: modules/CPMigration/migrations/2025.02.11.14.30.00_AddCampaignRelationship.php
 <?php
@@ -208,36 +199,32 @@ $relatedRecords = $relationListView->getEntries($pagingModel);
 return new class extends CPMigration_Base_Model {
 
     public function up(): int {
-        // Get module IDs
-        $adsAccountTabId = $this->getTabId('CPAdvertisingAccount');
-        $campaignTabId = $this->getTabId('Campaigns');
+        $adsAccountTabId = (int) getTabid('CPAdvertisingAccount');
+        $campaignTabId = (int) getTabid('Campaigns');
 
         if (!$adsAccountTabId || !$campaignTabId) {
             return self::UP_FAILED;
         }
 
-        // Check if relationship exists
-        $sql = "SELECT 1 FROM vtiger_relatedlists
-                WHERE tabid = ? AND related_tabid = ?";
+        // Idempotent: skip when the relation already exists
+        $sql = "SELECT 1 FROM vtiger_relatedlists WHERE tabid = ? AND related_tabid = ?";
         $result = $this->pquery($sql, [$adsAccountTabId, $campaignTabId]);
 
-        if ($this->num_rows($result) > 0) {
-            return self::UP_SUCCESS; // Already exists
+        if ($this->db->num_rows($result) > 0) {
+            return self::UP_SUCCESS;
         }
 
-        // Get next sequence
-        $sql = "SELECT MAX(sequence) as max_seq FROM vtiger_relatedlists WHERE tabid = ?";
-        $maxSeq = (int) $this->getOne($sql, [$adsAccountTabId]);
+        $sql = "SELECT MAX(sequence) FROM vtiger_relatedlists WHERE tabid = ?";
+        $maxSeq = (int) $this->db->getOne($sql, [$adsAccountTabId]);
 
-        // Insert relationship
-        $sql = "INSERT INTO vtiger_relatedlists
-                (tabid, related_tabid, name, sequence, label, presence, actions)
-                VALUES (?, ?, ?, ?, ?, 0, 'ADD,SELECT')";
+        $sql = "INSERT INTO vtiger_relatedlists (relation_id, tabid, related_tabid, name, sequence, label, presence, actions)
+                VALUES (?, ?, ?, ?, ?, ?, 0, 'ADD,SELECT')";
 
         $this->pquery($sql, [
+            $this->db->getUniqueID('vtiger_relatedlists'),
             $adsAccountTabId,
             $campaignTabId,
-            'get_related_list', // Generic function name
+            'get_related_list',
             $maxSeq + 1,
             'Campaigns'
         ]);
@@ -253,18 +240,7 @@ return new class extends CPMigration_Base_Model {
 
 ## Quick Repair After Changes
 
-After adding/modifying relationships programmatically:
-
-1. Go to **Settings → Module Manager → {Module}**
-2. Click **Quick Repair** button
-3. System rebuilds relationship cache
-
-Or via code:
-
-```php
-$moduleModel = Vtiger_Module_Model::getInstance('Accounts');
-$moduleModel->updateCache();
-```
+After adding/modifying relationships, run **Quick Repair** (it rebuilds relations from every `RelationshipsRegister.php` via `RelationshipUtils::repairRelationships()`). There is no `updateCache()` API.
 
 ## Common Patterns
 
@@ -278,7 +254,7 @@ INNER JOIN vtiger_crmentity e ON e.crmid = c.contactid
 WHERE ccr.campaignid = ? AND e.deleted = 0
 ```
 
-### Potentials → Contacts (1:N)
+### Potentials by Account (1:N via related_to)
 
 ```sql
 SELECT p.potentialid, p.potentialname, p.amount

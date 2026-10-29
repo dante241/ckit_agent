@@ -12,6 +12,13 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Fixed
+- `vtiger-php` pack + bundled skills audited against the real vtiger repo, DB and CLIs (2026-10-29): code samples rewritten to real APIs and parent signatures (report handlers, views/ui asset loading, database transactions/Redis, cron/queue, notification, integration, error-handling, export, inventory, module, testing, callcenter, language, migration, handler, config); rule examples fixed (`createPicklistValues(..., true)` is `$isOverride` and wipes values, `getContainer()` is defined by the subclass, TTSR table matches each rule's `scope`, non-existent hooks/commands removed); `cli_tool.php -c quick_repair`; dead harness tools replaced by omp `browser`/`ask`/`xd://mcp__pms_*`.
+- Bundled skills: `codegraph` (no `codegraph context`, `8sync harness init`, current flags), `8sync-cli` (verified verbs; `8sync ship` is GitHub-only; `agents/STATE.md`/`KNOWLEDGE.md` updates required), `impeccable` (one script path, omp tools, opt-in init, house routing trimmed to existing skills), `senior-frontend`/`senior-security`/`taste-skill` (current Next/Zod/OWASP 2025 APIs, generator PascalCase), `ponytail`, `feature`, `token-bench` (PHP symbols), `full-flow`/`encore-deploy`/`assp-skill` scoped to their projects.
+
+### Removed
+- `vtiger-php` pack: `ckit-cli` (folded into `force-load`), `code-simplification` (covered by `ponytail`/`karpathy-guidelines`), `using-agent-skills` (duplicate of the external skill).
+
 ## [0.1.32] - 2026-10-07
 
 ### Added

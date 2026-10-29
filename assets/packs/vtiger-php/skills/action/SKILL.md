@@ -20,7 +20,7 @@ user-invocable: false
 | Aspect | Action | View |
 |--------|--------|------|
 | **Response** | JSON | HTML |
-| **Extends** | `Vtiger_Action_Controller` | `Vtiger_Index_View` |
+| **Extends** | `Vtiger_Action_Controller` | `Vtiger_Index_View` (core List/Edit/Detail) / `CustomView_Base_View` (custom page) |
 | **URL Param** | `action=ActionName` | `view=ViewName` |
 | **Purpose** | AJAX backend | Page rendering |
 | **Output** | `Vtiger_Response` | Smarty template |
@@ -67,43 +67,49 @@ index.php?module=SalesOrder&action=HandleAjax&mode=updateStatus&record=123
 
 class ModuleName_HandleAjax_Action extends Vtiger_Action_Controller {
 
-    function checkPermission(Vtiger_Request $request) {
-        $moduleName = $request->getModule();
-        $moduleModel = Vtiger_Module_Model::getInstance($moduleName);
-        $currentUserPrivilegesModel = Users_Privileges_Model::getCurrentUserPrivilegesModel();
+	function __construct() {
+		parent::__construct();
+		$this->exposeMethod('updateStatus');
+	}
 
-        if (!$currentUserPrivilegesModel->hasModulePermission($moduleModel->getId())) {
-            throw new AppException(vtranslate($moduleName, $moduleName) . ' ' . vtranslate('LBL_NOT_ACCESSIBLE'));
-        }
-    }
+	function checkPermission(Vtiger_Request $request) {
+		$moduleName = $request->getModule();
+		$moduleModel = Vtiger_Module_Model::getInstance($moduleName);
+		$currentUserPrivilegesModel = Users_Privileges_Model::getCurrentUserPrivilegesModel();
 
-    public function process(Vtiger_Request $request) {
-        $mode = $request->get('mode');
+		if (!$currentUserPrivilegesModel->hasModulePermission($moduleModel->getId())) {
+			throw new AppException(vtranslate($moduleName, $moduleName) . ' ' . vtranslate('LBL_NOT_ACCESSIBLE'));
+		}
+	}
 
-        if (method_exists($this, $mode)) {
-            $this->$mode($request);
-        }
-        else {
-            $response = new Vtiger_Response();
-            $response->setResult(['success' => 0]);
-            $response->emit();
-        }
-    }
+	public function process(Vtiger_Request $request) {
+		$mode = $request->getMode();
 
-    function updateStatus(Vtiger_Request $request) {
-        $response = new Vtiger_Response();
+		// Only whitelisted modes are callable; method_exists() would expose every method (process, checkPermission...)
+		if (!empty($mode) && $this->isMethodExposed($mode)) {
+			$this->invokeExposedMethod($mode, $request);
+			return;
+		}
 
-        try {
-            // Business logic here
-            $response->setResult(['success' => 1, 'message' => 'OK']);
-        }
-        catch (Exception $e) {
-            $response->setError($e->getMessage());
-        }
+		$response = new Vtiger_Response();
+		$response->setResult(['success' => 0]);
+		$response->emit();
+	}
 
-        $response->emit();
-        return;
-    }
+	function updateStatus(Vtiger_Request $request) {
+		$response = new Vtiger_Response();
+
+		try {
+			// Business logic here
+			$response->setResult(['success' => 1, 'message' => 'OK']);
+		}
+		catch (Throwable $e) {
+			$response->setError($e->getMessage());
+		}
+
+		$response->emit();
+		return;
+	}
 }
 ```
 
@@ -159,9 +165,8 @@ class CPGoal_CalculateProgress_Action extends Vtiger_Action_Controller {
                 'progress' => $progress,
                 'message' => vtranslate('LBL_PROGRESS_CALCULATED', 'CPGoal')
             ]);
-
         }
-        catch (Exception $e) {
+        catch (Throwable $e) {
             $response->setError($e->getMessage());
         }
 
@@ -179,8 +184,8 @@ class CPGoal_CalculateProgress_Action extends Vtiger_Action_Controller {
 
 1. **Prefer HandleAjax.php** — consolidate AJAX actions into one file per module, use `mode` param to route
 2. **Action returns JSON only** — never echo HTML
-3. **$response->emit() calls exit** — still add `return;` after for safety
-4. **Always try-catch** in process method
+3. **$response->emit() does NOT exit** — always `return;` right after it
+4. **Always try-catch** in process method — `catch (Throwable $e)` at the entry point, `catch` on its own line
 5. **checkPermission must throw AppException** for access denied
 6. **Frontend callback (err,data)** — error-first pattern
 7. **Author name** — use actual dev name in file headers, never "Claude AI"
@@ -193,8 +198,8 @@ class CPGoal_CalculateProgress_Action extends Vtiger_Action_Controller {
 
 ## Exemplars (ưu tiên code Tín Bùi / Tùng Nguyễn — PENDING REVIEW by user)
 
-- HandleAjax chuẩn (tung.nguyen 5/5 commits): `modules/CPMasterPlan/actions/HandleAjax.php`
-- HandleAjax thứ hai để đối chiếu (tung.nguyen): `modules/CPProjectBoard/actions/HandleAjax.php`
+- HandleAjax chuẩn với `exposeMethod` whitelist (Nguyen Tung): `modules/CPAddress/actions/HandleAjax.php`
+- HandleAjax nhiều mode (tung.nguyen): `modules/CPMasterPlan/actions/HandleAjax.php`, `modules/CPProjectBoard/actions/HandleAjax.php` — KHÔNG chép phần dispatch `method_exists($this, $mode)` (mở mọi method qua `mode`), dùng `exposeMethod` như skeleton trên
 
 CẤM viết action từ trí nhớ VTiger open-source — bắt chước file trên.
 
@@ -202,8 +207,9 @@ CẤM viết action từ trí nhớ VTiger open-source — bắt chước file t
 
 ```bash
 php -l modules/<Module>/actions/HandleAjax.php
-# Smoke endpoint (cookie session từ browser đang login):
-curl -s 'http://localhost/vtiger/index.php?module=<Module>&action=HandleAjax&mode=<mode>' \
-  -H 'Cookie: PHPSESSID=<sid>' --data '<params>' | head -c 500
-# Kỳ vọng: JSON {"success":true,...} — KHÔNG phải HTML/blank/PHP error
+# Smoke endpoint qua HTTP thật: POST cần CSRF token `__vtrftk` + session đã login,
+# thiếu token → 'Invalid request'. Cách mint token + seed session: skill vtiger-http-endpoint-smoke-test
+curl -s 'http://localhost/vtiger/index.php' -H 'Cookie: PHPSESSID=<sid>' \
+  --data 'module=<Module>&action=HandleAjax&mode=<mode>&<params>' --data-urlencode "__vtrftk=$TOK" | head -c 500
+# Kỳ vọng: JSON {"success":true,...} — KHÔNG phải HTML/blank/PHP error/'Invalid request'
 ```

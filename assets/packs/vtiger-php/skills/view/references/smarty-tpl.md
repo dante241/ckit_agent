@@ -11,10 +11,9 @@ layouts/v7/modules/<Module>/<TemplateName>.tpl
 ### Example Paths
 
 ```
-layouts/v7/modules/Contacts/CustomView.tpl
-layouts/v7/modules/Contacts/CustomModal.tpl
-layouts/v7/modules/CPGoal/Config.tpl
-layouts/v7/modules/Products/CheckWarranty.tpl
+layouts/v7/modules/Contacts/DetailViewHeaderTitle.tpl
+layouts/v7/modules/Contacts/ModuleSummaryView.tpl
+layouts/v7/modules/Contacts/SummaryViewWidgets.tpl
 ```
 
 ### Custom View Templates (CustomView_Base_View)
@@ -46,7 +45,7 @@ layouts/v7/modules/<Module>/Partials/<PartialName>.tpl
 
 class Contacts_CustomView_View extends Vtiger_Index_View {
 
-    public function process(Vtiger_Request $request): void {
+    function process(Vtiger_Request $request) {
         $viewer = $this->getViewer($request);
 
         // Assign scalar values
@@ -91,11 +90,11 @@ class Contacts_CustomView_View extends Vtiger_Index_View {
 <p>{$RECORD->get('firstname')}</p>
 <p>{$RECORD->getId()}</p>
 
-{* Escaped HTML (default) *}
-<div>{$USER_INPUT}</div>
+{* NOT escaped: auto-escape is disabled (safeHtmlFilter is commented out in includes/runtime/Viewer.php) *}
+<div>{$USER_INPUT|escape}</div>
 
-{* Unescaped HTML (use with caution) *}
-<div>{$HTML_CONTENT nofilter}</div>
+{* Raw output — only for trusted HTML *}
+<div>{$HTML_CONTENT}</div>
 ```
 
 ### Control Structures
@@ -180,10 +179,9 @@ class Contacts_CustomView_View extends Vtiger_Index_View {
     {vtranslate('LBL_SAVE', $MODULE)}
 </button>
 
-{* JavaScript translation (in template) *}
-<script>
-var message = app.vtranslate('JS_SAVE_SUCCESS');
-</script>
+{* JavaScript translation: in the JS file, not an inline <script> (no inline JS in TPL) *}
+{* Resources/<View>.js: app.vtranslate('JS_SAVE_SUCCESS') *}
+<div class="custom-view-container" data-record-id="{$RECORD_ID|escape}"></div>
 ```
 
 ### Comments
@@ -387,7 +385,7 @@ var message = app.vtranslate('JS_SAVE_SUCCESS');
 
 ## Critical Rules
 
-1. **Always Escape**: Variables are auto-escaped. Use `{$VAR nofilter}` only for trusted HTML.
+1. **Escape user data**: output is NOT auto-escaped in this codebase — use `{$VAR|escape}` for user/DB text in HTML and attributes; in JS insert dynamic text with `.text()`.
 2. **Module Name Required**: Always pass `$moduleName` as 2nd arg to `$viewer->view()`.
 3. **Use vtranslate()**: Never hardcode text labels. Use translation keys.
 4. **Check Empty**: Use `{if !empty($VAR)}` before loops and object access.

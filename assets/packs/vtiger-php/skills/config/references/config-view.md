@@ -16,7 +16,7 @@ modules/Settings/Vtiger/
 └── resources/<ConfigName>.css          # Styles
 ```
 
-## BaseConfig_View (Auto-loads JS/CSS)
+## Settings_Vtiger_BaseConfig_View (Auto-loads JS/CSS)
 
 **Location**: `modules/Settings/Vtiger/views/BaseConfig.php`
 
@@ -108,10 +108,7 @@ class Settings_Vtiger_GlobalSearchConfig_View extends Settings_Vtiger_BaseConfig
 
 class Settings_Vtiger_SaveGlobalSearchConfig_Action extends Settings_Vtiger_Basic_Action {
 
-    function checkPermission(Vtiger_Request $request) {
-        return true;
-    }
-
+    // No checkPermission override: the inherited Settings_Vtiger_Index_View::checkPermission() is the admin gate
     function validateRequest(Vtiger_Request $request) {
         $request->validateWriteAccess();
     }
@@ -129,7 +126,8 @@ class Settings_Vtiger_SaveGlobalSearchConfig_Action extends Settings_Vtiger_Basi
 
 **Key points**:
 - Class name: `Settings_Vtiger_Save{ConfigName}_Action`
-- Extends `Settings_Vtiger_Basic_Action`
+- Extends `Settings_Vtiger_Basic_Action` (→ `Settings_Vtiger_IndexAjax_View` → `Settings_Vtiger_Index_View`, whose `checkPermission()` requires `isAdminUser()`). Do NOT override `checkPermission()` with `return true` for system config — the real `SaveGlobalSearchConfig.php` does, which lets any user overwrite `global_search`; don't copy that.
+- ALWAYS override `validateRequest()` with `$request->validateWriteAccess()` (CSRF); the base controller only validates read access.
 - Use `exposeMethod()` in constructor for multiple actions in one controller
 - Always type-cast request data: `(bool)`, `(string)`, `(int)`
 - Return JSON via `Vtiger_Response`
@@ -273,8 +271,8 @@ toggleConfig: function (enable) {
 
 ## Checklist: Creating a New Config View
 
-1. Create view: `modules/Settings/Vtiger/views/{ConfigName}.php` extending `BaseConfig_View`
-2. Create action: `modules/Settings/Vtiger/actions/Save{ConfigName}.php` extending `Basic_Action`
+1. Create view: `modules/Settings/Vtiger/views/{ConfigName}.php` extending `Settings_Vtiger_BaseConfig_View`
+2. Create action: `modules/Settings/Vtiger/actions/Save{ConfigName}.php` extending `Settings_Vtiger_Basic_Action` (+ `validateRequest` → `validateWriteAccess()`)
 3. Create template: `modules/Settings/Vtiger/tpls/{ConfigName}.tpl`
 4. Create JS: `modules/Settings/Vtiger/resources/{ConfigName}.js`
 5. Create CSS: `modules/Settings/Vtiger/resources/{ConfigName}.css`

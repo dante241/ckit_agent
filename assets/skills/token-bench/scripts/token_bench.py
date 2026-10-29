@@ -17,7 +17,7 @@ DEFINITION-kind node for the exact symbol whose location really contains it.
 import subprocess, os, re, sys, json, argparse
 
 DEFK = {"function", "class", "constant", "interface", "method", "type_alias", "enum", "struct"}
-CODE_EXT = r"(?:ts|tsx|js|jsx|py|go|rs|java|rb|c|cc|cpp|h|hpp)"
+CODE_EXT = r"(?:ts|tsx|js|jsx|py|go|rs|java|rb|c|cc|cpp|h|hpp|php)"
 ANSI = re.compile(r"\x1b\[[0-9;]*m")  # codegraph emits color codes even when piped
 
 
@@ -34,9 +34,10 @@ def rg(args, t=60):
 
 def auto_terms(repo, k):
     pat = (r"export (?:async )?(?:function|class|const) (\w{6,})"
-           r"|pub (?:async )?fn (\w{6,})|pub (?:struct|enum|trait) (\w{6,})|^func (\w{6,})")
+           r"|pub (?:async )?fn (\w{6,})|pub (?:struct|enum|trait) (\w{6,})|^func (\w{6,})"
+           r"|^(?:abstract |final )?class (\w{6,})|^\s*(?:public |protected |private )?(?:static )?function (\w{6,})")
     out = run(["rg", "-oNI", "-g", "!node_modules", "-g", "!*.test.*", "-g", "!dist", "-g", "!.next",
-               pat, repo], t=60)
+               "-g", "!vendor", pat, repo], t=60)
     names = []
     for m in re.finditer(r"(?:function|class|const|fn|struct|enum|trait|func) (\w+)", out):
         if m.group(1) not in names:

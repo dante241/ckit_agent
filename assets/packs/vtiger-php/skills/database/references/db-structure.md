@@ -21,11 +21,15 @@ CREATE TABLE vtiger_crmentity (
     version INT,
     presence INT,
     deleted TINYINT,         -- Soft delete flag
-    label VARCHAR(255)       -- Display label
+    smgroupid INT,
+    source VARCHAR(100),     -- Creation channel
+    label VARCHAR(255),      -- Display label
+    main_owner_id INT,
+    assignedtime DATETIME
 );
 ```
 
-**Golden Rule: ALWAYS filter deleted = 0**
+**Golden Rule: ALWAYS filter deleted = 0** (`rule://security-rules`)
 
 ```php
 // CORRECT
@@ -81,7 +85,7 @@ vtiger_customerdetails (customerid, portal, support_start_date, ...)
 
 ```sql
 -- Main ticket data
-vtiger_troubletickets (ticketid, title, description, priority, status, ...)
+vtiger_troubletickets (ticketid, title, priority, status, solution, ...)  -- description lives in vtiger_crmentity
 
 -- Custom fields
 vtiger_ticketcf (ticketid, cf_resolution_notes, cf_escalation_level, ...)
@@ -168,8 +172,8 @@ $sql = "SELECT c.contactid, c.firstname, c.lastname,
 vtiger_cpadvertisingaccount (
     cpadvertisingaccountid INT PRIMARY KEY,
     account_id VARCHAR(255),
-    account_name VARCHAR(255),
-    status VARCHAR(50),
+    name VARCHAR(255),
+    cpadvertisingaccount_active_status VARCHAR(255),
     last_sync_datetime DATETIME
 )
 

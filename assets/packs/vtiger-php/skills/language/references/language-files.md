@@ -4,7 +4,7 @@
 
 ## File Creation Checklist
 
-When creating a new module or feature, always create language file with both arrays:
+When creating a new module or feature, create the language file with both arrays (convention — the loader defaults a missing array to `[]`):
 
 ```php
 <?php
@@ -50,7 +50,7 @@ $jsLanguageStrings = array(
     'JS_SAVE_SUCCESS' => 'Saved successfully',
     'JS_DELETE_CONFIRM' => 'Are you sure you want to delete this goal?',
     'JS_CALCULATING' => 'Calculating progress...',
-    'JS_RECORDS_SELECTED' => '{0} records selected',
+    'JS_RECORDS_SELECTED' => '%s records selected',
 );
 ```
 
@@ -91,46 +91,25 @@ $jsLanguageStrings = array(
 
 ## Settings Module Language Files
 
-Settings submodules use dot notation in filenames:
+Settings submodule files live in the `Settings/` subfolder:
 
 ```
-languages/en_us/Settings.Vtiger.php        → Settings:Vtiger
-languages/en_us/Settings.Workflows.php     → Settings:Workflows
-languages/en_us/Settings.PBXManager.php    → Settings:PBXManager
+languages/en_us/Settings/Vtiger.php        → Settings:Vtiger
+languages/en_us/Settings/Workflows.php     → Settings:Workflows
+languages/en_us/Settings/PBXManager.php    → Settings:PBXManager
+languages/en_us/dev/Settings/Vtiger.php    → dev overrides
 ```
 
-**PHP usage:** Colon notation `Settings:Vtiger`
-**File name:** Dot notation `Settings.Vtiger.php`
+**PHP usage:** colon notation `Settings:Vtiger` (convention). The loader converts `:` to `.` and `Vtiger_Loader::resolveNameToPath('languages.en_us.Settings.Vtiger')` maps dots to directories, so `Settings.Vtiger` resolves to the same file.
 
 ```php
 // In PHP/TPL
 vtranslate('LBL_CALL_CENTER_CONFIG', 'Settings:Vtiger')
 
-// File: languages/en_us/Settings.Vtiger.php
+// File: languages/en_us/Settings/Vtiger.php
 $languageStrings = array(
     'LBL_CALL_CENTER_CONFIG' => 'Call Center Configuration',
 );
-```
-
-## Adding Labels via Migration
-
-```php
-return new class extends CPMigration_Base_Model {
-
-    public function up(): int {
-        // Add language strings programmatically
-        $this->addLanguageString('en_us', 'CPGoal', [
-            'LBL_NEW_FIELD' => 'New Field',
-            'LBL_NEW_FEATURE' => 'New Feature',
-        ]);
-
-        return self::UP_SUCCESS;
-    }
-
-    public function down(): int {
-        return self::DOWN_NOT_SUPPORTED;
-    }
-};
 ```
 
 ## Vietnamese Locale
@@ -154,8 +133,8 @@ $jsLanguageStrings = array(
 
 ## Common Mistakes
 
-1. **Missing `$jsLanguageStrings`** — File must define both arrays even if JS array empty
+1. **Missing `$jsLanguageStrings`** — define both arrays by convention, even if the JS array is empty (the loader tolerates a missing one)
 2. **No trailing comma on last entry** — Causes merge conflicts, always add trailing comma
 3. **Editing core files as DEV** — Use `dev/` directory to avoid merge conflicts
-4. **Wrong Settings syntax** — `vtranslate('KEY', 'Settings:Vtiger')` not `Settings.Vtiger`
+4. **Wrong Settings file path** — the file is `languages/<locale>/Settings/Vtiger.php`, not `Settings.Vtiger.php`; call it as `vtranslate('KEY', 'Settings:Vtiger')`
 5. **Forgetting Vietnamese file** — Always create `vn_vn` counterpart

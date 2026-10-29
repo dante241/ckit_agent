@@ -79,12 +79,13 @@ $message = vtranslate('LBL_ORDER_SHIPPED', 'SalesOrder');
 
 ```javascript
 // Simple label
-app.vtranslate('JS_SAVE_SUCCESS')
+app.vtranslate('JS_SAVE_SUCCESSFULLY')
 
-// With placeholder {0}, {1}
-app.vtranslate('JS_RECORDS_SELECTED')  // '{0} records selected'
-// Note: Replacement done manually
-var msg = app.vtranslate('JS_RECORDS_SELECTED').replace('{0}', count);
+// %s placeholders are replaced positionally
+app.vtranslate('JS_RECORDS_SELECTED', count)  // '%s records selected'
+
+// %key placeholders are replaced from an object
+app.vtranslate('JS_RANGE', {from: start, to: end})  // 'Showing %from to %to'
 ```
 
 ### In AJAX Callbacks
@@ -93,13 +94,13 @@ var msg = app.vtranslate('JS_RECORDS_SELECTED').replace('{0}', count);
 app.request.post({ data: params }).then(function(error, data) {
     if (error) {
         app.helper.showErrorNotification({
-            message: app.vtranslate('JS_ERROR_OCCURRED')
+            message: app.vtranslate('JS_ERROR')
         });
         return;
     }
 
     app.helper.showSuccessNotification({
-        message: app.vtranslate('JS_SAVE_SUCCESS')
+        message: app.vtranslate('JS_SAVE_SUCCESSFULLY')
     });
 });
 ```
@@ -117,31 +118,30 @@ app.helper.showConfirmationBox({
 
 ## Placeholder Patterns
 
-### PHP Placeholders — sprintf style
+### PHP Placeholders — `%key` array
 
 ```php
-// Define with %s placeholder
-'LBL_WELCOME_USER' => 'Welcome, %s!',
+// Define with a named placeholder
+'LBL_WELCOME_USER' => 'Welcome, %user_name!',
 
-// Usage
-sprintf(vtranslate('LBL_WELCOME_USER', 'Vtiger'), $userName)
+// Usage: vtranslate() formats natively when the 3rd argument is ONE associative array
+vtranslate('LBL_WELCOME_USER', $moduleName, ['%user_name' => $userName])
 ```
 
-### JS Placeholders — {0} style
+Avoid positional args (`vtranslate($key, $module, $userName)`): a non-array 3rd argument is also read as the language code (`includes/runtime/LanguageHandler.php` `vtranslate()`).
+
+### JS Placeholders — `%s` or `%key`
 
 ```php
 // Define in jsLanguageStrings
-'JS_ITEMS_COUNT' => '{0} items found',
-'JS_RANGE' => 'Showing {0} to {1} of {2}',
+'JS_ITEMS_COUNT' => '%s items found',
+'JS_RANGE' => 'Showing %from to %to of %total',
 ```
 
 ```javascript
-// Replace manually
-var msg = app.vtranslate('JS_ITEMS_COUNT').replace('{0}', count);
-var range = app.vtranslate('JS_RANGE')
-    .replace('{0}', start)
-    .replace('{1}', end)
-    .replace('{2}', total);
+// app.vtranslate() replaces them; {0}-style placeholders are NOT supported
+var msg = app.vtranslate('JS_ITEMS_COUNT', count);
+var range = app.vtranslate('JS_RANGE', {from: start, to: end, total: total});
 ```
 
 ## Common Strings (Vtiger.php)
@@ -150,11 +150,11 @@ These strings exist in `languages/en_us/Vtiger.php` — no need to redefine:
 
 ```
 LBL_SAVE, LBL_CANCEL, LBL_DELETE, LBL_EDIT, LBL_BACK,
-LBL_SEARCH, LBL_SELECT, LBL_ACTIONS, LBL_STATUS,
+LBL_SEARCH, LBL_SELECT, LBL_ACTIONS,
 LBL_CREATED_ON, LBL_MODIFIED_ON, LBL_ASSIGNED_TO,
 LBL_PERMISSION_DENIED, LBL_RECORD_NOT_FOUND,
 LBL_YES, LBL_NO, LBL_ALL, LBL_NONE,
-JS_SAVE_SUCCESS, JS_DELETE_CONFIRMATION, JS_ERROR_OCCURRED
+JS_SAVE_SUCCESSFULLY, JS_DELETE_CONFIRMATION, JS_ERROR
 ```
 
 **Rule:** Check `Vtiger.php` before adding common labels — avoid duplication.
@@ -163,10 +163,10 @@ JS_SAVE_SUCCESS, JS_DELETE_CONFIRMATION, JS_ERROR_OCCURRED
 
 ```
 vtranslate('LBL_KEY', 'Settings:PBXManager')
-  1. languages/en_us/Settings.PBXManager.php → languageStrings['LBL_KEY']
-  2. languages/en_us/dev/Settings.PBXManager.php → merged
-  3. languages/en_us/cus/Settings.PBXManager.php → merged
-  4. languages/en_us/Settings.Vtiger.php → base module fallback
+  1. languages/en_us/Settings/PBXManager.php → languageStrings['LBL_KEY']
+  2. languages/en_us/dev/Settings/PBXManager.php → merged
+  3. languages/en_us/cus/Settings/PBXManager.php → merged
+  4. languages/en_us/Settings/Vtiger.php → base module fallback
   5. languages/en_us/Vtiger.php → common strings fallback
   6. Return 'LBL_KEY' as-is → graceful fallback
 ```

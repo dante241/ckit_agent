@@ -1,5 +1,7 @@
 # Load Testing with k6
 
+> Generic k6 patterns. For vtiger/CloudGO load tests use the `k6-loadtest-vtiger-readonly` skill and the existing scripts in `test/load-test/`.
+
 ## Installation
 
 ```bash

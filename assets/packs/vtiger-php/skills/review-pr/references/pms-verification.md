@@ -9,7 +9,7 @@
    glab api "projects/$(echo $REPO | sed 's|/|%2F|g')/merge_requests/<MR_NUMBER>/notes?per_page=100" --repo $REPO
    ```
 
-2. Lọc comments chứa "Reviewed by Dante" hoặc "Reviewed by Claude Code" hoặc "Code Review — MR"
+2. Lọc comments chứa "Reviewed by Dante" hoặc "Reviewed by Claude Code" hoặc bắt đầu bằng "## Code Review" (gồm cả "## Code Review (lần 2) — MR …")
 
 3. Nếu **có** review cũ:
    - Parse danh sách lỗi đã phát hiện (CRITICAL, HIGH, MEDIUM)
@@ -32,7 +32,7 @@
      - ~~Lỗi cũ #2: mô tả~~ → RESOLVED
      ```
 
-4. Nếu **không** có review cũ → bỏ qua, review bình thường (first review)
+   Nếu **không** có review cũ → bỏ qua, review bình thường (first review)
 
 4. **Kiểm tra tên MR — BẮT BUỘC phải có `#<số_ticket>`**
 
@@ -103,10 +103,10 @@
 1. **Search ticket bằng `ticket_no`** (BẮT BUỘC — stored format trong DB là `#22369` với dấu hash):
 
    ```
-   mcp__pms__pms_tickets(filters=[{name: "ticket_no", value: "$TICKET_ID", operator: "c"}])
+   mcp__pms_tickets(filters=[{name: "ticket_no", value: "#$TICKET_ID", operator: "e"}], max_rows=1)
    ```
 
-   Dùng operator `c` (contains) vì DB lưu `#22369` chứ không phải `22369`. Operator `e` (exact) sẽ không match.
+   Dùng operator `e` (exact) với value có `#` (DB lưu `#22369`). KHÔNG dùng `c` (contains) với số trần: `22369` cũng match `#122369`.
 
 2. Xử lý response:
    - **`entry_list` rỗng** → ticket không tồn tại → BLOCK (xem step 4 bên dưới)
@@ -114,7 +114,7 @@
 
 3. **Gọi `pms_ticket_detail` với record_id vừa lấy** để lấy full context:
    ```
-   mcp__pms__pms_ticket_detail(id=$TICKET_RECORD_ID)
+   mcp__pms_ticket_detail(id=$TICKET_RECORD_ID)
    ```
 
    Lưu vào context các trường:
@@ -133,7 +133,7 @@
    3. Gắn label `Cần Fix`
    4. Dừng skill
 
-3. **Template comment khi ticket không tồn tại:**
+5. **Template comment khi ticket không tồn tại:**
    ```markdown
    ## Code Review — MR !<NUMBER> — BLOCKED
 
@@ -152,5 +152,5 @@
    :robot: Reviewed by Dante
    ```
 
-4. **Nếu ticket tìm thấy → tiếp tục Step 1.**
+6. **Nếu ticket tìm thấy → tiếp tục Step 1.**
 

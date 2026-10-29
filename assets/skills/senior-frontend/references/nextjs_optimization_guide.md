@@ -71,9 +71,10 @@ function AddToCartButton({ productId }: { productId: string }) {
 ### Mixing Server and Client Components
 
 ```tsx
-// app/products/[id]/page.tsx - Server Component
-async function ProductPage({ params }: { params: { id: string } }) {
-  const product = await getProduct(params.id);
+// app/products/[id]/page.tsx - Server Component (Next 15+: params is a Promise)
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const product = await getProduct(id);
 
   return (
     <div>
@@ -132,7 +133,7 @@ import Image from 'next/image';
   alt="Hero image"
   width={1200}
   height={600}
-  priority // Load immediately for LCP
+  fetchPriority="high" // LCP image (Next 16 deprecated `priority`)
 />
 
 // Responsive image
@@ -193,14 +194,13 @@ module.exports = {
   loading="lazy" // Default behavior
 />
 
-// Above the fold - load immediately
+// Above the fold - load immediately (`priority` is deprecated since Next 16)
 <Image
   src="/hero.jpg"
   alt="Hero"
   width={1200}
   height={600}
-  priority
-  loading="eager"
+  fetchPriority="high"
 />
 ```
 
@@ -317,8 +317,9 @@ async function Dashboard() {
 ```tsx
 import { Suspense } from 'react';
 
-async function ProductPage({ params }: { params: { id: string } }) {
-  const product = await getProduct(params.id);
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const product = await getProduct(id);
 
   return (
     <div>
@@ -328,12 +329,12 @@ async function ProductPage({ params }: { params: { id: string } }) {
 
       {/* Stream reviews - don't block page */}
       <Suspense fallback={<ReviewsSkeleton />}>
-        <Reviews productId={params.id} />
+        <Reviews productId={id} />
       </Suspense>
 
       {/* Stream recommendations */}
       <Suspense fallback={<RecommendationsSkeleton />}>
-        <Recommendations productId={params.id} />
+        <Recommendations productId={id} />
       </Suspense>
     </div>
   );
@@ -370,8 +371,9 @@ async function Header() {
 ### Fetch Cache Options
 
 ```tsx
-// Cache indefinitely (default for static)
-fetch('https://api.example.com/data');
+// Default (`auto no cache`): fetched at build for static routes, per request once
+// request-time APIs are used. Opt in to caching explicitly:
+fetch('https://api.example.com/data', { cache: 'force-cache' });
 
 // No cache - always fresh
 fetch('https://api.example.com/data', { cache: 'no-store' });
@@ -409,22 +411,18 @@ export async function generateStaticParams() {
 }
 ```
 
-### unstable_cache for Custom Caching
+### `use cache` for Custom Caching (Next 16, replaces `unstable_cache`)
 
 ```tsx
-import { unstable_cache } from 'next/cache';
+// next.config.ts: enable with `cacheComponents: true`
+import { cacheLife, cacheTag } from 'next/cache';
 
-const getCachedUser = unstable_cache(
-  async (userId: string) => {
-    const user = await db.users.findUnique({ where: { id: userId } });
-    return user;
-  },
-  ['user-cache'],
-  {
-    revalidate: 3600, // 1 hour
-    tags: ['users'],
-  }
-);
+async function getCachedUser(userId: string) {
+  'use cache';
+  cacheLife('hours');
+  cacheTag('users');
+  return db.users.findUnique({ where: { id: userId } });
+}
 
 // Usage
 const user = await getCachedUser(userId);
@@ -478,7 +476,7 @@ module.exports = {
 
   // Optimize package imports
   experimental: {
-    optimizePackageImports: ['lucide-react', '@heroicons/react'],
+    optimizePackageImports: ['@phosphor-icons/react'],
   },
 
   // External packages for server
@@ -530,7 +528,7 @@ export default function Hero() {
         src="/hero.jpg"
         alt="Hero"
         fill
-        priority // Preload for LCP
+        fetchPriority="high" // LCP image
         sizes="100vw"
         className="object-cover"
       />
@@ -593,7 +591,9 @@ function ProductCard({ product }: { product?: Product }) {
 }
 ```
 
-### First Input Delay (FID) / Interaction to Next Paint (INP)
+### Interaction to Next Paint (INP)
+
+INP replaced First Input Delay (FID) as a Core Web Vital; web-vitals no longer reports FID.
 
 ```tsx
 // Defer non-critical JavaScript
@@ -657,8 +657,8 @@ export function PerformanceMonitor() {
       case 'LCP':
         console.log('LCP:', metric.value);
         break;
-      case 'FID':
-        console.log('FID:', metric.value);
+      case 'INP':
+        console.log('INP:', metric.value);
         break;
       case 'CLS':
         console.log('CLS:', metric.value);
@@ -688,7 +688,7 @@ export function PerformanceMonitor() {
 
 | Area | Optimization | Impact |
 |------|-------------|--------|
-| Images | Use next/image with priority for LCP | High |
+| Images | Use next/image with `fetchPriority="high"` for the LCP image | High |
 | Fonts | Use next/font with display: swap | Medium |
 | Code | Dynamic imports for heavy components | High |
 | Data | Parallel fetching with Promise.all | High |
@@ -707,7 +707,7 @@ const nextConfig = {
     formats: ['image/avif', 'image/webp'],
   },
   experimental: {
-    optimizePackageImports: ['lucide-react'],
+    optimizePackageImports: ['@phosphor-icons/react'],
   },
   headers: async () => [
     {

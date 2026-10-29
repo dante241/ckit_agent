@@ -2,123 +2,107 @@
 
 ## Architecture
 
-**Webhook Receiver → Connector → Process Call Data → Update CRM**
+**Provider webhook → `webhook.php` → `include/Webhooks/<P>Connector` (entry) → `PBXManager_<P>_Connector` (provider logic) → `PBXManager_Data_Model` (call log) + Call Center Bridge (popup)**
 
 ```
 External Provider          VTiger System
-┌─────────────┐           ┌──────────────────────┐
-│   PBX/VoIP  │──webhook──│  Connector.process() │
-│   Provider  │           └──────────┬───────────┘
-└─────────────┘                      │
-                                     ├─ Normalize phone
-                                     ├─ Find Contact/Lead
-                                     ├─ Create call log
-                                     └─ Update records
+┌─────────────┐   POST    ┌───────────────────────────────────────────┐
+│   PBX/VoIP  │──────────▶│ webhook.php?name=<P>Connector&secret_key= │
+│   Provider  │           └──────────────────┬────────────────────────┘
+└─────────────┘                              │ checkSecretKey (skip: VCSConnector)
+                                             ▼
+                         include/Webhooks/<P>Connector.php  (extends Vtiger_EntryPoint)
+                           ├─ CallCenterUtils::checkConfig()        → active connector must be <P>
+                           ├─ CallCenterUtils::getRequest()->getAllPurified()
+                           ├─ CallCenterUtils::saveLog('[<P>] Webhook data', null, $data)
+                           ├─ PBXManager_<P>_Connector::isExists($callId, $status)  → drop retries
+                           ├─ find agent (findAgentByExtNumber) + customer (findCustomerByPhoneNumber)
+                           ├─ forwardToCallCenterBridge($msg)       → call popup (RINGING/ANSWERED/HANGUP…)
+                           └─ PBXManager_<P>_Connector::handleCallEvent($data) → vtiger_pbxmanager row
 ```
 
-## Connector Location
+## Two layers
 
-**Path:** `include/Webhooks/`
+| Layer | Path | Class | Responsibility |
+|-------|------|-------|----------------|
+| Webhook entry | `include/Webhooks/<P>Connector.php` | `<P>Connector extends Vtiger_EntryPoint` | Parse provider payload, filter noise/duplicates, resolve agent/customer, push popup message, call `handleCallEvent` |
+| Provider connector | `modules/PBXManager/connectors/<P>.php` | `PBXManager_<P>_Connector extends PBXManager_Base_Connector` | `getGatewayName()`, settings (`$SETTINGS_REQUIRED_PARAMETERS`, `setServerParameters($serverModel)`), `makeCall()`, recordings/report APIs, `isExists()`, `handleCallEvent()` |
 
-**Naming:** `{Provider}Connector.php`
+`webhook.php` runs `process()` inside `try/catch (\Throwable)` and logs failures with `WebhookUtils::saveLog('Webhook error', null, $_REQUEST, $th->getMessage())`. Unknown `name` → prints `Webhook not found!`.
 
-**Parent:** Extends `Vtiger_EntryPoint` (public access, no authentication)
+## Webhook URL
 
-## Webhook Flow
-
-### 1. External Request
-Provider sends POST/GET to webhook URL:
 ```
-POST /index.php?webhook=stringee&action=process
+POST {site_URL}/webhook.php?name=CloudFoneConnector&secret_key=<webhook secret>
 Content-Type: application/json
-
-{
-  "call_id": "call-123456",
-  "from": "0909123456",
-  "to": "0287654321",
-  "status": "ended",
-  "duration": 120
-}
 ```
 
-### 2. Connector Process
+Payload shape is provider-specific (CloudFone: `KeyRinging`, `CallNumber`, `ReceiptNumber`, `Direction`, `Status`=`Ringing|Up|Down`, `Data{TotalTimeCall,RealTimeCall,LinkFile}`).
+
+## Popup message (Call Center Bridge)
+
 ```php
-class StringeeConnector extends Vtiger_EntryPoint {
-    public function process(Vtiger_Request $request): void {
-        // Validate webhook data
-        // Parse call information
-        // Normalize phone numbers
-        // Find/create Contact
-        // Create call log in PBXManager
-        // Send response
-    }
-}
+$msg = [
+	'call_id' => $callId,          // Required
+	'receiver_id' => $receiverId,  // Required (CRM user id)
+	'state' => 'RINGING',          // RINGING/REJECTED/ANSWERED/HANGUP/TRANSFERRED/COMPLETED/CUSTOMER_INFO
+];
+// RINGING only: direction (INBOUND/OUTBOUND), then customer fields
+CallCenterUtils::fillMsgDataForRingingEvent($msg, $customerPhoneNumber, $customer);
+PBXManager_CloudFone_Connector::forwardToCallCenterBridge($msg);
 ```
 
-### 3. CRM Update
-- Find Contact/Lead by phone number
-- Create PBXManager record (call log)
-- Link call to Contact
-- Store recording URL
-- Update call statistics
+`forwardToCallCenterBridge()` uses the hub bridge when `$callCenterConfig['use_hub_bridge']` is set, otherwise socket.io.
 
-## 21 Available Connectors
+## Call Center Connectors (19)
 
-### Call Center Providers (16)
+Each provider below has both layers.
 
-| Provider | Module Name | Country | Notes |
-|----------|-------------|---------|-------|
-| Stringee | StringeeConnector | Vietnam | Cloud call center |
-| CloudFone | CloudFoneConnector | Vietnam | VoIP provider |
-| CloudCALL | CloudCALLConnector | Vietnam | Cloud PBX |
-| OmiCall | OmiCallConnector | Vietnam | Call center platform |
-| VoIP24H | VoIP24HConnector | Vietnam | VoIP service |
-| Tel4VN | Tel4VNConnector | Vietnam | Telephony provider |
-| SouthTelecom | SouthTelecomConnector | Vietnam | Telecom company |
-| FPTTelecom | FPTTelecomConnector | Vietnam | FPT telecom service |
-| CMCTelecom | CMCTelecomConnector | Vietnam | CMC telecom |
-| FreePBX | FreePBXConnector | Global | Open source PBX |
-| GrandStream | GrandStreamConnector | Global | IP PBX hardware |
-| VoiceCloud | VoiceCloudConnector | Global | Cloud telephony |
-| Xorcom | XorcomConnector | Global | IP PBX solutions |
-| YeaStar | YeaStarConnector | Global | PBX manufacturer |
-| VCS | VCSConnector | Vietnam | Voice communication |
-| MiTek | MiTekConnector | Global | Call center software |
+| Provider | Entry | Connector |
+|----------|-------|-----------|
+| Abenla | `AbenlaConnector` | `PBXManager_Abenla_Connector` |
+| BaseBS | `BaseBSConnector` | `PBXManager_BaseBS_Connector` |
+| CMCTelecom | `CMCTelecomConnector` | `PBXManager_CMCTelecom_Connector` |
+| CloudCALL | `CloudCALLConnector` | `PBXManager_CloudCALL_Connector` |
+| CloudFone | `CloudFoneConnector` | `PBXManager_CloudFone_Connector` |
+| FPTTelecom | `FPTTelecomConnector` | `PBXManager_FPTTelecom_Connector` |
+| FreePBX | `FreePBXConnector` | `PBXManager_FreePBX_Connector` |
+| GrandStream | `GrandStreamConnector` | `PBXManager_GrandStream_Connector` |
+| MiTek | `MiTekConnector` | `PBXManager_MiTek_Connector` |
+| OmiCall | `OmiCallConnector` | `PBXManager_OmiCall_Connector` |
+| SouthTelecom | `SouthTelecomConnector` | `PBXManager_SouthTelecom_Connector` |
+| Stringee | `StringeeConnector` | `PBXManager_Stringee_Connector` |
+| SunOcean | `SunOceanConnector` | `PBXManager_SunOcean_Connector` |
+| Tel4VN | `Tel4VNConnector` | `PBXManager_Tel4VN_Connector` |
+| VCS | `VCSConnector` (no secret_key check) | `PBXManager_VCS_Connector` |
+| VoIP24H | `VoIP24HConnector` | `PBXManager_VoIP24H_Connector` |
+| VoiceCloud | `VoiceCloudConnector` | `PBXManager_VoiceCloud_Connector` |
+| Xorcom | `XorcomConnector` | `PBXManager_Xorcom_Connector` |
+| YeaStar | `YeaStarConnector` | `PBXManager_YeaStar_Connector` |
 
-### Social/Chat Providers (5)
-
-| Provider | Module Name | Purpose |
-|----------|-------------|---------|
-| Facebook | FacebookConnector | Messenger webhooks |
-| Zalo | ZaloConnector | Zalo business messages |
-| IndividualZalo | IndividualZaloConnector | Personal Zalo |
-| Telegram | TelegramConnector | Telegram bot webhooks |
-| Tawk | TawkConnector | Live chat widget |
+Other `include/Webhooks/*Connector.php` files (Facebook, Zalo, IndividualZalo, Telegram, Tawk, Mautic, BankHub, …) are not call center connectors.
 
 ## Common Use Cases
 
-### Inbound Call Received
-1. Provider sends webhook with call_id, from, to
-2. Connector normalizes phone numbers
-3. Find Contact by caller phone
-4. Create PBXManager record with status "ringing"
-5. Pop up call notification in CRM
+### Inbound call ringing
+1. Entry resolves agent from extension (`getAgentExtNumber` → `findAgentByExtNumber`)
+2. Customer from caller number (`getCustomerPhoneNumber` → `findCustomerByPhoneNumber`)
+3. Popup `RINGING` via `forwardToCallCenterBridge`
+4. `handleCallEvent` → `PBXManager_Data_Model::handleStartupCall` (`callstatus = ringing`)
 
-### Call Ended
-1. Provider sends webhook with duration, recording_url
-2. Update PBXManager record with final data
-3. Store recording URL
-4. Update Contact last call date
+### Call answered / ended
+1. `updateCallStatus($callId, ['callstatus' => 'answered'])`
+2. On end: `handleHangupCall($callId, [...'callstatus' => 'completed', 'endtime', 'totalduration', 'billduration', 'recordingurl'])`
 
-### Missed Call
-1. Provider sends webhook with status "missed"
-2. Create PBXManager record
-3. Create Task for callback
+### Missed call (see `PBXManager_Stringee_Connector::handleMissedCallEvent`)
+1. Inbound call ends while status is still `ringing`
+2. `updateCallStatus($callId, ['callstatus' => 'hangup'])`
+3. `CallCenterUtils::getMissedCallAlertUsers($customer)` → `saveMissedCallLog(...)` → `sendMissedCallNotification(...)`
 
 ## Integration Points
 
-- **PBXManager Module**: Stores call logs
-- **Contacts Module**: Phone number lookup, link calls
-- **Leads Module**: Phone number lookup for leads
-- **CallCenterUtils**: Phone normalization, lookup helpers
-- **Config_Model**: Provider credentials, webhook settings
+- **PBXManager module**: call logs (`vtiger_pbxmanager`)
+- **Customer lookup**: Contacts / Leads / CPTarget / Accounts via `PBXManager_Data_Model::findCustomerByPhoneNumber`
+- **CallCenterUtils** (`include/utils/CallCenterUtils.php`, extends `WebhookUtils`): config check, request, logging, missed-call alerts
+- **Active connector + credentials**: `PBXManager_Server_Model::getActiveConnector()` → `setServerParameters($serverModel)`
+- **Runtime config**: `$callCenterConfig` (`config_override.php`; `debug` enables `saveDebugLog`)

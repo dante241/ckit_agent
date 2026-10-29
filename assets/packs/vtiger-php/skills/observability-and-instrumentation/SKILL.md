@@ -1,7 +1,6 @@
 ---
 name: observability-and-instrumentation
 disable-model-invocation: true
-user-invokable: true
 description: Instruments code so production behavior is visible and diagnosable. Use when adding logging, metrics, tracing, or alerting. Use when shipping any feature that runs in production and you need evidence it works. Use when production issues are reported but you can't tell what happened from the available data.
 ---
 
@@ -20,9 +19,9 @@ Code you can't observe is code you can't operate. Observability is the ability t
 - Reviewing a PR that adds I/O, retries, queues, or cross-service calls
 
 **NOT for:**
-- Diagnosing a failure happening right now — use the `debugging-and-error-recovery` skill (observability is what makes that skill fast next time)
+- Diagnosing a failure happening right now — use the `fix` skill (observability is what makes that diagnosis fast next time)
 - Profiling and optimizing measured slowness — use the `performance-optimization` skill
-- Launch-day monitoring checklists and rollback triggers — see the `shipping-and-launch` skill; this skill covers the instrumentation that feeds them
+- Launch-day monitoring checklists and rollback triggers — out of scope here; this skill covers the instrumentation that feeds them
 
 ## Process
 
@@ -90,7 +89,7 @@ app.use((req, res, next) => {
 });
 ```
 
-**Never log secrets, tokens, passwords, or full PII.** This is a hard rule from the `security-and-hardening` skill — telemetry pipelines are a classic data-leak path. Allowlist fields; don't log whole request bodies.
+**Never log secrets, tokens, passwords, or full PII.** This is a hard rule (see `rule://security-rules` and the `senior-security` skill) — telemetry pipelines are a classic data-leak path. Allowlist fields; don't log whole request bodies.
 
 ### 4. Metrics
 
@@ -201,5 +200,3 @@ After instrumenting a feature, confirm:
 - [ ] A single request can be followed end-to-end in the tracing UI without broken spans
 - [ ] Every new alert is symptom-based, has a runbook link, and was test-fired once
 - [ ] An induced failure in staging was located via telemetry alone, without reading the source
-
-For the at-a-glance version of this list, including the pre-launch instrumentation gate, see `references/observability-checklist.md`.

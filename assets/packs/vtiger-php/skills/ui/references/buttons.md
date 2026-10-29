@@ -5,10 +5,11 @@
 ### Controller Structure
 ```javascript
 /*
- * FileName.js
- * Module: ModuleName
- * Purpose: Button handlers and UI interactions
- */
+    FileName.js
+    Author: Your Name
+    Date: YYYY-MM-DD
+    Purpose: Button handlers and UI interactions
+*/
 
 CustomView_BaseController_Js('ModuleName_ViewName_Js', {}, {
 
@@ -71,9 +72,10 @@ CustomView_BaseController_Js('ModuleName_ViewName_Js', {}, {
 
 ## Button Locations
 
+Hooks return `Vtiger_Link_Model` objects grouped by link type, except `getBasicLinks()` (raw arrays that `getListViewLinks()` converts). Always start from `parent::` and append to the right key.
+
 ### 1. ListView Buttons
 
-#### Add Button via ListView Model
 **File**: `modules/{Module}/models/ListView.php`
 
 ```php
@@ -81,135 +83,98 @@ CustomView_BaseController_Js('ModuleName_ViewName_Js', {}, {
 
 class CPGoal_ListView_Model extends Vtiger_ListView_Model {
 
-    /**
-     * Add custom buttons to ListView
-     */
-    public function getBasicLinks() {
-        $links = parent::getBasicLinks();
+	// Top-bar buttons: raw arrays, converted by getListViewLinks()
+	public function getBasicLinks() {
+		$basicLinks = parent::getBasicLinks();
 
-        $links[] = [
-            'linktype' => 'LISTVIEWBASIC',
-            'linklabel' => 'LBL_SYNC_GOALS',
-            'linkurl' => 'javascript:CPGoal_List_Js.syncGoals()',
-            'linkicon' => 'fa-refresh',
-        ];
+		$basicLinks[] = [
+			'linktype' => 'LISTVIEWBASIC',
+			'linklabel' => 'LBL_SYNC_GOALS',
+			'linkurl' => 'javascript:CPGoal_List_Js.syncGoals()',
+			'linkicon' => '',
+		];
 
-        $links[] = [
-            'linktype' => 'LISTVIEWBASIC',
-            'linklabel' => 'LBL_EXPORT_REPORT',
-            'linkurl' => 'javascript:CPGoal_List_Js.exportReport()',
-            'linkicon' => 'fa-download',
-        ];
+		return $basicLinks;
+	}
 
-        return $links;
-    }
+	// Mass actions: Vtiger_Link_Model objects under 'LISTVIEWMASSACTION'
+	public function getListViewMassActions($linkParams) {
+		$links = parent::getListViewMassActions($linkParams);
 
-    /**
-     * Add mass action buttons
-     */
-    public function getListViewMassActions($linkParams) {
-        $links = parent::getListViewMassActions($linkParams);
+		$links['LISTVIEWMASSACTION'][] = Vtiger_Link_Model::getInstanceFromValues([
+			'linktype' => 'LISTVIEWMASSACTION',
+			'linklabel' => 'LBL_BULK_UPDATE',
+			'linkurl' => 'javascript:CPGoal_List_Js.bulkUpdate()',
+			'linkicon' => '',
+		]);
 
-        $links[] = [
-            'linktype' => 'LISTVIEWMASSACTION',
-            'linklabel' => 'LBL_BULK_UPDATE',
-            'linkurl' => 'javascript:CPGoal_List_Js.bulkUpdate()',
-            'linkicon' => 'fa-edit',
-        ];
-
-        return $links;
-    }
+		return $links;
+	}
 }
 ```
 
+`ListViewHeader.tpl` renders every `LISTVIEWBASIC` button with a fixed `fa-plus` icon; a `javascript:` URL becomes the `onclick`.
+
 ### 2. DetailView Buttons
 
-#### Add Button via Record Model
-**File**: `modules/{Module}/models/Record.php`
+**File**: `modules/{Module}/models/DetailView.php` — the hook lives on `Vtiger_DetailView_Model`, not the Record model (real example: `modules/CPBillCategory/models/DetailView.php`).
 
 ```php
 <?php
 
-class CPGoal_Record_Model extends Vtiger_Record_Model {
+class CPGoal_DetailView_Model extends Vtiger_DetailView_Model {
 
-    /**
-     * Add custom buttons to DetailView
-     */
-    public function getDetailViewLinks($linkParams) {
-        $links = parent::getDetailViewLinks($linkParams);
+	public function getDetailViewLinks($linkParams) {
+		$linkModelList = parent::getDetailViewLinks($linkParams);
+		$recordId = $this->getRecord()->getId();
 
-        $links[] = [
-            'linktype' => 'DETAILVIEWBASIC',
-            'linklabel' => 'LBL_CALCULATE_PROGRESS',
-            'linkurl' => 'javascript:CPGoal_Detail_Js.calculateProgress()',
-            'linkicon' => 'fa-calculator',
-        ];
+		// Button in the top bar; linkcss is added to the button class
+		$linkModelList['DETAILVIEWBASIC'][] = Vtiger_Link_Model::getInstanceFromValues([
+			'linktype' => 'DETAILVIEWBASIC',
+			'linklabel' => 'LBL_CALCULATE_PROGRESS',
+			'linkurl' => 'javascript:CPGoal_Detail_Js.calculateProgress()',
+			'linkicon' => 'fa fa-calculator',
+			'linkcss' => 'btn-primary',
+		]);
 
-        $links[] = [
-            'linktype' => 'DETAILVIEW',
-            'linklabel' => 'LBL_SYNC_DATA',
-            'linkurl' => 'javascript:CPGoal_Detail_Js.syncData(' . $this->getId() . ')',
-            'linkicon' => 'fa-sync',
-        ];
+		// Item in the "more" dropdown; no custom class is rendered, only the javascript: onclick
+		$linkModelList['DETAILVIEW'][] = Vtiger_Link_Model::getInstanceFromValues([
+			'linktype' => 'DETAILVIEW',
+			'linklabel' => 'LBL_SYNC_DATA',
+			'linkurl' => 'javascript:CPGoal_Detail_Js.syncData(' . $recordId . ')',
+			'linkicon' => '',
+		]);
 
-        return $links;
-    }
+		return $linkModelList;
+	}
 }
 ```
 
 ### 3. EditView Buttons
 
-#### Add Button via Module Model
-**File**: `modules/{Module}/models/Module.php`
-
-```php
-<?php
-
-class CPGoal_Module_Model extends Vtiger_Module_Model {
-
-    /**
-     * Add custom buttons to EditView
-     */
-    public function getEditViewLinks($linkParams) {
-        $links = parent::getEditViewLinks($linkParams);
-
-        $links[] = [
-            'linktype' => 'EDITVIEWBASIC',
-            'linklabel' => 'LBL_SAVE_AND_CONTINUE',
-            'linkurl' => 'javascript:CPGoal_Edit_Js.saveAndContinue()',
-            'linkicon' => 'fa-save',
-        ];
-
-        return $links;
-    }
-}
-```
+There is no rendering link hook for EditView: `Vtiger_EditView_Model::getEditViewLinks()` returns LISTVIEW* links and no v7 template reads it. Add EditView buttons in the module's EditView JS (loaded via `modules/{Module}/custom/EditView.php`, see SKILL.md § Loading Standalone JS) or in a `customTemplate` from that file.
 
 ### 4. RelatedList Buttons
 
-#### Add Button to Related List
-**File**: `modules/{Module}/models/RelationListView.php`
+**File**: `modules/{Module}/models/RelationListView.php` — the hook is `getLinks()` (no `getRelatedLinks()`), returning `['LISTVIEWBASIC' => [Vtiger_Link_Model, ...]]`.
+
+`partials/RelatedListHeader.tpl` renders those links only as Select / Add buttons (`selectRelation` / `addButton`), so this hook is for removing or adjusting them (e.g. `modules/CPEventRegistration/models/RelationListView.php`), not for custom JS actions:
 
 ```php
 <?php
 
 class CPGoal_RelationListView_Model extends Vtiger_RelationListView_Model {
 
-    /**
-     * Add buttons to related list
-     */
-    public function getRelatedLinks() {
-        $links = parent::getRelatedLinks();
+	public function getLinks() {
+		$links = parent::getLinks();
 
-        $links[] = [
-            'linktype' => 'RELATEDLIST',
-            'linklabel' => 'LBL_QUICK_ADD',
-            'linkurl' => 'javascript:CPGoal_RelatedList_Js.quickAdd()',
-            'linkicon' => 'fa-plus',
-        ];
+		// Hide Select/Add buttons for a read-only relation
+		if ($this->getRelatedModuleModel()->getName() == 'CPGoalLog') {
+			$links['LISTVIEWBASIC'] = [];
+		}
 
-        return $links;
-    }
+		return $links;
+	}
 }
 ```
 
@@ -270,64 +235,51 @@ handleButtonClick: function(recordId) {
 ### Based on Record Status
 ```php
 public function getDetailViewLinks($linkParams) {
-    $links = parent::getDetailViewLinks($linkParams);
+	$linkModelList = parent::getDetailViewLinks($linkParams);
+	$status = $this->getRecord()->get('status');
 
-    $status = $this->get('status');
+	// Show "Complete" button only for Active goals
+	if ($status === 'Active') {
+		$linkModelList['DETAILVIEWBASIC'][] = Vtiger_Link_Model::getInstanceFromValues([
+			'linktype' => 'DETAILVIEWBASIC',
+			'linklabel' => 'LBL_MARK_COMPLETE',
+			'linkurl' => 'javascript:CPGoal_Detail_Js.markComplete()',
+			'linkicon' => 'fa fa-check',
+		]);
+	}
 
-    // Show "Complete" button only for Active goals
-    if ($status === 'Active') {
-        $links[] = [
-            'linktype' => 'DETAILVIEWBASIC',
-            'linklabel' => 'LBL_MARK_COMPLETE',
-            'linkurl' => 'javascript:CPGoal_Detail_Js.markComplete()',
-            'linkicon' => 'fa-check',
-        ];
-    }
-
-    // Show "Reactivate" button only for Completed goals
-    if ($status === 'Completed') {
-        $links[] = [
-            'linktype' => 'DETAILVIEWBASIC',
-            'linklabel' => 'LBL_REACTIVATE',
-            'linkurl' => 'javascript:CPGoal_Detail_Js.reactivate()',
-            'linkicon' => 'fa-undo',
-        ];
-    }
-
-    return $links;
+	return $linkModelList;
 }
 ```
 
 ### Based on User Permission
 ```php
 public function getDetailViewLinks($linkParams) {
-    $links = parent::getDetailViewLinks($linkParams);
+	$linkModelList = parent::getDetailViewLinks($linkParams);
+	$currentUser = Users_Record_Model::getCurrentUserModel();
 
-    $currentUser = Users_Record_Model::getCurrentUserModel();
+	if ($currentUser->isAdminUser()) {
+		$linkModelList['DETAILVIEWBASIC'][] = Vtiger_Link_Model::getInstanceFromValues([
+			'linktype' => 'DETAILVIEWBASIC',
+			'linklabel' => 'LBL_ADMIN_ACTION',
+			'linkurl' => 'javascript:CPGoal_Detail_Js.adminAction()',
+			'linkicon' => 'fa fa-cog',
+		]);
+	}
 
-    if ($currentUser->isAdminUser()) {
-        $links[] = [
-            'linktype' => 'DETAILVIEWBASIC',
-            'linklabel' => 'LBL_ADMIN_ACTION',
-            'linkurl' => 'javascript:CPGoal_Detail_Js.adminAction()',
-            'linkicon' => 'fa-cog',
-        ];
-    }
-
-    return $links;
+	return $linkModelList;
 }
 ```
 
 ## Button Link Types
 
-| Link Type | Location | Purpose |
-|-----------|----------|---------|
-| `LISTVIEWBASIC` | ListView top bar | Main list actions |
-| `LISTVIEWMASSACTION` | ListView (selected) | Bulk operations |
-| `DETAILVIEWBASIC` | DetailView top bar | Record actions |
-| `DETAILVIEW` | DetailView top bar | Additional actions |
-| `EDITVIEWBASIC` | EditView top bar | Form actions |
-| `RELATEDLIST` | Related list header | Related record actions |
+| Link Type | Hook | Rendered in |
+|-----------|------|-------------|
+| `LISTVIEWBASIC` | `{Module}_ListView_Model::getBasicLinks()` | ListView top bar |
+| `LISTVIEWMASSACTION` | `{Module}_ListView_Model::getListViewMassActions()` | ListView actions (selected records) |
+| `DETAILVIEWBASIC` | `{Module}_DetailView_Model::getDetailViewLinks()` | DetailView top-bar buttons (`linkcss`, `linkicon`, `linktooltip`) |
+| `DETAILVIEW` | `{Module}_DetailView_Model::getDetailViewLinks()` | DetailView "more" dropdown |
+| `LISTVIEWBASIC` (related) | `{Module}_RelationListView_Model::getLinks()` | Related list Select/Add buttons |
 
 ## Critical Pitfalls
 

@@ -1,191 +1,111 @@
-# VTiger Field Types (UITypes)
+# VTiger Field Data Types
 
-## Built-in UITypes (35 Types)
+Bảng uitype → typeofdata → columntype cho field mới: SKILL.md + [field-creation.md](field-creation.md). File này nói về **data type** (quyết định UIType class, template, validator) và cách đọc/ghi từng loại.
 
-| UIType | Category | Type | Description | DB Type |
-|--------|----------|------|-------------|---------|
-| **1** | Text | Text | Single-line text | varchar(100) |
-| **2** | Text | Text | Long text field | varchar(255) |
-| **19** | Text | Text | Standard text field | varchar(100) |
-| **21** | Text | Textarea | Multi-line text area | text |
-| **24** | Text | Text | Text with special handling | text |
-| **7** | Number | Integer | Integer number | int(11) |
-| **9** | Number | Decimal | Decimal/float with precision | decimal(25,8) |
-| **71** | Number | Currency | Currency with symbol | decimal(25,8) |
-| **72** | Number | Currency | Secondary currency | decimal(25,8) |
-| **11** | Contact | Phone | Phone number | varchar(50) |
-| **13** | Contact | Email | Email address | varchar(100) |
-| **17** | Contact | URL | Website URL | varchar(255) |
-| **85** | Contact | Skype | Skype ID | varchar(100) |
-| **5** | DateTime | Date | Date picker (Y-m-d) | date |
-| **6** | DateTime | Date | Date without user format | date |
-| **14** | DateTime | Time | Time picker (HH:mm) | time |
-| **50** | DateTime | DateTime | Date + time picker | datetime |
-| **70** | DateTime | Date | Creation date (auto) | datetime |
-| **15** | Picklist | Picklist | Single-select dropdown | varchar(100) |
-| **16** | Picklist | Picklist | Dropdown with dependency | varchar(100) |
-| **33** | Picklist | Multipicklist | Multi-select dropdown | text |
-| **115** | Picklist | Picklist | Advanced picklist | varchar(100) |
-| **56** | Boolean | Checkbox | Boolean checkbox | int(1) |
-| **10** | Reference | Related | Related module (1:1) | int(19) |
-| **51** | Reference | Related | Related with custom | int(19) |
-| **66** | Reference | Related | Related list | int(19) |
-| **73** | Reference | Related | Account reference | int(19) |
-| **53** | Owner | Owner | Assigned user/group | int(19) |
-| **69** | Media | Image | Image upload | text |
-| **28** | Media | Document | Document/file | int(19) |
-| **4** | System | AutoNumber | Auto-increment number | varchar(100) |
-| **52** | System | Owner | Creator user | int(19) |
-| **77** | System | Status | Record status | varchar(50) |
-| **120** | Custom | Shared | Shared owner | text |
-| **1024** | Custom | Custom | Base for custom UITypes | varies |
+## uitype → data type (`Vtiger_Field_Model::getFieldDataType()`)
 
-## Picklist Operations
+Thứ tự quyết định:
+1. Ca đặc biệt hardcode: 69 `image`, 9 `percentage`, 26 `documentsFolder`, 27 `fileLocationType`, 28 `documentsFileUpload`, 83 `productTax`, 117 `currencyList`, 53 `owner`, 255 `personName`, tên chứa `tags` → `tags`.
+2. Bảng `vtiger_ws_fieldtype` (uitype → fieldtype):
 
-### Get Picklist Values
+| uitype | data type |
+|---|---|
+| 10, 50, 51, 52, 57-59, 66, 73, 75-78, 80, 81, 117, 357 | `reference` |
+| 11 | `phone` |
+| 13 | `email` |
+| 15, 16 | `picklist` |
+| 17 | `url` |
+| 19, 21 | `text` |
+| 33 | `multipicklist` |
+| 56, 156 | `boolean` |
+| 71, 72 | `currency` |
+
+3. Không có trong bảng (1, 2, 4, 5, 7, 14, 70…) → theo **prefix typeofdata**: `V` string · `I` integer · `N`/`NN` double · `D`/`DT` date · `T` time · `E` email · `P` password. `date`/`time` mà cột thật là `datetime` → `datetime`.
+
+Hệ quả: uitype 7 + `I~` = integer, uitype 7 + `NN~` = double; uitype 1 + `N~` = double. Sai typeofdata = sai validator + sai UIType class, không chỉ sai giá trị rỗng.
+
+UIType class nạp theo data type: `{Module}_{Ucfirst(datatype)}_UIType` (`modules/{Module}/uitypes/{Datatype}.php`) → `Vtiger_{Datatype}_UIType` → `Vtiger_Base_UIType`. Xem [custom-uitype.md](custom-uitype.md).
+
+## Picklist
+
 ```php
-// Method 1: Vtiger_Util_Helper
+// array<id, value> from vtiger_<fieldname>, cached
 $values = Vtiger_Util_Helper::getPickListValues('fieldname');
 
-// Returns array: ['value1', 'value2', 'value3']
+// Field model: array<value, translated label>, respects role-based (15) access
+$fieldModel = Vtiger_Field_Model::getInstance('fieldname', $moduleModel);
+$options = $fieldModel instanceof Vtiger_Field_Model ? ($fieldModel->getPicklistValues() ?: []) : [];
+
+// Label
+$label = vtranslate($value, $moduleName);   // tpl: {vtranslate($VALUE, $MODULE)}
 ```
 
-```php
-// Method 2: Field Model
-$field = Vtiger_Field_Model::getInstance('fieldname', $moduleModel);
-$picklistValues = $field->getPicklistValues();
+Tạo values: migration `createPicklistValues()` ([field-creation.md](field-creation.md#step-1a-picklist--tạo-values-bằng-migration)).
 
-// Returns array: [
-//     ['label' => 'Display', 'value' => 'actual_value'],
-//     ...
-// ]
+## Multipicklist (uitype 33)
+
+DB lưu các value nối bằng `' |##| '` (có khoảng trắng hai bên):
+
+```php
+// Write
+$recordModel->set('cpagenda_fare_class', implode(' |##| ', $selectedValues));
+
+// Read — '' / null must become [] before array functions
+$selectedValues = array_values(array_filter(explode(' |##| ', (string) $recordModel->get('cpagenda_fare_class')), 'strlen'));
+
+// Display ("Value 1, Value 2")
+$display = $recordModel->getDisplayValue('cpagenda_fare_class');
 ```
 
-### Get Translated Picklist Value
+## Reference (uitype 10)
+
+Cột `int(11)`, typeofdata `I~O`; `0` = chưa chọn.
+
 ```php
-// Single value translation
-$label = getTranslatedString($value, $moduleName);
+$referenceId = (int) $recordModel->get('related_field');
+$fieldModel = $recordModel->getModule()->getField('related_field');	// false when the field is missing
+$allowedModules = $fieldModel instanceof Vtiger_Field_Model ? ($fieldModel->getReferenceList() ?: []) : [];
+$referenceModule = $referenceId > 0 && isRecordExists($referenceId) ? getSalesEntityType($referenceId) : '';
 
-// In template
-{vtranslate($VALUE, $MODULE)}
-```
-
-### Create Picklist in Migration
-```php
-$this->createPicklistValues('fieldname', 'ModuleName', [
-    ['key' => 'active', 'color' => '#28a745'],
-    ['key' => 'inactive', 'color' => '#dc3545'],
-    ['key' => 'pending', 'color' => '#ffc107'],
-], '', true);  // Last param: replace existing
-```
-
-### Update Picklist Values Programmatically
-```php
-$field = Vtiger_Field::getInstance('fieldname', $moduleInstance);
-$field->setPicklistValues([
-    'New Value 1',
-    'New Value 2',
-    'New Value 3',
-]);
-```
-
-## Field Data Type Mapping
-
-| UIType | getFieldDataType() | JavaScript Type |
-|--------|-------------------|-----------------|
-| 1, 2, 19 | 'string' | string |
-| 7 | 'integer' | number |
-| 9, 71, 72 | 'double' | number |
-| 5, 6, 50 | 'date' | Date |
-| 14 | 'time' | string |
-| 11 | 'phone' | string |
-| 13 | 'email' | string |
-| 17 | 'url' | string |
-| 15, 16 | 'picklist' | string |
-| 33 | 'multipicklist' | array |
-| 56 | 'boolean' | boolean |
-| 10, 51, 66, 73 | 'reference' | number |
-| 53 | 'owner' | number |
-| 69 | 'image' | string (path) |
-
-## Common Field Properties
-
-### Via Field Model
-```php
-$field = Vtiger_Field_Model::getInstance('fieldname', $moduleModel);
-
-// Basic properties
-$uitype = $field->get('uitype');
-$fieldName = $field->getName();
-$fieldLabel = $field->get('label');
-$tableName = $field->getTableName();
-$columnName = $field->getColumnName();
-
-// Field characteristics
-$isMandatory = $field->isMandatory();
-$isEditable = $field->isEditable();
-$isWritable = $field->isWritable();
-$isViewable = $field->isViewable();
-
-// Data type
-$dataType = $field->getFieldDataType();
-$displayType = $field->getDisplayType();
-```
-
-## Field Display Types
-
-| Display Type | Meaning | Behavior |
-|-------------|---------|----------|
-| 1 | Visible | Show in Edit and Detail |
-| 2 | Read-only | Show in Detail only |
-| 3 | Hidden | Never show in forms |
-| 4 | Hidden | Internal field |
-
-## Multipicklist Operations
-
-### Save Multipicklist
-```php
-// Format: pipe-separated with leading/trailing pipes
-$value = ' |~|~| value1 |~|~| value2 |~|~| value3 |~|~|';
-$record->set('multipicklist_field', $value);
-```
-
-### Read Multipicklist
-```php
-$raw = $record->get('multipicklist_field');
-// " |~|~| value1 |~|~| value2 |~|~|"
-
-// Convert to array
-$values = array_filter(explode(' |##| ', $raw));
-// ['value1', 'value2']
-
-// Get display value (uses Record Model)
-$displayValue = $record->getDisplayValue('multipicklist_field');
-// "Value 1, Value 2"
-```
-
-## Reference Field (UIType 10)
-
-### Get Referenced Record
-```php
-$referenceId = $record->get('related_field');
-
-if (!empty($referenceId)) {
-    $referenceModule = $field->getReferenceList()[0];
-    $referenceRecord = Vtiger_Record_Model::getInstanceById($referenceId, $referenceModule);
+// Exists + module is one the field allows + permission
+if ($referenceModule !== '' && in_array($referenceModule, $allowedModules, true)
+	&& Users_Privileges_Model::isPermitted($referenceModule, 'DetailView', $referenceId)) {
+	$referenceModel = Vtiger_Record_Model::getInstanceById($referenceId, $referenceModule);
 }
+
+// Set
+$recordModel->set('related_field', $relatedRecordId);   // int; 0/'' clears
 ```
 
-### Set Reference Field
+Field nhiều module (Contacts/Accounts…): module thật lấy bằng `getSalesEntityType($id)`, KHÔNG `getReferenceList()[0]`.
+
+## Field model
+
 ```php
-$record->set('related_field', $relatedRecordId);
+$fieldModel = Vtiger_Field_Model::getInstance('fieldname', $moduleModel);
+if (!$fieldModel instanceof Vtiger_Field_Model) return;	// field missing or inactive
+
+$uitype = (int) $fieldModel->get('uitype');
+$dataType = $fieldModel->getFieldDataType();
+$isMandatory = $fieldModel->isMandatory();
+$isEditable = $fieldModel->isEditable();
+$isViewable = $fieldModel->isViewable();
 ```
+
+## displaytype
+
+| Giá trị | Ý nghĩa |
+|---|---|
+| 1 | Edit + Detail |
+| 2 | Chỉ Detail (read-only) |
+| 3 | Ẩn khỏi form |
+| 4, 5 | Hệ thống (export vẫn lấy 1, 2, 4, 5) |
+| 6 | Field hệ thống không hiển thị (vd `starred`) |
 
 ## Critical Rules
 
-1. **UIType cannot change** after field creation — must delete/recreate
-2. **Custom UITypes start at 1024** to avoid conflicts
-3. **Multipicklist format**: ` |~|~| value |~|~|` (spaces + pipes)
-4. **Picklist keys** are stored, labels are translated
-5. **Field names** use snake_case for database columns
-6. **Always run Quick Repair** after field schema changes
+1. typeofdata quyết định data type cho uitype không có trong `vtiger_ws_fieldtype` → khai báo đúng prefix.
+2. Multipicklist separator = `' |##| '`.
+3. Picklist lưu **key**, hiển thị qua `vtranslate`.
+4. Giá trị đọc từ record là chuỗi → ép kiểu khi gán, so sánh `===`.
+5. Đổi uitype của field đã có = migration ([field-modification.md](field-modification.md)), không phải xoá/tạo lại.

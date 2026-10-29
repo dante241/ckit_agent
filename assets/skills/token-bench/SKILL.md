@@ -20,7 +20,7 @@ location really contains it — so a saving that returns the *wrong* answer neve
 
 ```bash
 # repo must be indexed first:  cd <repo> && codegraph index .
-uv run scripts/token_bench.py <repo>                 # auto-picks 8 real exported symbols
+uv run scripts/token_bench.py <repo>                 # auto-picks up to 8 real symbols (JS/TS exports, Rust pub, Go func, PHP class/function; vendor/ skipped)
 uv run scripts/token_bench.py <repo> --terms a,b,c   # specific symbols
 uv run scripts/token_bench.py <repo> --k 12 --json    # more symbols, JSON out
 ```

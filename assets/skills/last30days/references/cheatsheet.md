@@ -43,7 +43,7 @@ Authoritative runtime contract is the upstream `SKILL.md` inside the install dir
 
 ## Runtime requirements
 
-- Python 3.12+ on PATH (`python3.12`/`python3.13`/`python3.14`).
+- Python 3.12+ on PATH (`python3.12`/`python3.13`/`python3.14`) — not present on this Mac as of 2026-10-29 (system `python3` = 3.11.5); install one before running the engine.
 - Node.js (vendored Bird client for X search).
 - Output saved under `LAST30DAYS_MEMORY_DIR` (default `~/Documents/Last30Days/`).
 

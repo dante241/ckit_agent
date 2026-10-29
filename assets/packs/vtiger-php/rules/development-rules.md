@@ -12,7 +12,7 @@ Use this file when editing code, tests, scripts, or configuration.
 - Prefer YAGNI, KISS, and DRY in that order.
 - Implement real behavior. Do not add fake data, mocks, or temporary shortcuts just to satisfy a check.
 - Keep changes scoped to the request and the affected contracts.
-- Use descriptive kebab-case file names for new files when the repo has no stronger convention.
+- Name new files per the repo convention (`cloudgo-development-rules.md` § Naming Conventions: `<Component>.php`, PascalCase JS/CSS/TPL).
 - Split code only when it reduces real complexity or matches existing module boundaries.
 
 ## Quality Gates
@@ -25,7 +25,6 @@ Use this file when editing code, tests, scripts, or configuration.
 
 ## Tooling
 
-- Use `gh` for GitHub operations when needed.
+- The remote is GitLab (`git.onlinecrm.vn`); use the `gitlab-mr` command / GitLab API for MR operations.
 - Use current docs only when the API/tooling may have changed.
 - Use relevant skills by reading their descriptions first, then opening only the needed `SKILL.md`.
-- Use `/ck:preview` only when a visual explanation will materially help the user understand the change.

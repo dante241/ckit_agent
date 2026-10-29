@@ -1,6 +1,6 @@
 ---
 name: code-review-and-quality
-description: Conducts multi-axis code review. Use before merging any change. Use when reviewing code written by yourself, another agent, or a human. Use when you need to assess code quality across multiple dimensions before it enters the main branch.
+description: Generic multi-axis code review. Use before merging any change when the repo has no review skill of its own; in vtiger, MR review goes through project skill `review-pr` (its severity scale and merge rules win). Use when reviewing code written by yourself, another agent, or a human.
 ---
 
 # Code Review and Quality
@@ -41,8 +41,7 @@ Can another engineer (or agent) understand this code without the author explaini
 - Is the control flow straightforward (avoid nested ternaries, deep callbacks)?
 - Is the code organized logically (related code grouped, clear module boundaries)?
 - Are there any "clever" tricks that should be simplified?
-- **Could this be done in fewer lines?** (1000 lines where 100 suffice is a failure)
-- **Are abstractions earning their complexity?** (Don't generalize until the third use case)
+- **Too complex?** Apply `karpathy-guidelines` / `ponytail-review` (fewer lines, no abstraction without a second use case).
 - Would comments help clarify non-obvious intent? (But don't comment obvious code.)
 - Are there dead code artifacts: no-op variables (`_unused`), backwards-compat shims, or `// removed` comments?
 
@@ -58,7 +57,7 @@ Does the change fit the system's design?
 
 ### 4. Security
 
-For detailed security guidance, see `security-and-hardening`. Does the change introduce vulnerabilities?
+For detailed security guidance, see `senior-security` (and the repo's own security rules, e.g. vtiger `rule://security-rules`). Does the change introduce vulnerabilities?
 
 - Is user input validated and sanitized?
 - Are secrets kept out of code, logs, and version control?
@@ -71,7 +70,7 @@ For detailed security guidance, see `security-and-hardening`. Does the change in
 
 ### 5. Performance
 
-For detailed profiling and optimization, see `performance-optimization`. Does the change introduce performance problems?
+For detailed profiling and optimization, see project skill `performance-optimization` where present (vtiger: `rule://performance-rules`). Does the change introduce performance problems?
 
 - Any N+1 query patterns?
 - Any unbounded loops or unconstrained data fetching?
@@ -154,14 +153,14 @@ For each file changed:
 
 ### Step 4: Categorize Findings
 
-Label every comment with its severity so the author knows what's required vs optional:
+Label every comment with its severity so the author knows what's required vs optional. If the repo defines its own scale (vtiger `review-pr`: CRITICAL/HIGH/MEDIUM/PERF), use that instead:
 
 | Prefix | Meaning | Author Action |
 |--------|---------|---------------|
-| *(no prefix)* | Required change | Must address before merge |
 | **Critical:** | Blocks merge | Security vulnerability, data loss, broken functionality |
+| **High:** | Required change | Must address before merge |
+| **Medium:** | Should fix | Address or explicitly defer with justification |
 | **Nit:** | Minor, optional | Author may ignore — formatting, style preferences |
-| **Optional:** / **Consider:** | Suggestion | Worth considering but not required |
 | **FYI** | Informational only | No action needed — context for future reference |
 
 This prevents authors from treating all feedback as mandatory and wasting time on optional suggestions.
@@ -192,7 +191,7 @@ Model B reviews for correctness and architecture
 Model A addresses the feedback
     │
     ▼
-Human makes the final call
+Human makes the final call (or the repo's merge policy — e.g. vtiger `review-pr` merges itself when no CRITICAL/HIGH remains)
 ```
 
 This catches issues that a single model might miss — different models have different blind spots.
@@ -201,7 +200,7 @@ This catches issues that a single model might miss — different models have dif
 ```
 Review this code change for correctness, security, and adherence to
 our project conventions. The spec says [X]. The change should [Y].
-Flag any issues as Critical, Important, or Suggestion.
+Flag any issues as Critical, High, Medium, or Nit.
 ```
 
 ## Dead Code Hygiene
@@ -260,7 +259,7 @@ Part of code review is dependency review:
 1. Does the existing stack solve this? (Often it does.)
 2. How large is the dependency? (Check bundle impact.)
 3. Is it actively maintained? (Check last commit, open issues.)
-4. Does it have known vulnerabilities? (`npm audit`)
+4. Does it have known vulnerabilities? (`npm audit`, `composer audit`, or the ecosystem's equivalent)
 5. What's the license? (Must be compatible with the project.)
 
 **Rule:** Prefer standard library and existing utilities over new dependencies. Every dependency is a liability.
@@ -310,11 +309,6 @@ Part of code review is dependency review:
 - [ ] **Approve** — Ready to merge
 - [ ] **Request changes** — Issues must be addressed
 ```
-## See Also
-
-- For detailed security review guidance, see `references/security-checklist.md`
-- For performance review checks, see `references/performance-checklist.md`
-
 ## Common Rationalizations
 
 | Rationalization | Reality |
@@ -340,8 +334,8 @@ Part of code review is dependency review:
 
 After review is complete:
 
-- [ ] All Critical issues are resolved
-- [ ] All Important issues are resolved or explicitly deferred with justification
+- [ ] All Critical and High issues are resolved
+- [ ] All Medium issues are resolved or explicitly deferred with justification
 - [ ] Tests pass
 - [ ] Build succeeds
 - [ ] The verification story is documented (what changed, how it was verified)

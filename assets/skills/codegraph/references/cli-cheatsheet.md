@@ -1,28 +1,33 @@
-# codegraph CLI cheatsheet
+# codegraph CLI cheatsheet (verified against codegraph 1.1.2 `--help`)
 
 One-page reference. For day-to-day usage rules see `../SKILL.md`.
 
 | Command | When to use | Example |
 |---|---|---|
-| `codegraph init [path]` | Bootstrap `.codegraph/` in a project. Non-interactive. | `codegraph init .` |
-| `codegraph init -i [path]` | Init + run an initial index in one shot. | `codegraph init -i` |
-| `codegraph uninit [path]` | Delete `.codegraph/` from a project. | `codegraph uninit .` |
-| `codegraph index [path]` | Full (re)index of the project. | `codegraph index .` |
-| `codegraph sync [path]` | Incremental update — only changed files since last index. | `codegraph sync` |
-| `codegraph status [path]` | Show index stats + freshness. | `codegraph status` |
-| `codegraph query <search>` | Semantic symbol/keyword search. **Primary tool — replaces grep/rg/fd.** | `codegraph query "handle_login"` |
-| `codegraph context <task>` | Build a markdown context bundle for an open-ended task. | `codegraph context "auth flow"` |
-| `codegraph files` | List indexed file structure. Cheaper than `find`. | `codegraph files` |
-| `codegraph affected <files...>` | Find test files impacted by source changes. | `codegraph affected src/auth.rs` |
+| `codegraph init [path]` | Bootstrap `.codegraph/` and build the initial index. Non-interactive. | `codegraph init .` |
+| `codegraph uninit [path]` | Delete `.codegraph/` from a project (`-f` skips the prompt). | `codegraph uninit -f .` |
+| `codegraph index [path]` | Full rebuild from scratch. | `codegraph index .` |
+| `codegraph sync [path]` | Incremental update — only files changed since last index. Needed only without the MCP watcher. | `codegraph sync` |
+| `codegraph status [path]` | Index stats + freshness. | `codegraph status` |
+| `codegraph explore <query...>` | **Primary tool** — relevant symbols' source + call paths (same as MCP `codegraph_explore`). | `codegraph explore "auth flow"` |
+| `codegraph query <search>` | Symbol/keyword search with `path:line` hits. | `codegraph query "handle_login"` |
+| `codegraph node <name>` | One symbol's source + caller/callee trail, or a file with line numbers. | `codegraph node src/auth.rs --symbols-only` |
+| `codegraph callers <symbol>` / `callees <symbol>` | Who calls it / what it calls. | `codegraph callers handle_login` |
+| `codegraph impact <symbol>` | What is affected by changing a symbol. | `codegraph impact handle_login -d 3` |
+| `codegraph files` | Indexed file structure. Cheaper than `find`. | `codegraph files --filter src --format flat` |
+| `codegraph affected [files...]` | Test files impacted by source changes. | `codegraph affected src/auth.rs` |
 | `codegraph unlock [path]` | Remove a stale lock if indexing is blocked. | `codegraph unlock` |
-| `codegraph serve` | Run as an MCP server for agents that speak MCP. | `codegraph serve` |
-| `codegraph install` | Install codegraph MCP into Claude Code / Cursor / etc. | `codegraph install` |
+| `codegraph serve --mcp` | Run as an MCP server (stdio; `--no-watch` disables auto-sync). | `codegraph serve --mcp` |
+| `codegraph install` | Install the codegraph MCP into Claude Code / Cursor / Codex CLI / opencode. | `codegraph install -y` |
 
 ## Flags worth remembering
 
-- `-v, --verbose` (on `init` / `index` / `sync` / `status`): show worker lifecycle + memory.
-- `-i, --index` (on `init`): chain an initial index after init.
+- `-v, --verbose` (on `init` / `index` only): show worker lifecycle + memory.
+- `-q, --quiet` (on `index` / `sync`): suppress progress output.
+- `-j, --json` (on `status`, `query`, `callers`, `callees`, `impact`, `files`, `affected`): machine-readable output.
+- `-p, --path <path>` (on query/explore/node/callers/callees/impact/files/affected): query another project.
+- `init -i` is deprecated (indexing now runs by default) — use plain `codegraph init .`.
 
 ## Output format
 
-`query` and `context` emit `path:line` citations. Pipe directly into editor jump commands or echo back verbatim in your reply.
+`query`, `explore` and `node` emit `path:line` citations. Echo them verbatim in your reply.

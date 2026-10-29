@@ -2,336 +2,148 @@
 
 ## Overview
 
-VTiger uses **wkhtmltopdf API** (NOT TCPDF) for PDF generation via HTML rendering.
+Prefer the global function `generatePDF()` (`include/utils/CommonUtils.php`), which posts HTML to a wkhtmltopdf HTTP API and saves the returned PDF. A legacy TCPDF helper exists (`include/utils/PDFGenerator.php`), but new code should use `generatePDF()`.
 
-## Critical Difference
-
-**Use wkhtmltopdf API:**
-```php
-use include\utils\GeneratePDF;
-
-$pdf = GeneratePDF::generatePDF($outputFile, $htmlFilePath, $htmlContent, $options);
-```
-
-**DON'T use TCPDF:**
-```php
-// WRONG - VTiger doesn't use TCPDF
-$pdf = new TCPDF();
-```
-
-## Basic Pattern
-
-```php
-use include\utils\GeneratePDF;
-
-class Accounts_ExportPDF_Action extends Vtiger_Action_Controller {
-
-    public function process(Vtiger_Request $request) {
-        $moduleName = $request->getModule();
-        $recordId = (int) $request->get('record');
-
-        if (!Users_Privileges_Model::isPermitted($moduleName, 'DetailView', $recordId)) {
-            throw new AppException(vtranslate('LBL_PERMISSION_DENIED'));
-        }
-
-        // Get record data
-        $recordModel = Vtiger_Record_Model::getInstanceById($recordId);
-
-        // Build HTML content
-        $html = $this->buildHTMLContent($recordModel);
-
-        // Generate PDF filename
-        $fileName = $this->getPDFFileName($moduleName, $recordId);
-
-        // Mode: 'F' = save to file, 'D' = download
-        $mode = $request->get('mode', 'D');
-
-        if ($mode == 'F') {
-            // Save to storage directory
-            $outputFile = 'storage/' . $fileName;
-            GeneratePDF::generatePDF($outputFile, '', $html, []);
-            return $outputFile;
-        }
-        else {
-            // Download directly
-            GeneratePDF::generatePDF($fileName, '', $html, ['mode' => 'D']);
-            exit();
-        }
-    }
-
-    private function buildHTMLContent($recordModel) {
-        $html = '<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .header { font-size: 24px; font-weight: bold; margin-bottom: 20px; }
-        .field { margin: 10px 0; }
-        .label { font-weight: bold; width: 200px; display: inline-block; }
-    </style>
-</head>
-<body>';
-
-        $html .= '<div class="header">' . $recordModel->getName() . '</div>';
-
-        foreach ($recordModel->getData() as $fieldName => $fieldValue) {
-            $fieldModel = $recordModel->getModule()->getField($fieldName);
-            if ($fieldModel && $fieldModel->isViewable()) {
-                $displayValue = $recordModel->getDisplayValue($fieldName);
-                $html .= '<div class="field">';
-                $html .= '<span class="label">' . vtranslate($fieldModel->get('label'), $recordModel->getModuleName()) . ':</span> ';
-                $html .= '<span>' . htmlspecialchars($displayValue) . '</span>';
-                $html .= '</div>';
-            }
-        }
-
-        $html .= '</body></html>';
-
-        return $html;
-    }
-}
-```
+Real caller: `include/utils/InventoryPDFUtils.php:31-66` (renders `modules/Inventory/tpls/PDF.tpl`, calls `generatePDF()`, then streams the file with download headers).
 
 ## generatePDF() Signature
 
 ```php
-GeneratePDF::generatePDF(
-    string $outputFile,    // Output filename or path
-    string $htmlFilePath,  // Path to HTML file (use '' if passing $htmlContent)
-    string $htmlContent,   // HTML string (use '' if passing $htmlFilePath)
-    array $options         // Optional settings
-);
+/**
+ * @return string|false  $outputFile on success, false when $wkhtmltopdfAPIConfig['enable'] is off
+ */
+function generatePDF($outputFile, $htmlFilePath = null, $htmlContent = null, $options = null)
 ```
 
-## Mode Options
-
-```php
-// Mode 'F': Save to file (storage/)
-$outputFile = 'storage/invoices/invoice_123.pdf';
-GeneratePDF::generatePDF($outputFile, '', $html, []);
-
-// Mode 'D': Download (browser)
-GeneratePDF::generatePDF('invoice.pdf', '', $html, ['mode' => 'D']);
-exit(); // Required after download mode
-
-// Mode 'I': Inline display (browser)
-GeneratePDF::generatePDF('invoice.pdf', '', $html, ['mode' => 'I']);
-exit();
-```
+- `$outputFile` — path the PDF is written to (`file_put_contents`); defaults to `output.pdf`.
+- `$htmlFilePath` / `$htmlContent` — pass one; `$htmlContent` wins, otherwise the file is read.
+- `$options` — a **wkhtmltopdf CLI option string**, not an array. Default: `'--margin-left 0.6in --margin-top 0.4in --margin-right 0.6in --margin-bottom 0.5in'`.
+- There is NO download/inline mode (`'D'`/`'I'`/`'F'`): the function always writes `$outputFile` and returns its path. Downloading is your job (headers + `readfile()`).
+- It does not check the HTTP status of the API call: an API error body gets written into `$outputFile`. Verify the output (e.g. starts with `%PDF`) when it matters.
 
 ## wkhtmltopdf API Config
 
+`config_override.php` defines:
+
 ```php
-// Global config in config.inc.php or config.env.php
 $wkhtmltopdfAPIConfig = [
-    'url' => 'http://wkhtmltopdf-service:8080/convert',
-    'timeout' => 30,
+	'enable' => true,
+	'api_url' => '<wkhtmltopdf API endpoint>',
+	'access_token' => '<secret>',   // sent as "Authorization: Bearer"; never print or commit it
 ];
 ```
 
-**Check service is running:**
-```bash
-curl http://wkhtmltopdf-service:8080/health
+The renderer is remote, so the HTML must be self-contained: it cannot load local CSS files or `file://` assets.
+
+## Basic Pattern
+
+HTML goes in a `.tpl`, CSS in a `.css` file — never HTML/CSS strings in PHP (cloudgo-development-rules File Separation). Because the remote renderer can't fetch the stylesheet, read the `.css` file in PHP and let the template inject its content.
+
+```
+modules/Accounts/
+├── actions/ExportPDF.php
+├── resources/PDF.css        # print styles (separate file)
+└── tpls/PDF.tpl             # HTML document; injects {$PDF_CSS} inside <style>
 ```
 
-## getPDFFileName Pattern
-
 ```php
-private function getPDFFileName(string $moduleName, int $recordId): string {
-    $recordModel = Vtiger_Record_Model::getInstanceById($recordId, $moduleName);
+<?php
 
-    // Get module sequence number (Invoice No, Quote No, etc.)
-    $sequenceField = $this->getModuleSequenceField($moduleName);
-    if ($sequenceField) {
-        $sequenceNo = $recordModel->get($sequenceField);
-        $fileName = $sequenceNo . '.pdf';
-    }
-    else {
-        $fileName = $moduleName . '_' . $recordId . '.pdf';
-    }
+/**
+ * @author Your Name
+ * @email your.email@company.vn
+ * @create date YYYY.MM.DD
+ */
 
-    return $fileName;
-}
+class Accounts_ExportPDF_Action extends Vtiger_Action_Controller {
 
-private function getModuleSequenceField(string $moduleName): ?string {
-    $sequenceFields = [
-        'Invoice' => 'invoice_no',
-        'Quotes' => 'quote_no',
-        'SalesOrder' => 'salesorder_no',
-        'PurchaseOrder' => 'purchaseorder_no',
-    ];
+	function checkPermission(Vtiger_Request $request) {
+		$moduleName = $request->getModule();
+		$recordId = (int) $request->get('record');
 
-    return $sequenceFields[$moduleName] ?? null;
+		if (!Users_Privileges_Model::isPermitted($moduleName, 'DetailView', $recordId)) {
+			throw new AppException(vtranslate('LBL_PERMISSION_DENIED'));
+		}
+	}
+
+	function process(Vtiger_Request $request) {
+		$moduleName = $request->getModule();
+		$recordId = (int) $request->get('record');
+		$recordModel = Vtiger_Record_Model::getInstanceById($recordId, $moduleName);
+
+		$viewer = new Vtiger_Viewer();
+		$viewer->assign('RECORD_MODEL', $recordModel);
+		$viewer->assign('MODULE_NAME', $moduleName);
+		$viewer->assign('PDF_CSS', file_get_contents("modules/{$moduleName}/resources/PDF.css"));
+		$html = $viewer->fetch("modules/{$moduleName}/tpls/PDF.tpl");
+
+		$outputFile = tempnam(sys_get_temp_dir(), 'pdf_');
+		$outputFile = generatePDF($outputFile, null, $html);
+
+		if (empty($outputFile) || !file_exists($outputFile)) {
+			// Define LBL_PDF_GENERATION_FAILED in languages/<locale>/<Module>.php
+			throw new AppException(vtranslate('LBL_PDF_GENERATION_FAILED', $moduleName));
+		}
+
+		$downloadName = getModuleSequenceNumber($moduleName, $recordId) . '.pdf';
+		header('Content-Type: application/pdf');
+		header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+		header('Content-Length: ' . filesize($outputFile));
+		readfile($outputFile);
+		unlink($outputFile);
+	}
 }
 ```
 
-## HTML Template with Styles
+Use `Content-Disposition: inline` instead of `attachment` to display in the browser. To keep the file (e.g. attach it to a record), write it under `storage/` and skip the streaming.
 
-```php
-private function buildHTMLContent($data) {
-    $html = '<!DOCTYPE html>
+`modules/Accounts/tpls/PDF.tpl`:
+
+```smarty
+<!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <style>
-        @page {
-            margin: 20mm;
-            size: A4;
-        }
-        body {
-            font-family: "DejaVu Sans", Arial, sans-serif;
-            font-size: 12pt;
-            line-height: 1.5;
-        }
-        .header {
-            text-align: center;
-            font-size: 20pt;
-            font-weight: bold;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #333;
-            padding-bottom: 10px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        th {
-            background-color: #f2f2f2;
-            font-weight: bold;
-        }
-        .total {
-            font-size: 14pt;
-            font-weight: bold;
-            text-align: right;
-            margin-top: 20px;
-        }
-    </style>
-</head>
-<body>';
-
-    // Content here
-
-    $html .= '</body></html>';
-    return $html;
-}
-```
-
-## Complete Invoice Example
-
-```php
-class Invoice_ExportPDF_Action extends Vtiger_Action_Controller {
-
-    public function process(Vtiger_Request $request) {
-        $recordId = (int) $request->get('record');
-
-        if (!Users_Privileges_Model::isPermitted('Invoice', 'DetailView', $recordId)) {
-            throw new AppException(vtranslate('LBL_PERMISSION_DENIED'));
-        }
-
-        $recordModel = Vtiger_Record_Model::getInstanceById($recordId, 'Invoice');
-        $html = $this->buildInvoiceHTML($recordModel);
-
-        $fileName = $recordModel->get('invoice_no') . '.pdf';
-        GeneratePDF::generatePDF($fileName, '', $html, ['mode' => 'D']);
-        exit();
-    }
-
-    private function buildInvoiceHTML($recordModel) {
-        $invoiceNo = $recordModel->get('invoice_no');
-        $accountName = $recordModel->get('account_id_display');
-        $invoiceDate = $recordModel->get('invoicedate');
-        $dueDate = $recordModel->get('duedate');
-
-        // Get line items
-        $lineItems = $this->getLineItems($recordModel->getId());
-
-        $html = '<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .header { font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 30px; }
-        .info { margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        th, td { border: 1px solid #ddd; padding: 8px; }
-        th { background-color: #4472C4; color: white; }
-        .total { text-align: right; font-weight: bold; font-size: 16px; }
-    </style>
+	<meta charset="utf-8">
+	<style>{$PDF_CSS}</style>
 </head>
 <body>
-    <div class="header">INVOICE</div>
-    <div class="info">
-        <div><strong>Invoice No:</strong> ' . htmlspecialchars($invoiceNo) . '</div>
-        <div><strong>Customer:</strong> ' . htmlspecialchars($accountName) . '</div>
-        <div><strong>Invoice Date:</strong> ' . htmlspecialchars($invoiceDate) . '</div>
-        <div><strong>Due Date:</strong> ' . htmlspecialchars($dueDate) . '</div>
-    </div>
-    <table>
-        <thead>
-            <tr>
-                <th>Product</th>
-                <th>Quantity</th>
-                <th>Unit Price</th>
-                <th>Total</th>
-            </tr>
-        </thead>
-        <tbody>';
-
-        $grandTotal = 0;
-        foreach ($lineItems as $item) {
-            $total = (float) $item['quantity'] * (float) $item['listprice'];
-            $grandTotal += $total;
-
-            $html .= '<tr>
-                <td>' . htmlspecialchars($item['productname']) . '</td>
-                <td>' . number_format($item['quantity'], 0) . '</td>
-                <td>' . number_format($item['listprice'], 2) . '</td>
-                <td>' . number_format($total, 2) . '</td>
-            </tr>';
-        }
-
-        $html .= '</tbody>
-    </table>
-    <div class="total">Grand Total: ' . number_format($grandTotal, 2) . '</div>
+	<div class="pdf-header">{$RECORD_MODEL->getName()}</div>
+	<div class="pdf-field">
+		<span class="pdf-label">{vtranslate('Phone', $MODULE_NAME)}:</span>
+		<span>{$RECORD_MODEL->get('phone')}</span>
+	</div>
 </body>
-</html>';
+</html>
+```
 
-        return $html;
-    }
+`modules/Accounts/resources/PDF.css`:
 
-    private function getLineItems(int $invoiceId): array {
-        $sql = "SELECT productname, quantity, listprice
-                FROM vtiger_inventoryproductrel
-                INNER JOIN vtiger_products ON vtiger_products.productid = vtiger_inventoryproductrel.productid
-                WHERE id = ?
-                ORDER BY sequence_no";
-        $result = $GLOBALS['adb']->pquery($sql, [$invoiceId]);
+```css
+body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 12pt; }
+.pdf-header { font-size: 20pt; font-weight: bold; margin-bottom: 20px; }
+.pdf-label { font-weight: bold; display: inline-block; width: 200px; }
+```
 
-        $items = [];
-        while ($row = $GLOBALS['adb']->fetchByAssoc($result)) {
-            $items[] = decodeUTF8($row);
-        }
+## Reference / Line-Item Values
 
-        return $items;
-    }
-}
+- Reference fields: print the label with `getParentName($recordModel->get('account_id'))` (as `modules/Inventory/tpls/PDF.tpl:104` does); `getDisplayValue()` on a reference field returns an HTML link.
+- Inventory line items: `getAssociatedProducts($moduleName, $recordModel->getEntity())` (see `InventoryPDFUtils::getHTMLContent`), or a prepared query:
+
+```php
+$sql = "SELECT p.productname, r.quantity, r.listprice
+	FROM vtiger_inventoryproductrel AS r
+	INNER JOIN vtiger_products AS p ON (p.productid = r.productid)
+	WHERE r.id = ?
+	ORDER BY r.sequence_no";
+$result = $adb->pquery($sql, [$recordId]);
 ```
 
 ## Critical Rules
 
-1. **Use wkhtmltopdf API**, not TCPDF
-2. **Check service** is running before generating
-3. **Mode 'D' or 'I'** requires `exit()` after
-4. **Mode 'F'** saves to `storage/` directory
-5. **HTML must be complete** document with `<html><head><body>`
-6. **Include styles** in `<style>` tag, not external CSS
-7. **Use web-safe fonts** or DejaVu Sans for UTF-8
-8. **htmlspecialchars()** for user data to prevent XSS
+1. Call the global `generatePDF()` — there is no `GeneratePDF` class/namespace
+2. `$options` is a wkhtmltopdf CLI string; there are no `'D'`/`'I'`/`'F'` modes
+3. `generatePDF()` returns `false` when the API is disabled — check before streaming
+4. Stream the written file yourself (headers + `readfile()`), then `unlink()` temp files
+5. HTML in `.tpl`, CSS in `resources/*.css` injected as text (remote renderer can't load files)
+6. **Use DejaVu Sans** or web-safe fonts for Vietnamese text
+7. Check `DetailView` permission for the record before rendering

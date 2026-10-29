@@ -20,6 +20,8 @@ triggers:
 
 Security engineering tools for threat modeling, vulnerability analysis, secure architecture design, and penetration testing.
 
+> **vtiger/CloudGO PHP code:** the binding checklist is `rule://security-rules` (pquery prepared statements, CSRF, record permission checks, output escaping). Code samples here are Python and generic; use this skill for threat modeling and methodology, and map findings onto that rule.
+
 ---
 
 ## Table of Contents
@@ -56,38 +58,15 @@ Identify and analyze security threats using STRIDE methodology.
    - Information Disclosure: Can data leak?
    - Denial of Service: Can availability be affected?
    - Elevation of Privilege: Can access be escalated?
-4. Score risks using DREAD:
-   - Damage potential (1-10)
-   - Reproducibility (1-10)
-   - Exploitability (1-10)
-   - Affected users (1-10)
-   - Discoverability (1-10)
+4. Score risks (the bundled `threat_modeler.py` prints both):
+   - Risk score = likelihood × severity on a 1-25 scale (drives Critical/High/Medium/Low)
+   - DREAD average 1-10 (Damage, Reproducibility, Exploitability, Affected users, Discoverability)
 5. Prioritize threats by risk score
 6. Define mitigations for each threat
 7. Document in threat model report
 8. **Validation:** All DFD elements analyzed; STRIDE applied; threats scored; mitigations mapped
 
-### STRIDE Threat Categories
-
-| Category | Description | Security Property | Mitigation Focus |
-|----------|-------------|-------------------|------------------|
-| Spoofing | Impersonating users or systems | Authentication | MFA, certificates, strong auth |
-| Tampering | Modifying data or code | Integrity | Signing, checksums, validation |
-| Repudiation | Denying actions | Non-repudiation | Audit logs, digital signatures |
-| Information Disclosure | Exposing data | Confidentiality | Encryption, access controls |
-| Denial of Service | Disrupting availability | Availability | Rate limiting, redundancy |
-| Elevation of Privilege | Gaining unauthorized access | Authorization | RBAC, least privilege |
-
-### STRIDE per Element Matrix
-
-| DFD Element | S | T | R | I | D | E |
-|-------------|---|---|---|---|---|---|
-| External Entity | X | | X | | | |
-| Process | X | X | X | X | X | X |
-| Data Store | | X | X | X | X | |
-| Data Flow | | X | | X | X | |
-
-See: [references/threat-modeling-guide.md](references/threat-modeling-guide.md)
+STRIDE category table and the STRIDE-per-element matrix (which threats apply to External Entity / Process / Data Store / Data Flow): [references/threat-modeling-guide.md](references/threat-modeling-guide.md) (STRIDE Framework).
 
 ---
 
@@ -195,20 +174,20 @@ Identify and remediate security vulnerabilities in applications.
 7. Verify fixes and document
 8. **Validation:** Scope defined; automated and manual testing complete; findings classified; remediation tracked
 
-### OWASP Top 10 Mapping
+### OWASP Top 10 (2025) Mapping
 
 | Rank | Vulnerability | Testing Approach |
 |------|---------------|------------------|
-| A01 | Broken Access Control | Manual IDOR testing, authorization checks |
-| A02 | Cryptographic Failures | Algorithm review, key management audit |
-| A03 | Injection | SAST + manual payload testing |
-| A04 | Insecure Design | Threat modeling, architecture review |
-| A05 | Security Misconfiguration | Configuration audit, CIS benchmarks |
-| A06 | Vulnerable Components | Dependency scanning, CVE monitoring |
+| A01 | Broken Access Control (incl. SSRF) | Manual IDOR testing, authorization checks, URL-fetch manipulation |
+| A02 | Security Misconfiguration | Configuration audit, CIS benchmarks |
+| A03 | Software Supply Chain Failures | Dependency/SBOM scanning, CVE monitoring, build pipeline review |
+| A04 | Cryptographic Failures | Algorithm review, key management audit |
+| A05 | Injection | SAST + manual payload testing |
+| A06 | Insecure Design | Threat modeling, architecture review |
 | A07 | Authentication Failures | Password policy, session management review |
-| A08 | Software/Data Integrity | CI/CD security, code signing verification |
-| A09 | Logging Failures | Log review, SIEM configuration check |
-| A10 | SSRF | Manual URL manipulation testing |
+| A08 | Software or Data Integrity Failures | Code signing, deserialization review |
+| A09 | Security Logging and Alerting Failures | Log review, alerting/SIEM configuration check |
+| A10 | Mishandling of Exceptional Conditions | Error-path review (fail-closed, no stack traces leaked) |
 
 ### Vulnerability Severity Matrix
 
@@ -338,18 +317,7 @@ Respond to and contain security incidents.
 
 ## Security Tools Reference
 
-### Recommended Security Tools
-
-| Category | Tools |
-|----------|-------|
-| SAST | Semgrep, CodeQL, Bandit (Python), ESLint security plugins |
-| DAST | OWASP ZAP, Burp Suite, Nikto |
-| Dependency Scanning | Snyk, Dependabot, npm audit, pip-audit |
-| Secret Detection | GitLeaks, TruffleHog, detect-secrets |
-| Container Security | Trivy, Clair, Anchore |
-| Infrastructure | Checkov, tfsec, ScoutSuite |
-| Network | Wireshark, Nmap, Masscan |
-| Penetration | Metasploit, sqlmap, Burp Suite Pro |
+SAST/DAST/dependency/secret/container/infra/network tool list: [references/security-architecture-patterns.md](references/security-architecture-patterns.md) (Security Tools Reference). None are installed by default; check `command -v` first.
 
 ### Cryptographic Algorithm Selection
 
@@ -372,12 +340,12 @@ See: [references/cryptography-implementation.md](references/cryptography-impleme
 
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| [threat_modeler.py](scripts/threat_modeler.py) | STRIDE threat analysis with risk scoring | `python threat_modeler.py --component "Authentication"` |
-| [secret_scanner.py](scripts/secret_scanner.py) | Detect hardcoded secrets and credentials | `python secret_scanner.py /path/to/project` |
+| [threat_modeler.py](scripts/threat_modeler.py) | STRIDE threat analysis with risk scoring | `python3 ~/.omp/skills/senior-security/scripts/threat_modeler.py --component "Authentication"` |
+| [secret_scanner.py](scripts/secret_scanner.py) | Detect hardcoded secrets and credentials | `python3 ~/.omp/skills/senior-security/scripts/secret_scanner.py /path/to/project` |
 
 **Threat Modeler Features:**
-- STRIDE analysis for any system component
-- DREAD risk scoring
+- STRIDE analysis for a named component; matching is by keyword, and an unrecognized component name falls back to listing ALL threats
+- Likelihood × severity risk score (1-25) plus DREAD average (1-10)
 - Mitigation recommendations
 - JSON and text output formats
 - Interactive mode for guided analysis
@@ -385,8 +353,8 @@ See: [references/cryptography-implementation.md](references/cryptography-impleme
 **Secret Scanner Features:**
 - Detects AWS, GCP, Azure credentials
 - Finds API keys and tokens (GitHub, Slack, Stripe)
-- Identifies private keys and passwords
-- Supports 20+ secret patterns
+- Identifies private keys and `password = "…"` assignments
+- 20 built-in patterns (`--list-patterns`); PHP array-style config such as vtiger `$dbconfig['db_password'] = '…'` is NOT matched, grep those by hand
 - CI/CD integration ready
 
 ### References
@@ -423,13 +391,3 @@ See: [references/cryptography-implementation.md](references/cryptography-impleme
 | Referrer-Policy | strict-origin-when-cross-origin |
 | Permissions-Policy | geolocation=(), microphone=(), camera=() |
 
----
-
-## Related Skills
-
-| Skill | Integration Point |
-|-------|-------------------|
-| [senior-devops](../senior-devops/) | CI/CD security, infrastructure hardening |
-| [senior-secops](../senior-secops/) | Security monitoring, incident response |
-| [senior-backend](../senior-backend/) | Secure API development |
-| [senior-architect](../senior-architect/) | Security architecture decisions |

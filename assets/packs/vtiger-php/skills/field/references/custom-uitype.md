@@ -1,321 +1,122 @@
-# VTiger Custom UITypes
+# Custom UIType (hiển thị / nhập liệu riêng cho một field)
 
-## Overview
+> Codebase KHÔNG có đăng ký uitype mới (không có key `vtlib.uitype.handler.extended`, không có dải ≥ 1024). Field vẫn dùng uitype chuẩn trong BFR; hành vi riêng gắn qua **data type**.
 
-Create custom field types by extending `Vtiger_Base_UIType` and registering in `Extensions.php`.
+## Cơ chế (`Vtiger_Base_UIType::getInstanceFromField`)
 
-## Handler Class Location
+```
+Vtiger_Field_Model::getFieldDataType()          → 'channel'
+→ modules/{Module}/uitypes/Channel.php           class {Module}_Channel_UIType   (nếu file tồn tại)
+→ modules/Vtiger/uitypes/Channel.php             class Vtiger_Channel_UIType
+→ Vtiger_Base_UIType
+```
 
-`modules/{Module}/uitypes/{CustomName}.php`
+Data type đến từ uitype / typeofdata (xem [field-types.md](field-types.md)). Muốn hành vi riêng cho MỘT field:
 
-## Handler Class Template
+1. Khai báo field trong BFR bằng uitype chuẩn (vd `1`, `V~O`, `varchar(100)`).
+2. Override `getFieldDataType()` trong `modules/{Module}/models/Field.php` trả data type riêng cho field đó.
+3. Tạo `modules/{Module}/uitypes/{Datatype}.php` với class `{Module}_{Datatype}_UIType` (autoload theo tên).
+4. Template (nếu cần) ở `layouts/v7/modules/{Module}/uitypes/` — `vtemplate_path()` tìm ở module trước rồi fallback `modules/Vtiger/`.
+
+Ví dụ thật: `modules/CPEcommerceProduct/models/Field.php` (`channel`, `shopId`) + `modules/CPEcommerceIntegration/uitypes/Channel.php`. Chỉ đổi cách hiển thị một picklist → override class sẵn có, vd `modules/CPPayment/uitypes/Picklist.php` (`CPPayment_Picklist_UIType extends Vtiger_Picklist_UIType`).
+
+## Field model
 
 ```php
 <?php
 
 /**
- * Custom UIType Handler
  * @author Your Name
- * @create date YYYY-MM-DD
+ * @email your.email@cloudgo.vn
+ * @create date YYYY.MM.DD
  */
 
-class {Module}_{CustomName}_UIType extends Vtiger_Base_UIType {
+class CPGoal_Field_Model extends Vtiger_Field_Model {
 
-    /**
-     * Display value in DetailView and ListView
-     * @return string HTML output
-     */
-    public function getDisplayValue(): string {
-        $value = $this->get('field')->get('fieldvalue');
+	public function getFieldDataType() {
+		if ($this->getName() === 'color') return 'colorPicker';
 
-        if (empty($value)) {
-            return '';
-        }
-
-        // Custom display logic
-        return '<span class="custom-display">' . htmlspecialchars($value) . '</span>';
-    }
-
-    /**
-     * Edit view input field
-     * @param Vtiger_Request $request
-     * @param bool $editmode
-     * @return string HTML input
-     */
-    public function getEditViewDisplayValue(Vtiger_Request $request = null, bool $editmode = false): string {
-        $fieldName = $this->get('field')->getName();
-        $fieldValue = $this->get('field')->get('fieldvalue');
-
-        // Return custom input HTML
-        return '<input type="text"
-                       name="' . $fieldName . '"
-                       value="' . htmlspecialchars($fieldValue) . '"
-                       class="inputElement custom-input"
-                       data-uitype="custom" />';
-    }
-
-    /**
-     * Template name for EditView (optional)
-     * @return string Template path
-     */
-    public function getTemplateName(): string {
-        return 'uitypes/CustomField.tpl';
-    }
-
-    /**
-     * Get list view display value
-     * @return string
-     */
-    public function getListViewDisplayValue(): string {
-        return $this->getDisplayValue();
-    }
-
-    /**
-     * Get API/export display value
-     * @return mixed
-     */
-    public function getApiDisplayValue() {
-        return $this->get('field')->get('fieldvalue');
-    }
-
-    /**
-     * Validate field value before save
-     * @param mixed $value
-     * @return bool
-     */
-    public function validate($value): bool {
-        // Custom validation logic
-        if (empty($value)) {
-            return true;  // Allow empty
-        }
-
-        // Example: Validate format
-        return preg_match('/^[A-Z0-9-]+$/', $value);
-    }
-
-    /**
-     * Get value for database save
-     * @param mixed $value
-     * @return mixed Processed value
-     */
-    public function getDBValue($value) {
-        // Transform value before saving
-        return strtoupper(trim($value));
-    }
+		return parent::getFieldDataType();
+	}
 }
 ```
 
-## Registration in Extensions.php
+Giữ chữ ký override giống hệt cha: `Vtiger_Field_Model::getFieldDataType()` không tham số, không kiểu trả về.
 
-### File: `modules/{Module}/Extensions.php`
+## UIType class
 
-```php
-<?php
-
-return [
-    // Register custom UIType handler
-    'vtlib.uitype.handler.extended' => [
-        '{Module}_{CustomName}_UIType_Model' => 'modules/{Module}/uitypes/{CustomName}.php',
-    ],
-];
-```
-
-## Custom UIType Number
-
-### Choose UIType Number
-- **Built-in**: 1-120 (reserved)
-- **Custom**: Start at **1024** to avoid conflicts
-- **Range**: 1024-9999 for custom UITypes
-
-### Assign in Field Definition
-
-```php
-// In migration or field creation
-$field = new Vtiger_Field();
-$field->name = 'custom_field';
-$field->label = 'Custom Field';
-$field->uitype = 1024;  // Custom UIType number
-$field->typeofdata = 'V~O';  // V=varchar, O=optional
-```
-
-## Custom Template (Optional)
-
-### Template Location
-`layouts/v7/modules/{Module}/uitypes/CustomField.tpl`
-
-### Template Example
-
-```smarty
-{*+**************************************************************************
- * Custom UIType Template
- ****************************************************************************}
-{assign var="FIELD_INFO" value=$FIELD_MODEL->getFieldInfo()}
-{assign var="SPECIAL_VALIDATOR" value=$FIELD_MODEL->getValidator()}
-{assign var="FIELD_NAME" value=$FIELD_MODEL->get('name')}
-
-<div class="custom-field-container">
-    <input type="text"
-           name="{$FIELD_NAME}"
-           value="{$FIELD_MODEL->get('fieldvalue')}"
-           class="inputElement {$FIELD_INFO['class']}"
-           data-validation-engine="validate[{$SPECIAL_VALIDATOR}]"
-           data-fieldname="{$FIELD_NAME}"
-           data-fieldtype="custom"
-           {if $MODE eq 'edit'}readonly{/if} />
-
-    <button type="button"
-            class="btn btn-sm custom-picker"
-            data-target="{$FIELD_NAME}">
-        <i class="fa fa-search"></i>
-    </button>
-</div>
-```
-
-## JavaScript Handler (Optional)
-
-### Location
-`layouts/v7/modules/{Module}/resources/Edit.js`
-
-### JavaScript Pattern
-
-```javascript
-CustomView_BaseController_Js('Module_Edit_Js', {}, {
-
-    registerEvents: function() {
-        this._super();
-        this.registerCustomUITypeHandlers();
-    },
-
-    registerCustomUITypeHandlers: function() {
-        var container = this.getEditViewContainer();
-
-        // Custom UIType button handler
-        container.find('.custom-picker').on('click', function() {
-            var target = jQuery(this).data('target');
-            var input = container.find('[name="' + target + '"]');
-
-            // Custom picker logic
-            app.helper.showModal({
-                url: 'index.php?module=Module&view=CustomPicker',
-                cb: function(modal) {
-                    modal.find('.select-item').on('click', function() {
-                        var value = jQuery(this).data('value');
-                        input.val(value).trigger('change');
-                        app.helper.hideModal();
-                    });
-                }
-            });
-        });
-
-        // Custom validation
-        container.find('[data-fieldtype="custom"]').on('blur', function() {
-            var value = jQuery(this).val();
-
-            if (!self.validateCustomFormat(value)) {
-                app.helper.showErrorNotification({
-                    message: 'Invalid format'
-                });
-            }
-        });
-    },
-
-    validateCustomFormat: function(value) {
-        // Custom validation logic
-        return /^[A-Z0-9-]+$/.test(value);
-    }
-});
-```
-
-## Run Quick Repair
-
-After registering custom UIType in Extensions.php:
-
-1. Navigate to **Settings → Module Manager → Module Tools**
-2. Click **Quick Repair**
-3. System will register the custom UIType handler
-
-## Complete Example: Color Picker UIType
-
-### Handler: `modules/CPGoal/uitypes/ColorPicker.php`
+`modules/CPGoal/uitypes/ColorPicker.php`:
 
 ```php
 <?php
+
+/**
+ * @author Your Name
+ * @email your.email@cloudgo.vn
+ * @create date YYYY.MM.DD
+ */
 
 class CPGoal_ColorPicker_UIType extends Vtiger_Base_UIType {
 
-    public function getDisplayValue(): string {
-        $value = $this->get('field')->get('fieldvalue');
+	// Edit control: layouts/v7/modules/CPGoal/uitypes/ColorPicker.tpl
+	public function getTemplateName() {
+		return 'uitypes/ColorPicker.tpl';
+	}
 
-        if (empty($value)) {
-            return '';
-        }
+	// Detail/List text: the escaped hex value; the colour swatch belongs in the DetailView tpl + module CSS
+	public function getDisplayValue($value, $record = false, $recordInstance = false) {
+		$color = (string) $value;
+		if (!preg_match('/^#[0-9A-Fa-f]{6}$/', $color)) return '';
 
-        return '<span class="color-badge" style="background-color: ' . htmlspecialchars($value) . ';">'
-             . htmlspecialchars($value) . '</span>';
-    }
+		return htmlspecialchars($color, ENT_QUOTES, 'UTF-8');
+	}
 
-    public function getEditViewDisplayValue(Vtiger_Request $request = null, bool $editmode = false): string {
-        $fieldName = $this->get('field')->getName();
-        $fieldValue = $this->get('field')->get('fieldvalue');
-
-        return '<input type="color"
-                       name="' . $fieldName . '"
-                       value="' . htmlspecialchars($fieldValue) . '"
-                       class="inputElement color-picker" />';
-    }
-
-    public function validate($value): bool {
-        // Validate hex color
-        return preg_match('/^#[0-9A-Fa-f]{6}$/', $value);
-    }
-
-    public function getDBValue($value) {
-        return strtoupper($value);  // Store as uppercase
-    }
+	// Value stored in the column
+	public function getDBInsertValue($value) {
+		return strtoupper(trim((string) $value));
+	}
 }
 ```
 
-### Register in Extensions.php
+Chữ ký các method có thể override (`modules/Vtiger/uitypes/Base.php`) — **giữ đúng số tham số + default, KHÔNG thêm kiểu tham số**:
 
-```php
-return [
-    'vtlib.uitype.handler.extended' => [
-        'CPGoal_ColorPicker_UIType_Model' => 'modules/CPGoal/uitypes/ColorPicker.php',
-    ],
-];
+| Method | Dùng cho |
+|---|---|
+| `getTemplateName()` | tpl control trong EditView (mặc định `uitypes/String.tpl`) |
+| `getDetailViewTemplateName()` | tpl ở Detail/Summary/Header (mặc định `uitypes/StringDetailView.tpl`) |
+| `getListSearchTemplateName()` | ô tìm kiếm ở ListView |
+| `getDisplayValue($value, $record = false, $recordInstance = false)` | text Detail/List |
+| `getRelatedListDisplayValue($value)` | related list |
+| `getEditViewDisplayValue($value)` | giá trị đổ vào input (cha dùng `htmlentities`) |
+| `getDBInsertValue($value)` | giá trị trước khi lưu |
+
+Không có hook `validate()` ở UIType: validate client-side bằng `data-validation-engine` trong tpl, server-side trong Save action/handler.
+
+## Template
+
+`layouts/v7/modules/CPGoal/uitypes/ColorPicker.tpl` — copy cấu trúc `layouts/v7/modules/Vtiger/uitypes/String.tpl`, KHÔNG CSS/JS inline (CSS → `modules/CPGoal/resources/*.css`, JS → `layouts/v7/modules/CPGoal/resources/Edit.js`):
+
+```smarty
+{strip}
+	{assign var="FIELD_INFO" value=$FIELD_MODEL->getFieldInfo()}
+	{assign var="SPECIAL_VALIDATOR" value=$FIELD_MODEL->getValidator()}
+	{if (!$FIELD_NAME)}
+		{assign var="FIELD_NAME" value=$FIELD_MODEL->getFieldName()}
+	{/if}
+	<input type="color"
+		id="{$MODULE}_editView_fieldName_{$FIELD_NAME}"
+		data-fieldname="{$FIELD_NAME}"
+		class="inputElement color-picker"
+		name="{$FIELD_NAME}"
+		value="{$FIELD_MODEL->getEditViewDisplayValue($FIELD_MODEL->get('fieldvalue'))}"
+		{if !empty($SPECIAL_VALIDATOR)}data-validator="{Zend_Json::encode($SPECIAL_VALIDATOR)}"{/if}
+		{if $FIELD_INFO["mandatory"] eq true} data-rule-required="true" {/if}
+	/>
+{/strip}
 ```
 
-### Create Field in Migration
+## Verify
 
-```php
-$field = new Vtiger_Field();
-$field->name = 'color';
-$field->label = 'Color';
-$field->table = 'vtiger_cpgoal';
-$field->column = 'color';
-$field->columntype = 'VARCHAR(7)';
-$field->uitype = 1025;  // Custom UIType number
-$field->typeofdata = 'V~O';
-$block->addField($field);
-```
-
-## Key Methods Reference
-
-| Method | Return Type | Purpose |
-|--------|-------------|---------|
-| `getDisplayValue()` | string | DetailView/ListView display |
-| `getEditViewDisplayValue()` | string | EditView input field |
-| `getTemplateName()` | string | Custom template path (optional) |
-| `getListViewDisplayValue()` | string | ListView display |
-| `getApiDisplayValue()` | mixed | API/export value |
-| `validate()` | bool | Validate before save |
-| `getDBValue()` | mixed | Transform for DB storage |
-
-## Critical Pitfalls
-
-1. **UIType number unique** — Use 1024+ for custom types
-2. **Run Quick Repair** after Extensions.php changes
-3. **Class naming**: `{Module}_{Name}_UIType` (NOT UIType_Model suffix)
-4. **Return type declarations** on all methods (PHP 7+)
-5. **Always htmlspecialchars** in display methods for XSS protection
-6. **Template path relative** to `layouts/v7/modules/`
+1. `php -l` cho Field.php + uitypes/*.php, rồi mở EditView/DetailView — sai chữ ký override chỉ lộ khi nạp class.
+2. EditView: control mới hiện, save giá trị → cột DB đúng giá trị `getDBInsertValue`.
+3. DetailView + ListView + related list hiển thị qua `getDisplayValue`, ký tự `<"'` được escape.

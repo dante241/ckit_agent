@@ -2,244 +2,88 @@
 
 ## NotificationHelper::sendNotification()
 
+Real signature (`include/utils/NotificationHelper.php:12`); not autoloaded — `require_once('include/utils/NotificationHelper.php');` first:
+
 ```php
-NotificationHelper::sendNotification(
-    array $data,                    // Notification data
-    bool $store = true              // false = flash only, true = save to DB
-): bool
+static function sendNotification($data, $store = true)
 ```
 
-## Data Structure
+Returns nothing. It silently returns early when the receiver user does not exist or the user muted `related_module_name` (`CPNotifications_Data_Model::isModuleMutedForUser()`).
 
-**Required fields:**
-```php
-$data = [
-    'receiver_id' => 123,                       // User ID (required)
-    'message' => 'New order received',          // Notification text (required)
-    'image' => 'path/to/image.jpg',            // Optional image
-    'type' => 'info',                           // info/warning/error/success
-    'related_record_id' => 456,                // Related record ID
-    'related_record_name' => 'SO-001',         // Record display name
-    'related_module_name' => 'SalesOrder',     // Module name
-    'extra_data' => ['key' => 'value'],        // Additional JSON data
-];
-```
+## $data
+
+| Key | Use |
+|---|---|
+| `receiver_id` | user id (required) |
+| `message` | push body only — **not stored** |
+| `type` | push payload type, default `'notification'` |
+| `category` | stored category; default `'update'`, or `'checkin'` when `extra_data['action'] == 'employee_checkin'` |
+| `image` | stored + pushed |
+| `related_record_id`, `related_record_name`, `related_module_name` | stored + pushed |
+| `extra_data` | array, stored as JSON; `extra_data['action']` drives the text rendered by `translateNotificationMessage()` |
 
 ## Internal Flow
 
-1. **Validate user** — check receiver_id exists
-2. **Save notification** to `vtiger_cpnotifications` (if $store=true)
-3. **Determine app** — check user's CloudGO app installation
-4. **Send FCM** — push to Firebase Cloud Messaging
-5. **Return status** — true if sent, false if failed
+1. User exists + module not muted, else return
+2. `$store = true` → `CPNotifications_Data_Model::saveNotification($data)` inserts into `vtiger_notifications` (id, receiver_id, category, image, related_record_id, related_record_name, related_module_name, created_time, read, extra_data, pin) and returns the id
+3. Build push payload: title `'New notification!'` (or `LBL_NOTIFICATION_TITLE_CLOUGO` for modules in `$cloudGoAppConfig[...]['supported_modules']`), `id` when stored; `$store = false` sets `extra_data['is_flash_msg'] = true`
+4. FCM push is **deferred**: `CPQueue_Server_Model::getInstance()->addTask('SendNotification', ['type' => 'deliver_fcm_push', ...])` → `modules/CPQueue/Jobs/SendNotification.php` → `FCMHelper::sendNotification($title, $message, $userId, $data, $forPortalUser)`
 
-## CloudGO App Module Routing
+The in-app list text is NOT the `message` you passed: `CPNotifications_Data_Model::populateRowData()` re-renders it with `translateNotificationMessage($row)` from the stored row.
 
-**Notification opens specific module in app:**
+## $store
 
-| Module | App Route |
-|--------|-----------|
-| `SalesOrder` | `/salesorder/detail/456` |
-| `Invoice` | `/invoice/detail/456` |
-| `Contacts` | `/contacts/detail/456` |
-| `Accounts` | `/accounts/detail/456` |
-| `Leads` | `/leads/detail/456` |
-| `HelpDesk` | `/helpdesk/detail/456` |
+- `true` (default): row in `vtiger_notifications` (bell list, read/unread, pin) + push
+- `false`: push only, flagged `is_flash_msg`; no history
 
-**Routing handled automatically based on `related_module_name` and `related_record_id`.**
+## FCM Tokens
 
-## Key Classes
+- Stored as user preferences (`Users_Preferences_Model`): `push_client_tokens` and per app `<app>push_client_tokens` (e.g. `cloudgopush_client_tokens`)
+- `CPNotifications_Data_Model::getClientTokens($userId, $app = '')`, `saveClientToken($token, $app = '')` (current user), `removeClientToken($token, $app = '')`
+- Registered from `CPNotifications` `HandleAjax` action and the mobile APIs (`include/Webservice/RestfulApiHandler.php:288`, `include/utils/CloudGoApiUtils.php:762`); expired tokens dropped by `FCMHelper::removeExpiredTokens()`
+- No token → the in-app row is still saved; only the push is skipped
 
-### NotificationHelper
+## Related API
 
-**Location:** `include/utils/NotificationHelper.php`
+- `CPNotifications_Data_Model::loadNotifications($type, $subType, $offset, $includeModules = [], $keyword = '')`
+- `CPNotifications_Data_Model::markAsRead($target, $status = null, $includeModules = [])`
+- `CPNotifications_Data_Model::getNotificationCount($userId)`
+- `NotificationHelper::computeRelatedRecordName($entityData, string $moduleName, CRMEntity $focus): string`
+- `FCMHelper::sendNotification($title, $message, $userId, $data = null, $forPortalUser = false)` — low-level; prefer `NotificationHelper`
 
-**Methods:**
-- `sendNotification(array $data, bool $store = true): bool`
-- `getNotifications(int $userId, int $limit = 20): array`
-- `markAsRead(int $notificationId): bool`
-- `deleteNotification(int $notificationId): bool`
+## Example
 
-### FCMHelper
-
-**Location:** `include/utils/FCMHelper.php`
-
-**Methods:**
-- `sendPush(string $token, array $data): bool`
-- `sendPushToUser(int $userId, array $data): bool`
-- `sendPushToMultipleUsers(array $userIds, array $data): bool`
-
-### CPNotifications_Data_Model
-
-**Location:** `modules/CPNotifications/models/Data.php`
-
-**Methods:**
-- `createNotification(array $data): int`
-- `getUserNotifications(int $userId, int $limit = 20): array`
-- `markAsRead(int $notificationId): bool`
-- `deleteNotification(int $notificationId): bool`
-
-## $store Parameter
-
-### $store = true (default)
-
-**Persistent notification:**
-- Saved to `vtiger_cpnotifications` table
-- User can view in notification center
-- Shows in notification history
-- Can be marked as read/unread
-
-### $store = false
-
-**Flash notification:**
-- Sent via FCM immediately
-- NOT saved to database
-- User sees once
-- No history/tracking
-- Use for real-time alerts (chat, live updates)
-
-## Real Codebase Examples
-
-### Example 1: Order Assignment
+Pattern from `modules/CPThankYouCard/handlers/CPThankYouCardHandler.php:57-83`:
 
 ```php
-// modules/SalesOrder/actions/Assign.php
-public function notifyAssignee(int $recordId, int $newOwnerId): void {
-    $record = Vtiger_Record_Model::getInstanceById($recordId, 'SalesOrder');
+require_once('include/utils/NotificationHelper.php');
 
-    NotificationHelper::sendNotification([
-        'receiver_id' => $newOwnerId,
-        'message' => 'New order assigned to you: ' . $record->get('subject'),
-        'type' => 'info',
-        'related_record_id' => $recordId,
-        'related_record_name' => $record->get('subject'),
-        'related_module_name' => 'SalesOrder',
-        'extra_data' => [
-            'grand_total' => $record->get('hdnGrandTotal'),
-            'customer_name' => $record->getDisplayValue('account_id'),
-        ],
-    ], true);  // Save to DB
-}
+$userLanguage = getUserData('language', $receiverId);
+$userTimezone = getUserData('time_zone', $receiverId);
+
+$data = [
+	'receiver_id' => $receiverId,
+	'type' => 'notification',
+	'related_record_id' => $recordId,
+	'related_record_name' => $recordName,
+	'related_module_name' => 'CPThankYouCard',
+	'extra_data' => [
+		'action' => 'new_thank_you_card',
+		'creator' => $creatorId,
+	],
+];
+
+$data['message'] = translateNotificationMessage($data, $userLanguage, $userTimezone);
+NotificationHelper::sendNotification($data);
 ```
 
-### Example 2: Payment Received
-
-```php
-// modules/Invoice/actions/ReceivePayment.php
-public function notifyPaymentReceived(int $invoiceId, float $amount): void {
-    $invoice = Vtiger_Record_Model::getInstanceById($invoiceId, 'Invoice');
-    $salesPersonId = (int) $invoice->get('assigned_user_id');
-
-    NotificationHelper::sendNotification([
-        'receiver_id' => $salesPersonId,
-        'message' => "Payment received: $amount for " . $invoice->get('subject'),
-        'type' => 'success',
-        'related_record_id' => $invoiceId,
-        'related_record_name' => $invoice->get('subject'),
-        'related_module_name' => 'Invoice',
-        'extra_data' => [
-            'payment_amount' => $amount,
-            'remaining_balance' => $invoice->get('balance'),
-        ],
-    ], true);
-}
-```
-
-### Example 3: Real-time Chat Message (Flash)
-
-```php
-// modules/CPChat/actions/SendMessage.php
-public function notifyNewMessage(int $recipientId, string $message, string $senderName): void {
-    NotificationHelper::sendNotification([
-        'receiver_id' => $recipientId,
-        'message' => $senderName . ': ' . substr($message, 0, 50),
-        'type' => 'info',
-        'extra_data' => [
-            'chat_id' => $this->chatId,
-            'message_id' => $this->messageId,
-        ],
-    ], false);  // Flash only, don't store
-}
-```
-
-### Example 4: Multi-user Notification
-
-```php
-// modules/SalesOrder/actions/Approve.php
-public function notifyTeam(int $recordId, array $teamMemberIds): void {
-    $record = Vtiger_Record_Model::getInstanceById($recordId, 'SalesOrder');
-
-    foreach ($teamMemberIds as $userId) {
-        NotificationHelper::sendNotification([
-            'receiver_id' => (int) $userId,
-            'message' => 'Order approved: ' . $record->get('subject'),
-            'type' => 'success',
-            'related_record_id' => $recordId,
-            'related_record_name' => $record->get('subject'),
-            'related_module_name' => 'SalesOrder',
-        ], true);
-    }
-}
-```
-
-## Notification Types
-
-| Type | Badge Color | Use Case |
-|------|-------------|----------|
-| `info` | Blue | General updates, assignments |
-| `success` | Green | Completed actions, approvals |
-| `warning` | Yellow | Alerts, pending actions |
-| `error` | Red | Errors, rejections, critical alerts |
-
-## FCM Token Management
-
-**User must have FCM token registered:**
-
-```php
-// Check if user has FCM token
-$sql = "SELECT fcm_token FROM vtiger_users WHERE id = ?";
-global $adb;
-$result = $adb->pquery($sql, [$userId]);
-$token = $adb->query_result($result, 0, 'fcm_token');
-
-if (empty($token)) {
-    // User hasn't installed CloudGO app or not logged in
-    return false;
-}
-```
-
-**Token registration:**
-- User installs CloudGO mobile app
-- App requests FCM token from Firebase
-- Token saved to `vtiger_users.fcm_token`
-- Token refreshed periodically
-
-## Database Schema
-
-**vtiger_cpnotifications table:**
-```sql
-CREATE TABLE vtiger_cpnotifications (
-    cpnotificationsid INT PRIMARY KEY,
-    receiver_id INT NOT NULL,
-    message TEXT NOT NULL,
-    image VARCHAR(255),
-    type VARCHAR(50),
-    related_record_id INT,
-    related_record_name VARCHAR(255),
-    related_module_name VARCHAR(100),
-    extra_data TEXT,
-    is_read TINYINT DEFAULT 0,
-    created_at DATETIME
-);
-```
+Other real callers: `modules/CPOTRegister/handlers/CPOTRegisterHandler.php:110`, `include/utils/CallCenterUtils.php`, `include/EntryPoints/PushNotificationTest.php`. Bulk sends go through CPQueue `SendNotification` task types (`send_mass_notification`, `send_update_notification_to_group`, …).
 
 ## Critical Pitfalls
 
-1. **receiver_id required** — push to specific user
-2. **store=false for flash** — transient notifications
-3. **Check app installed** — user must have CloudGO app
-4. **FCM token must exist** — device registered
-5. **Type affects display** — use appropriate type
-6. **Message length** — keep under 100 chars for mobile display
-7. **Image path** — full URL for remote access
-8. **extra_data JSON** — must be valid JSON array
+1. **No return value** — do not branch on the result
+2. **`message` is push-only** — in-app text comes from `extra_data['action']` via `translateNotificationMessage()`; add a translation case for new actions
+3. **Push is async** — needs the CPQueue worker for `SendNotification`
+4. **Muted modules** — users can mute `related_module_name`; nothing is stored or sent
+5. **`extra_data` must be an array** — it is `json_encode`d
+6. **Push opt-out / no project** — `FCMHelper` skips users with `notification_config->receive_notifications == 0`, no tokens, or empty `$googleConfig['firebase']['project_id']`

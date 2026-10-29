@@ -2,7 +2,6 @@
 name: fix
 disable-model-invocation: true
 description: "Fix a bug end-to-end following the debugging flow. Handles bug analysis, root cause investigation, fix implementation, review, testing, and completion. Use when given a bug report or ticket with 'fix', 'error', 'broken', 'not working'."
-user-invokable: true
 ---
 
 # Fix Skill
@@ -40,7 +39,7 @@ Step 9: Error Pattern Capture      ->  Propose EP-NNN entry -> USER GATE -> appe
 ### Extract Bug Report
 
 1. **From ticket number** (`#NNNNN`):
-   - Use `pms_get_ticket` with raw numeric ID (NOT `17x` prefixed)
+   - Use `xd://mcp__pms_ticket_detail` with `{"id": <raw numeric ID>}` (NOT `17x` prefixed)
    - Read ticket title, description, and **check images** (`imagename` field)
    - If ticket has images, read them for visual reference of the bug
    - Extract: module(s), steps to reproduce, expected vs actual behavior
@@ -55,7 +54,7 @@ Step 9: Error Pattern Capture      ->  Propose EP-NNN entry -> USER GATE -> appe
 |-------|----------|------|
 | `simple` | Single file, obvious cause, clear fix | Step 1 -> 3(quick) -> 4(lite) -> 5 -> 6(built-in) -> 7(verify-only/E2E) -> 8 |
 | `medium` | 2-5 files, needs call chain tracing | Step 1 -> 2 -> 3(Serena trace) -> 4 -> 5 -> 6(reviewer) -> 7(must-test/E2E) -> 8 |
-| `complex` | Cross-module, unclear cause, intermittent | Step 1 -> 2 -> 3(debugger agent) -> 4 -> 5 -> 6(reviewer) -> 7(tester agent) -> 8 |
+| `complex` | Cross-module, unclear cause, intermittent | Step 1 -> 2 -> 3(debugger agent) -> 4 -> 5 -> 6(reviewer) -> 7(must-test via tester agent + E2E if UI) -> 8 |
 
 **Complexity can be overridden** with `--simple`, `--medium`, or `--complex` flags.
 
@@ -99,7 +98,7 @@ Auto-detect required skills from bug context:
 
 ### Simple Bug (single file, obvious cause)
 
-1. Use Serena `search_for_pattern` to locate error message or relevant code
+1. Use `codegraph_explore` (or `grep` for a literal error message) to locate the relevant code
 2. Use `find_symbol` with `include_body=True` to read the buggy code
 3. Identify root cause directly
 4. **Skip to Step 4** (lite todolist)
@@ -134,7 +133,7 @@ Auto-detect required skills from bug context:
 | PHP error/blank page | `php -l <file>`, check error log |
 | AJAX returning error | Find Action controller, check `process()` method |
 | Data not saving | Trace `save()` call chain, check handler conflicts |
-| UI not rendering | Check TPL syntax, JS console errors (Playwright) |
+| UI not rendering | Check TPL syntax, JS console errors (omp `browser`: `tab.console()` / `tab.errors()`) |
 | SQL error | Extract query, run on real DB via MCP |
 | Permission denied | Check `checkPermission()`, user role settings |
 | Cron not executing | Check cron status table, handler file path |
@@ -198,10 +197,11 @@ _(filled in Step 8)_
 
 1. **Edit the minimum number of files** — fix the root cause, don't refactor surroundings
 2. Follow `cloudgo-development-rules.md` conventions strictly
-3. Add modification tracking comment:
+3. Add modification tracking comment per `rule://php-conventions` (ownership-based, English, NO ticket number):
    ```php
-   // Modified by <Author> on YYYY-MM-DD to fix #XXXXX: <brief description>
+   // Modified by <Name> on YYYY-MM-DD - <reason>
    ```
+   Editing a function you wrote → no comment; new function in someone else's class → `// Added by <Name> on YYYY-MM-DD - <reason>`. Close named blocks with `// End <Name>`.
 
 ### Mandatory Checks (after each file)
 
@@ -235,7 +235,7 @@ Quick self-check (no code-reviewer agent):
 
 ### Medium/Complex Bug — Full Review
 
-Spawn `code-reviewer` agent on all modified files with the Phase 8 checklist:
+Spawn `code-reviewer` agent on all modified files with the checklist below:
 
 **Runtime correctness:**
 - [ ] Method/function exists (Serena `find_symbol`)
@@ -261,10 +261,10 @@ Spawn `code-reviewer` agent on all modified files with the Phase 8 checklist:
 ### Determine Test Tier
 
 ```
-Fixed Action/Model/Helper logic?   -> must-test (unit tests via tester agent)
+Fixed Action/Model/Helper logic?   -> must-test (PHPUnit only covers domains/*/tests; legacy modules need a standalone harness script)
 Fixed Report/SQL query?            -> verify-sql (run on real DB)
 Fixed DDL/language/config/CSS?     -> verify-only (php -l + review sufficient)
-Fixed UI (TPL/JS)?                 -> E2E (Playwright MCP)
+Fixed UI (TPL/JS)?                 -> E2E (omp `browser` eval global)
 ```
 
 ### Verification Checklist (ALL tiers)
@@ -275,16 +275,16 @@ Fixed UI (TPL/JS)?                 -> E2E (Playwright MCP)
 
 ### E2E Verification (when UI involved)
 
-Use MCP Playwright tools:
-1. `browser_navigate` to the affected page
-2. `browser_snapshot` to verify fix renders correctly
-3. Reproduce original bug steps → confirm bug no longer occurs
-4. `browser_console_messages` to check for JS errors
-5. `browser_screenshot` for visual confirmation
+Use the omp `browser` eval global (JS eval):
+1. `const tab = await browser.open({ name: 'fix', url })` → open the affected page
+2. `await tab.observe()` / `tab.ariaSnapshot()` to verify the fix renders correctly
+3. Reproduce original bug steps (`tab.click` / `tab.fill`) → confirm bug no longer occurs
+4. `await tab.console()` + `await tab.errors()` to check for JS errors
+5. `await tab.screenshot()` for visual confirmation
 
 ### must-test Verification (Action/Model/Helper)
 
-Spawn `tester` agent:
+Spawn `tester` agent (legacy module code is outside `phpunit.xml.dist`, so the tester writes a standalone harness script):
 1. Test the fixed code path with valid input
 2. Test with the input that originally caused the bug
 3. Test edge cases (empty, null, special chars, Vietnamese text)
@@ -326,33 +326,33 @@ If tests fail:
 
 ### When to trigger
 
-Sau khi fix xong, đánh giá xem bug này có đáng ghi `EP-NNN` không. Trigger nếu:
+After the fix, decide whether the bug deserves an `EP-NNN` entry. Trigger if:
 
-- **Bug do anti-pattern chung** dễ tái phát ở module khác (vd typo, copy-paste sai, race condition pattern)
-- **Bug do framework misuse** (vd dùng sai permission method, sai event hook)
-- **Bug khó phát hiện qua syntax/lint** (cần human/AI nhìn ngữ nghĩa)
-- **Fix có rule rõ ràng** để phòng tránh lần sau (1-2 câu actionable)
+- **Generic anti-pattern** likely to recur in other modules (e.g. typo, wrong copy-paste, race-condition pattern)
+- **Framework misuse** (e.g. wrong permission method, wrong event hook)
+- **Hard to catch via syntax/lint** (needs human/AI semantic review)
+- **Clear preventive rule** exists (1-2 actionable sentences)
 
-Skip nếu: bug đơn lẻ do business logic riêng module, fix typo nhỏ chỉ ảnh hưởng 1 chỗ duy nhất, bug đặc thù không generalize được.
+Skip if: one-off bug in module-specific business logic, small typo affecting a single place, or a quirk that does not generalize.
 
-### Steps (2 tầng: auto-draft PENDING — không hỏi · promote CANONICAL — user duyệt)
+### Steps (two tiers: auto-draft PENDING — no question · promote CANONICAL — user approves)
 
-1. **Auto-draft vào pending (KHÔNG cần hỏi):** trigger khớp → append vào `.omp/rules/error-patterns-pending.md` (tạo nếu chưa có), ID tạm `PEND-<ticket>`:
+1. **Auto-draft to pending (no need to ask):** trigger matches → append to `.omp/rules/error-patterns-pending.md` (create if missing), temporary ID `PEND-<ticket>`:
    ```
-   ## PEND-<ticket>: <Tên ngắn>
+   ## PEND-<ticket>: <Short name>
    **Ticket / MR:** #NNNNN / !NNN
    **Date:** YYYY-MM-DD
    **Module / Layer:** <...>
-   **Symptom:** <hiện tượng>
-   **Root cause:** <kỹ thuật>
-   **Rule:** <1-2 câu phòng tránh>
-   **Trigger keywords (review):** <substring máy grep được trong code lỗi — phân cách ' · '>
+   **Symptom:** <what happens>
+   **Root cause:** <technical cause>
+   **Rule:** <1-2 preventive sentences>
+   **Trigger keywords (review):** <greppable substrings from the buggy code — separated by ' · '>
    ```
-   Báo user 1 dòng: "Đã draft PEND-<ticket>". Trigger keywords = chuỗi nguyên văn trong code (hook grep substring), không phải mô tả trừu tượng.
+   Tell the user in one line: "Drafted PEND-<ticket>". Trigger keywords = literal code substrings that reviewers grep for, not abstract descriptions.
 
-2. **Promote (USER GATE):** cuối flow, show entry pending qua `ask`: `Promote` / `Sửa rồi promote` / `Để ở pending`. Approved → gán `EP-NNN` (max+1), append `.omp/rules/error-patterns.md`, xoá khỏi pending. Từ đó hook `posttooluse-error-patterns.sh` enforce tự động.
+2. **Promote (USER GATE):** at the end of the flow, show the pending entry via `ask`: `Promote` / `Edit then promote` / `Keep pending`. Approved → assign `EP-NNN` (max+1), append to `.omp/rules/error-patterns.md`, remove from pending. Reviewers (`code-reviewer`, `/review-pr`) then check its trigger keywords.
 
-3. **KHÔNG ghi thẳng `error-patterns.md` khi chưa approve** — pending thì tự do.
+3. **NEVER write `error-patterns.md` directly before approval** — pending is free to write.
 
 ## Resume Mode (`--resume`)
 

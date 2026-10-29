@@ -1,255 +1,143 @@
 # CSS/JS Inclusion
 
-> File separation rules and asset loading for VTiger Views
+> Asset loading for VTiger Views
 
-## CRITICAL: File Separation Rules (MANDATORY)
+File separation (no inline CSS/JS, no HTML in PHP) and CSS/JS/TPL locations: see **File Separation Rules** in `.omp/rules/cloudgo-development-rules.md` (always loaded) — not repeated here. `app.request` / `app.helper` / `app.vtranslate` reference: `.omp/rules/javascript-rules.md` ("Key JavaScript Objects").
 
-**These rules are NON-NEGOTIABLE. Violations will break the codebase.**
-
-1. **NO INLINE CSS/JS**: CSS and JavaScript MUST be in separate files, NEVER inline in PHP or TPL files
-2. **CSS/JS Location**:
-   - CSS: **ALWAYS** `modules/<Module>/resources/<ViewName>.css`
-   - JS (core views — List, Edit, Detail that inherit parent controller): `layouts/v7/modules/<Module>/resources/<ViewName>.js`
-   - JS (custom views — Config, reports, custom pages): `modules/<Module>/resources/<ViewName>.js`
-3. **NO HTML IN PHP**: HTML markup MUST be in `.tpl` template files, NEVER directly in PHP classes
-
-### Correct Structure (core view — inherits parent controller)
-
-```
-layouts/v7/modules/Contacts/
-├── Detail.tpl                        # HTML template
-├── resources/
-│   └── Detail.js                     # JS controller (core view)
-modules/Contacts/
-├── resources/
-│   └── Detail.css                    # CSS (always here)
-```
-
-### Correct Structure (custom view — standalone controller)
-
-```
-modules/Contacts/
-├── resources/
-│   ├── CustomView.js                 # JS controller (custom view)
-│   ├── CustomView.css                # Styles
-│   ├── CustomModal.js                # Modal controller
-│   └── CustomModal.css               # Modal styles
-layouts/v7/modules/Contacts/
-├── CustomView.tpl                    # HTML template
-├── CustomModal.tpl                   # Modal template
-```
-
-### ❌ WRONG - Inline CSS/JS in PHP
-
-```php
-// DON'T DO THIS
-class Contacts_CustomView_View extends Vtiger_Index_View {
-    public function process(Vtiger_Request $request): void {
-        echo '<style>.my-class { color: red; }</style>';
-        echo '<script>$(function() { alert("hi"); });</script>';
-        echo '<div class="container">...</div>';
-    }
-}
-```
-
-### ✅ CORRECT - Separate Files
-
-```php
-// PHP View - data only
-class Contacts_CustomView_View extends Vtiger_Index_View {
-    public function process(Vtiger_Request $request): void {
-        $viewer = $this->getViewer($request);
-        $viewer->assign('recordData', $data);
-        $viewer->view('CustomView.tpl', $moduleName);
-    }
-
-    public function getHeaderScripts(Vtiger_Request $request): array {
-        $scripts = parent::getHeaderScripts($request);
-        $scripts[] = ['src' => 'modules.Contacts.resources.CustomView'];
-        return $scripts;
-    }
-
-    public function getHeaderCss(Vtiger_Request $request): array {
-        $css = parent::getHeaderCss($request);
-        $css[] = ['href' => 'modules.Contacts.resources.CustomView'];
-        return $css;
-    }
-}
-```
-
-## JavaScript File Location
-
-**Core views** (List, Edit, Detail — inherit parent controller):
-```
-layouts/v7/modules/<Module>/resources/<ViewName>.js
-```
-
-**Custom views** (Config, reports, custom pages — standalone controller):
-```
-modules/<Module>/resources/<ViewName>.js
-```
-
-### Example Paths
+### Real Example Paths
 
 ```
 # Core views → layouts/v7/
 layouts/v7/modules/Contacts/resources/Detail.js
-layouts/v7/modules/Accounts/resources/List.js
-layouts/v7/modules/Products/resources/Edit.js
+layouts/v7/modules/Accounts/resources/Edit.js
+layouts/v7/modules/Products/resources/Detail.js
 
-# Custom views → modules/
-modules/Products/resources/CheckWarranty.js
-modules/CPGoal/resources/Config.js
-modules/Reports/resources/ChartReport.js
+# Custom views → modules/  (CustomView_Base_View auto-loads <ViewName>.js/.css)
+modules/CPMasterPlan/resources/MasterPlanView.js
+modules/CPMasterPlan/resources/MasterPlanView.css
+modules/CPMasterPlan/tpls/MasterPlanView.tpl
+
+# CSS → always modules/
+modules/Contacts/resources/DetailView.css
 ```
 
-## CSS File Location
-
-CSS files are **ALWAYS** in `modules/`, never in `layouts/v7/`:
-```
-modules/<Module>/resources/<ViewName>.css
-```
-
-### Example Paths
-
-```
-modules/Contacts/resources/CustomView.css
-modules/Products/resources/CheckWarranty.css
-modules/CPGoal/resources/Config.css
-```
+`CustomView_Base_View` needs no `getHeaderScripts()`/`getHeaderCss()` override. The sections below are for `Vtiger_Index_View` subclasses.
 
 ## Including JavaScript in View
 
 ### Method: `getHeaderScripts()`
 
-```php
-<?php
+The header list holds `Vtiger_JsScript_Model` objects (`JSResources.tpl` calls `$jsModel->getType()` / `getSrc()`); a raw array fatals. Always convert names with `checkAndConvertJsScripts()`:
 
+```php
 class Contacts_CustomView_View extends Vtiger_Index_View {
 
-    public function getHeaderScripts(Vtiger_Request $request): array {
+    function getHeaderScripts(Vtiger_Request $request) {
         // MUST call parent to preserve existing scripts
-        $scripts = parent::getHeaderScripts($request);
+        $headerScriptInstances = parent::getHeaderScripts($request);
 
-        // Add module-specific JS using DOT NOTATION
-        $scripts[] = ['src' => 'modules.Contacts.resources.CustomView'];
+        $jsFileNames = [
+            'modules.Contacts.resources.CustomView',
+            'modules.Contacts.resources.CustomModal',
+        ];
+        $jsScriptInstances = $this->checkAndConvertJsScripts($jsFileNames);
 
-        // Add multiple scripts
-        $scripts[] = ['src' => 'modules.Contacts.resources.CustomModal'];
-        $scripts[] = ['src' => 'modules.Contacts.resources.Helpers'];
-
-        return $scripts;
+        return array_merge($headerScriptInstances, $jsScriptInstances);
     }
 }
 ```
 
-### Dot Notation Path Mapping
+### Name → Path Resolution (`includes/runtime/Controller.php` `checkAndConvertJsScripts`)
 
 ```
 'modules.Contacts.resources.CustomView'
-→ JS: layouts/v7/modules/Contacts/resources/CustomView.js (checked first)
-→ JS: modules/Contacts/resources/CustomView.js (fallback)
-→ CSS: modules/Contacts/resources/CustomView.css (always here)
+→ JS: modules/Contacts/resources/CustomView.js (checked first, repo root)
+→ JS: layouts/v7/modules/Contacts/resources/CustomView.js (fallback)
+'~modules/Contacts/resources/CustomView.js'
+→ literal path from repo root (no fallback)
 ```
 
-**NEVER use file paths directly:**
-```php
-// ❌ WRONG
-$scripts[] = 'layouts/v7/modules/Contacts/resources/CustomView.js';
-
-// ✅ CORRECT
-$scripts[] = ['src' => 'modules.Contacts.resources.CustomView'];
-```
+Missing files are silently skipped — check the rendered `<script>` tags when a controller doesn't run.
 
 ## Including CSS in View
 
 ### Method: `getHeaderCss()`
 
 ```php
-<?php
-
 class Contacts_CustomView_View extends Vtiger_Index_View {
 
-    public function getHeaderCss(Vtiger_Request $request): array {
+    function getHeaderCss(Vtiger_Request $request) {
         // MUST call parent to preserve existing styles
-        $css = parent::getHeaderCss($request);
+        $headerCssInstances = parent::getHeaderCss($request);
 
-        // Add module-specific CSS using DOT NOTATION
-        $css[] = ['href' => 'modules.Contacts.resources.CustomView'];
+        $cssFileNames = [
+            '~modules/Contacts/resources/CustomView.css',
+            '~modules/Contacts/resources/CustomModal.css',
+        ];
+        $cssInstances = $this->checkAndConvertCssStyles($cssFileNames);
 
-        // Add multiple stylesheets
-        $css[] = ['href' => 'modules.Contacts.resources.CustomModal'];
-
-        return $css;
+        return array_merge($headerCssInstances, $cssInstances);
     }
 }
 ```
+
+`checkAndConvertCssStyles()` has no layout fallback — the file must exist at the given path.
 
 ## JavaScript Controller Pattern
 
 ### File: `modules/Contacts/resources/CustomView.js` (custom view)
 
+`CustomView_BaseController_Js` (`modules/CustomView/resources/BaseController.js`) only provides `init`, `addComponents`, `getFieldValue`, `registerEvents` — define `getContainer()` yourself; the record id comes from `app.getRecordId()`.
+
 ```javascript
 /*
- * CustomView.js
- * @author CloudGo
- * @email dev@cloudgo.vn
- * @create date 2026.02.10
- * Purpose: Custom view controller for Contacts module
- */
+	CustomView.js
+	Author: Your Name
+	Date: YYYY-MM-DD
+	Purpose: Custom view controller for Contacts module
+*/
 
-// Extend base controller (use appropriate parent class)
 CustomView_BaseController_Js('Contacts_CustomView_Js', {}, {
 
-    /**
-     * Register all event handlers
-     */
-    registerEvents: function() {
-        this._super();  // MUST call parent
-        this.registerButtonEvents();
-        this.registerFormEvents();
-    },
+	getContainer: function () {
+		return jQuery('.custom-view-container');
+	},
 
-    /**
-     * Button click handlers
-     */
-    registerButtonEvents: function() {
-        var self = this;
-        var container = this.getContainer();  // Cache DOM
+	registerEvents: function () {
+		this._super();  // MUST call parent
+		this.registerButtonEvents();
+	},
 
-        container.find('#btnSave').on('click', function() {
-            self.handleSave();
-            return false;
-        });
-    },
+	registerButtonEvents: function () {
+		var self = this;
+		var container = this.getContainer();  // Cache DOM
 
-    /**
-     * Save handler with AJAX
-     */
-    handleSave: function() {
-        app.helper.showProgress();
+		container.find('#btnSave').on('click', function () {
+			self.handleSave();
+			return false;
+		});
+	},
 
-        var params = {
-            module: 'Contacts',
-            action: 'SaveAjax',  // Action controller for JSON
-            record: this.getRecordId()
-        };
+	handleSave: function () {
+		app.helper.showProgress();
 
-        app.request.post({ data: params }).then(function(error, data) {
-            app.helper.hideProgress();
+		var params = {
+			module: 'Contacts',
+			action: 'SaveAjax',  // Action controller for JSON
+			record: app.getRecordId()
+		};
 
-            if (error) {
-                app.helper.showErrorNotification({
-                    message: app.vtranslate('JS_ERROR_OCCURRED')
-                });
-                return;
-            }
+		app.request.post({ data: params }).then(function (error, data) {
+			app.helper.hideProgress();
 
-            app.helper.showSuccessNotification({
-                message: app.vtranslate('JS_SAVED_SUCCESSFULLY')
-            });
-        });
-    }
+			if (error) {
+				app.helper.showErrorNotification({ message: app.vtranslate('JS_ERROR_OCCURRED') });
+				return;
+			}
+
+			app.helper.showSuccessNotification({ message: app.vtranslate('JS_SAVED_SUCCESSFULLY') });
+		});
+	}
 });
 ```
 
@@ -269,9 +157,9 @@ CustomView_BaseController_Js('Contacts_CustomView_Js', {}, {
 ```css
 /*
  * CustomView.css
- * @author CloudGo
- * @email dev@cloudgo.vn
- * @create date 2026.02.10
+ * @author Your Name
+ * @email your.email@company.vn
+ * @create date YYYY.MM.DD
  */
 
 /* Use kebab-case for class names */
@@ -307,20 +195,10 @@ color: var(--white-1);
 border-color: var(--border-color);
 ```
 
-## Key JavaScript Objects
-
-| Object | Methods | Purpose |
-|--------|---------|---------|
-| `app.request` | `post()`, `get()` | AJAX requests |
-| `app.helper` | `showProgress()`, `hideProgress()` | Loading indicator |
-| `app.helper` | `showSuccessNotification()`, `showErrorNotification()` | Notifications |
-| `app.helper` | `showModal()`, `hideModal()` | Modal dialogs |
-| `app` | `vtranslate(key)` | Get JS translation |
-
 ## Common Pitfalls
 
 1. **Inline CSS/JS**: Always use separate files, never inline in PHP/TPL
-2. **File Paths**: Use dot notation `modules.X.resources.Y`, not file paths
+2. **Raw arrays in header lists**: `$scripts[] = ['src' => ...]` fatals in the template — use `checkAndConvertJsScripts()` / `checkAndConvertCssStyles()`
 3. **Missing Parent Call**: Always call `parent::getHeaderScripts()` and `parent::getHeaderCss()`
 4. **Missing `_super()`**: Always call `this._super()` in `registerEvents()`
-5. **Wrong Key**: Use `src` for JS, `href` for CSS in array
+5. **Silent skip**: a misspelled asset name is dropped without error — verify the rendered tag

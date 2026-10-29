@@ -112,13 +112,12 @@ Before implementing any code task:
    - framework configuration
    - test, lint, build, and typecheck scripts
 
-2. Load the primary coordinator if available.
-   Use Clouds F or an equivalent senior codebase orchestration workflow when present.
+2. Load the project's workflow skill if one applies (e.g. `karpathy-guidelines`, `code-review-and-quality`).
 
 3. Inspect the affected codebase area with a graph tool if available:
-   - `code-review-graph`
-   - `codegraph`
-   - `Serena`
+   - `codegraph` (`xd://mcp__codegraph_explore`)
+   - `codebase-memory-mcp` (`xd://mcp__codebase_memory_mcp_search_graph`, `trace_path`)
+   - `Serena` (`xd://mcp__serena_find_symbol`, `find_referencing_symbols`)
    - any equivalent codebase graph or symbol index
 
 4. Use graph inspection to understand:
@@ -292,10 +291,10 @@ Use the smallest safe change that fits the current project conventions.
 
 Before implementation:
 1. Load project instructions and repository conventions.
-2. Load Clouds F or the configured primary coordinator if available.
+2. Load the project's workflow skill if one applies (e.g. `karpathy-guidelines`).
 3. Classify the task type.
 4. Estimate scope and risk.
-5. Inspect the affected area using code-review-graph, codegraph, Serena, or an equivalent graph tool if available.
+5. Inspect the affected area using codegraph, codebase-memory-mcp, Serena, or an equivalent graph tool if available.
 6. Confirm graph findings by reading the actual source files.
 7. Identify the source of truth, reusable patterns, affected files, and regression risks.
 

@@ -1,7 +1,7 @@
 ---
 name: full-flow
 description: >-
-  Use this skill for ANY fix/dev/enhance task on the 8syncdev-pro-v2 stack that must be PROVEN on the running app — "làm full flow", "fix theo flow chuẩn", "dev + verify", "tự chạy đến done". It is the entry playbook + verification gate: ground first (codegraph), reproduce, implement DATA→BACKEND(Encore)→FRONTEND(Next), then self-verify end-to-end through BOTH the Next.js UI (oh-my-pi `browser` tool) AND Encore structured trace logs before claiming done. Composes with `codegraph` (navigate first); never replaces it.
+  8syncdev-pro-v2 project ONLY (Turborepo + Encore.ts + Next.js) — not vtiger/CloudGO or other repos. Use for a fix/dev/enhance task on that stack that must be PROVEN on the running app — "làm full flow", "fix theo flow chuẩn", "dev + verify", "tự chạy đến done". It is the entry playbook + verification gate: ground first (codegraph), reproduce, implement DATA→BACKEND(Encore)→FRONTEND(Next), then self-verify end-to-end through BOTH the Next.js UI (oh-my-pi `browser` tool) AND Encore structured trace logs before claiming done. Composes with `codegraph` (navigate first); never replaces it.
 ---
 
 # full-flow — self-driving fix / dev / enhance loop (8syncdev-pro-v2)
@@ -14,7 +14,7 @@ description: >-
 
 ## 0. Stack shape
 - **Monorepo** (Turborepo + pnpm): `apps/web` (:3000), `apps/coding` (:3001), `apps/app` admin (:3010) — Next.js 16 + Turbopack + React 19. Ports per `scripts/dev.mjs` + each app's `productHost` map.
-- **Backend** `backend/` — single Encore.ts app. `pnpm backend:dev` (= `encore run`) → API **:4000**, dev dashboard + traces **:9400**. Services live in `backend/services/<name>/` (`encore.service.ts` + `<name>.ts` + `db.ts` + `migrations/NNN_*.up.sql` + `__tests__/`).
+- **Backend** `backend/` — single Encore.ts app. `pnpm backend:dev` (= `encore run`) → API **:4000**, dev dashboard + traces **:9400**. Services live in `backend/services/<name>/` (`encore.service.ts` + `<name>.ts` + `db.ts` + `migrations/NNN_*.up.sql` + `__tests__/`). Skill `encore-deploy` describes a different layout (two Encore Go apps `gate/` + `8sync-core/`); `ls backend` first and follow whichever matches the checkout.
 - **Encore needs Docker running** (provisions Postgres). CLI on PATH: `export PATH="$HOME/.encore/bin:$PATH"`.
 - **Auth (custom, ADR-019):** username/password seeded in `*.up.sql`; httpOnly session cookie `__session_8sync`; Encore gateway authHandler does a session lookup. Seeded logins: `admin8syncdev`/`admin8syncdev` (owner) and `usertest8syncdev`/`usertest8syncdev` (student) — both on `pro_monthly`.
 - **FE↔BE:** typed client `@8sync/api-client` (regen: `pnpm backend:gen:client`); FE calls with `credentials: "include"` (cookie). Coding login is OPTIONAL (anonymous browse/run; submit/save requires login).
@@ -39,9 +39,10 @@ description: >-
 ## 3. Run & capture logs
 ```bash
 cd <repo-root> && export PATH="$HOME/.encore/bin:$PATH"
-setsid bash -c 'cd backend && exec encore run' >/tmp/encore.log 2>&1 </dev/null & disown
-setsid bash -c 'cd apps/app && exec pnpm dev' >/tmp/admin.log 2>&1 </dev/null & disown   # :3010
-setsid bash -c 'cd apps/coding && exec pnpm dev' >/tmp/coding.log 2>&1 </dev/null & disown # :3001
+nohup bash -c 'cd backend && exec encore run' >/tmp/encore.log 2>&1 </dev/null &
+nohup bash -c 'cd apps/app && exec pnpm dev' >/tmp/admin.log 2>&1 </dev/null &     # :3010
+nohup bash -c 'cd apps/coding && exec pnpm dev' >/tmp/coding.log 2>&1 </dev/null & # :3001
+# (`setsid` is not available on macOS; in omp prefer named `bash` services with a ready port)
 # readiness:
 curl -s -m3 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:4000/health/ping   # 200 = up (502 = compiling)
 curl -s -m3 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3010                # 200/307 = up

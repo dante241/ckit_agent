@@ -27,18 +27,18 @@ user-invocable: false
 ## FastExcelHelper Quick Reference
 
 ```php
-use include\utils\FastExcelHelper;
+require_once('include/utils/FastExcelHelper.php');   // global class, no namespace
 
-// Basic usage
-FastExcelHelper::makeFile($header, $data, $fileName);
+// Writes an .xlsx file to $filePath and returns it (no headers, no exit)
+FastExcelHelper::makeFile($header, $data, $filePath);
 
-// Typed header with formatting
+// Header items: plain string (text) or ['label' => ..., 'type' => ...] (no 'name'/'format' keys)
 $header = [
-    ['name' => 'ID', 'type' => 'integer', 'format' => '#,##0'],
-    ['name' => 'Amount', 'type' => 'currency', 'format' => '#,##0.00'],
-    ['name' => 'Percentage', 'type' => 'percentage'],
-    ['name' => 'Date', 'type' => 'date', 'format' => 'DD-MM-YYYY'],
-    ['name' => 'DateTime', 'type' => 'datetime', 'format' => 'DD-MM-YYYY HH:MM:SS'],
+    'ID',
+    ['label' => 'Amount', 'type' => 'currency'],
+    ['label' => 'Percentage', 'type' => 'percentage'],
+    ['label' => 'Date', 'type' => 'date'],
+    ['label' => 'DateTime', 'type' => 'datetime'],
 ];
 ```
 
@@ -49,17 +49,16 @@ $header = [
 | `integer` | `#,##0` | 1,234 | Thousand separators |
 | `double` | `#,##0.00` | 1,234.56 | 2 decimal places |
 | `currency` | `#,##0.00` | 1,234.56 | Same as double |
-| `percentage` | `0.00%` | 12.34% | Auto multiply by 100 |
+| `percentage` | `#,##0.00` | 12.34 | Plain number, no `%`, no ×100 |
 | `date` | `DD-MM-YYYY` | 31-12-2025 | Date only |
 | `datetime` | `DD-MM-YYYY HH:MM:SS` | 31-12-2025 14:30:00 | Full datetime |
 
 ## Critical Pitfalls
 
 **Excel:**
-- `makeFile()` calls `ob_clean()` + `save()` - NO code after it will execute
-- MUST `decodeUTF8()` on data rows before passing to makeFile
+- `makeFile()` calls `ob_clean()` + `save()`: it only WRITES a file and returns its path — no headers, no exit, no auto-download. Stream it yourself (headers + `readfile()` + `unlink()`) or attach it (see ImportLog)
+- `writeBody()` already `decodeUTF8()`s every row — don't decode again before `makeFile()`
 - Check 'Export' permission before allowing download
-- File auto-downloads, no manual headers needed
 
 **CSV:**
 - MUST add UTF-8 BOM for Vietnamese text: `chr(0xEF).chr(0xBB).chr(0xBF)`
@@ -67,8 +66,8 @@ $header = [
 - MUST call `exit()` after output
 
 **PDF:**
-- Use wkhtmltopdf API, NOT TCPDF
-- Mode 'F' = save to storage/, 'D' = download
+- Prefer the global `generatePDF($outputFile, $htmlFilePath, $htmlContent, $options)` (wkhtmltopdf API, `include/utils/CommonUtils.php`); a TCPDF helper (`include/utils/PDFGenerator.php`) also exists for legacy code
+- `generatePDF()` always writes `$outputFile` and returns its path (or `false` when `$wkhtmltopdfAPIConfig['enable']` is off) — no download/inline mode; stream the file yourself
 - HTML must be complete document with styles
 - Check wkhtmltopdf service is running
 
@@ -78,12 +77,10 @@ $header = [
 - [Export CSV](references/export-csv.md) - UTF-8 BOM, fputcsv pattern
 - [Export PDF](references/export-pdf.md) - wkhtmltopdf API integration
 
-## Exemplars (PENDING REVIEW by user)
+## Exemplars
 
-> ⚠️ Chưa tìm được exemplar thuần Tín Bùi/Tùng Nguyễn cho domain này — file dưới là code tác giả khác, dùng tạm đến khi user chỉ định file chuẩn.
-
-- Export action chuẩn: `modules/CPSocialMessageTemplate/actions/ExportData.php`
-- Export thứ hai để đối chiếu: `modules/CPSocialFeedback/actions/ExportData.php`
+- Excel to tempfile → Document attachment: `modules/Import/helpers/ImportLog.php:73-95`
+- PDF via `generatePDF()` + manual download headers: `include/utils/InventoryPDFUtils.php:31-66`
 
 ## Verify
 

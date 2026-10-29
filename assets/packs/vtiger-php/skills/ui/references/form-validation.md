@@ -2,18 +2,21 @@
 
 ## JavaScript Validation Pattern
 
-### Using form.vtValidate()
+### Using form.vtValidate() + form.valid()
+
+`form.vtValidate()` initialises jQuery Validate on the form and returns the validator object — always truthy, so never use it as the pass/fail check. Ask `form.valid()` (core does this, e.g. `layouts/v7/modules/Vtiger/resources/Detail.js`).
 
 ```javascript
 registerFormSubmit: function() {
     var self = this;
     var form = this.getForm();
 
+    form.vtValidate();
+
     form.on('submit', function(e) {
         e.preventDefault();  // CRITICAL: Prevent page reload
 
-        // Validate form
-        if (!form.vtValidate()) {
+        if (!form.valid()) {
             return false;
         }
 
@@ -46,94 +49,60 @@ saveForm: function(form) {
 }
 ```
 
-## HTML5 Validation Attributes
+## Validation Attributes (v7: jQuery Validate `data-rule-*`)
+
+v7 `vtValidate` is jQuery Validate: rules come from `data-rule-<method>` attributes (e.g. `layouts/v7/modules/Vtiger/AddCommentForm.tpl`). The v6 `data-validation-engine="validate[...]"` syntax is legacy — don't use it in new templates.
 
 ### Basic Attributes
 ```smarty
 {* Required field *}
-<input type="text"
-       name="field_name"
-       class="inputElement"
-       required
-       data-validation-engine="validate[required]" />
-
-{* Email validation *}
-<input type="email"
-       name="email"
-       class="inputElement"
-       data-validation-engine="validate[required,custom[email]]" />
-
-{* Number validation *}
-<input type="number"
-       name="quantity"
-       class="inputElement"
-       min="1"
-       max="100"
-       step="1"
-       data-validation-engine="validate[required,custom[integer]]" />
-
-{* URL validation *}
-<input type="url"
-       name="website"
-       class="inputElement"
-       data-validation-engine="validate[custom[url]]" />
-
-{* Pattern validation *}
-<input type="text"
-       name="phone"
-       class="inputElement"
-       pattern="[0-9]{10}"
-       data-validation-engine="validate[custom[phone]]" />
-```
-
-## Data Validation Engine Rules
-
-### Built-in Rules
-```smarty
-{* Required *}
-data-validation-engine="validate[required]"
+<input type="text" name="field_name" class="inputElement" data-rule-required="true" />
 
 {* Email *}
-data-validation-engine="validate[required,custom[email]]"
+<input type="text" name="email" class="inputElement" data-rule-required="true" data-rule-email="true" />
 
-{* Number (integer) *}
-data-validation-engine="validate[custom[integer]]"
+{* Integer *}
+<input type="text" name="quantity" class="inputElement" data-rule-WholeNumber="true" />
 
-{* Number (decimal) *}
-data-validation-engine="validate[custom[number]]"
-
-{* Phone *}
-data-validation-engine="validate[custom[phone]]"
+{* Positive number / currency *}
+<input type="text" name="amount" class="inputElement" data-rule-positive="true" data-rule-currency="true" />
 
 {* URL *}
-data-validation-engine="validate[custom[url]]"
-
-{* Min/Max length *}
-data-validation-engine="validate[minSize[5],maxSize[50]]"
-
-{* Min/Max value *}
-data-validation-engine="validate[min[0],max[100]]"
-
-{* Multiple rules *}
-data-validation-engine="validate[required,custom[email],maxSize[100]]"
+<input type="text" name="website" class="inputElement" data-rule-url="true" />
 ```
 
-## Custom Regex Validation
+## Built-in Rules
+
+Methods registered in `layouts/v7/modules/Vtiger/resources/validation.js` (`jQuery.validator.addMethod`) plus jQuery Validate's own (`required`, `minlength`, `maxlength`, `min`, `max`, …). Commonly used in v7 templates:
+
+```smarty
+data-rule-required="true"
+data-rule-email="true"
+data-rule-url="true"
+data-rule-WholeNumber="true"
+data-rule-positive="true"
+data-rule-currency="true"
+data-rule-date="true"
+data-rule-time="true"
+data-rule-illegal="true"
+data-rule-asciiOnly="true"
+data-rule-maxlength="50"
+```
+
+Note: the v7 `phone` method always returns true — it validates nothing.
+
+## Custom Rule
 
 ### Add Custom Rule
 ```javascript
-jQuery.validationEngineLanguage.allRules.customRule = {
-    regex: /^[A-Z0-9-]+$/,
-    alertText: "* Only uppercase letters, numbers, and hyphens allowed"
-};
+jQuery.validator.addMethod('upperCode', function(value, element) {
+    return this.optional(element) || /^[A-Z0-9-]+$/.test(value);
+}, app.vtranslate('JS_ONLY_UPPERCASE_NUMBERS_HYPHENS'));
 ```
 
 ### Use in Template
 ```smarty
-<input type="text"
-       name="code"
-       class="inputElement"
-       data-validation-engine="validate[required,custom[customRule]]" />
+<input type="text" name="code" class="inputElement" data-rule-required="true" data-rule-upperCode="true" />
 ```
 
 ## Real-Time Validation
@@ -150,17 +119,19 @@ registerFieldValidation: function() {
         // Custom validation logic
         if (field.attr('name') === 'goal_value') {
             if (parseFloat(value) <= 0) {
-                field.validationEngine('showPrompt', 'Value must be greater than 0', 'error');
+                vtUtils.showValidationMessage(field, app.vtranslate('JS_VALUE_MUST_BE_POSITIVE'));
                 return false;
             }
+
+            vtUtils.hideValidationMessage(field);
         }
     });
 }
 ```
 
-### Clear Validation Prompt
+### Clear Validation Message
 ```javascript
-field.validationEngine('hide');
+vtUtils.hideValidationMessage(field);
 ```
 
 ## Backend Validation
@@ -207,7 +178,7 @@ class CPGoal_Save_Action extends Vtiger_Save_Action {
         }
 
         // Duplicate check
-        if ($this->isDuplicateGoalName($goalName, $request->get('record'))) {
+        if ($this->isDuplicateGoalName($goalName, (int) $request->get('record'))) {
             return [
                 'success' => false,
                 'message' => vtranslate('LBL_DUPLICATE_GOAL_NAME', 'CPGoal')
@@ -310,12 +281,13 @@ registerGoalTypeChange: function() {
 
         if (goalType === 'Revenue') {
             revenueField.show();
-            // Make required
-            form.find('[name="revenue_target"]').attr('data-validation-engine', 'validate[required,custom[number]]');
-        } else {
+            // Make required (form.vtValidate() must have run)
+            form.find('[name="revenue_target"]').rules('add', { required: true, positive: true });
+        }
+        else {
             revenueField.hide();
             // Remove required
-            form.find('[name="revenue_target"]').attr('data-validation-engine', '');
+            form.find('[name="revenue_target"]').rules('remove', 'required positive');
         }
     }).trigger('change');
 }
@@ -325,14 +297,11 @@ registerGoalTypeChange: function() {
 
 ### Custom Error Messages
 ```javascript
-// Show custom error
-field.validationEngine('showPrompt', 'Custom error message', 'error');
+// Show an error message on a field
+vtUtils.showValidationMessage(field, app.vtranslate('JS_TARGET_VALUE_INVALID'));
 
-// Show warning
-field.validationEngine('showPrompt', 'Warning message', 'pass');
-
-// Hide prompt
-field.validationEngine('hide');
+// Hide it
+vtUtils.hideValidationMessage(field);
 ```
 
 ### Translation Keys
@@ -378,7 +347,7 @@ form.find('tbody tr').each(function() {
 ## Critical Pitfalls
 
 1. **e.preventDefault()** on form submit — prevents page reload
-2. **form.vtValidate()** before save — triggers validation engine
+2. **form.vtValidate()** to set up validation, then **form.valid()** before save — vtValidate's return value is always truthy
 3. **Backend validation always** — never trust client-side only
 4. **Clear validation prompts** when fixing errors
 5. **Dynamic fields** — update validation rules when showing/hiding

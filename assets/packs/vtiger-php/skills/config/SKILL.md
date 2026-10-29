@@ -21,11 +21,11 @@ user-invocable: false
 
 | Aspect | System Config (DB) | File Config | User Preferences |
 |---|---|---|---|
-| **Storage** | `vtiger_config` table | PHP file (`config_override.php`) | `vtiger_user_preferences` table |
+| **Storage** | `vtiger_config` table | Defaults in `config_override.php` (git); runtime overrides in `config_override.cus.php` | `vtiger_user_preferences` table |
 | **Model** | `Settings_Vtiger_Config_Model` | `CustomConfigUtils` | `Users_Preferences_Model` |
 | **Scope** | Global (all users) | Global (`$GLOBALS`) | Per-user |
 | **Use for** | Module settings, feature flags | Server config, static values | User-specific settings |
-| **Persistence** | Database (JSON) | File system (PHP array) | Database (JSON) |
+| **Persistence** | Database (JSON) | File system (`return [...]` array, dot-path keys) | Database (JSON) |
 | **Cache** | None (query each time) | `$GLOBALS` at boot | None (query each time) |
 | **Access** | `loadConfig($category)` | `$GLOBALS['key']['subkey']` | `loadPreferences($userId, $category)` |
 | **Update** | `saveConfig($category, $array)` | `saveCustomConfigs(['dot.notation' => val])` | `savePreferences($userId, $category, $array)` |
@@ -65,13 +65,13 @@ All config view files live under `modules/Settings/Vtiger/` (NOT `layouts/v7/`):
 
 | File | Naming |
 |------|--------|
-| View | `views/<ConfigName>.php` extends `BaseConfig_View` |
-| Action | `actions/Save<ConfigName>.php` extends `Basic_Action` |
+| View | `views/<ConfigName>.php` extends `Settings_Vtiger_BaseConfig_View` |
+| Action | `actions/Save<ConfigName>.php` extends `Settings_Vtiger_Basic_Action` |
 | Template | `tpls/<ConfigName>.tpl` |
 | JS | `resources/<ConfigName>.js` extends `CustomView_BaseController_Js` |
 | CSS | `resources/<ConfigName>.css` |
 
-`BaseConfig_View` auto-loads JS/CSS matching the view name — no need to override `getHeaderScripts()`/`getHeaderCss()`.
+`Settings_Vtiger_BaseConfig_View` auto-loads JS/CSS matching the view name — no need to override `getHeaderScripts()`/`getHeaderCss()`.
 
 See [Config View reference](./references/config-view.md) for full code examples (View, Action, JS, toggle pattern, exposeMethod).
 
@@ -81,11 +81,11 @@ See [Config View reference](./references/config-view.md) for full code examples 
 2. **No Static Cache**: Repeated `loadConfig()` calls hit DB each time — use Config Helper pattern
 3. **File Config Overuse**: Don't store dynamic data in file config — use DB config instead
 4. **Direct Table Access**: NEVER query `vtiger_config` directly — use model methods
-5. **Permission Checks**: System config views MUST check `isAdmin()`, user prefs views return `true` in `checkPermission()`
+5. **Permission Checks**: System config views/actions keep the inherited admin gate (`Settings_Vtiger_Index_View::checkPermission()` → `isAdminUser()`); only per-user preference pages override `checkPermission()` with `return true`. Save actions MUST override `validateRequest()` with `$request->validateWriteAccess()`
 
 ## Reference Files
 
-- [Config View](./references/config-view.md) — BaseConfig_View, View/Action/JS patterns, exposeMethod, toggle
+- [Config View](./references/config-view.md) — Settings_Vtiger_BaseConfig_View, View/Action/JS patterns, exposeMethod, toggle
 - [System Config (DB)](./references/system-config.md) — Settings_Vtiger_Config_Model, saveConfig/loadConfig patterns
 - [User Preferences](./references/user-config.md) — Users_Preferences_Model, per-user settings
 - [Config Globals](./references/config-globals.md) — $GLOBALS, vglobal(), config files
@@ -99,7 +99,7 @@ See [Config View reference](./references/config-view.md) for full code examples 
 ## Verify
 
 ```bash
-rm -f test/templates_c/*.php
+# TPL edits recompile automatically (Smarty compile_check); clear cache/templates_c/v7/ only if output looks stale
 curl -s 'http://localhost/vtiger/index.php?module=<M>&view=<Config>' -H 'Cookie: PHPSESSID=<sid>' | grep -c '<form'
 # Save config qua UI → reload → giá trị giữ nguyên
 ```

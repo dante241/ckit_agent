@@ -1,7 +1,6 @@
 ---
 name: error-handling
 description: "VTiger error handling — Vtiger_Response setError, AppException, LoggerManager, permission deny. Use when: xử lý lỗi, try-catch, trả lỗi JSON, log lỗi, exception; keywords: error, exception, log."
-user-invocable: false
 ---
 
 # VTiger Error Handling
@@ -33,9 +32,9 @@ Request → validateWriteAccess → checkPermission → isForbiddenFeature
 
 | Component | Key Methods | Purpose |
 |-----------|-------------|---------|
-| `Vtiger_Response` | `setError($code, $msg)`, `setResult($data)`, `emit()` | AJAX response formatting |
+| `Vtiger_Response` | `setError($code, $message = null, $title = null)`, `setResult($data)`, `emit()` | AJAX response formatting (`emit()` does NOT exit) |
 | `AppException` | extends Exception, adds `$title` field | User-facing errors |
-| `LoggerManager` | `getLogger($category)->info($log)` | Log4PHP logging |
+| `LoggerManager` | `getLogger($category)->info($message)` | In-house logger, gated by `$loggerConfig` (see logging.md) |
 | `checkPermission()` | `Users_Privileges_Model::hasModulePermission()` | Module/record access |
 | `isForbiddenFeature()` | Returns boolean | License feature gate |
 
@@ -48,14 +47,14 @@ Request → validateWriteAccess → checkPermission → isForbiddenFeature
 | `$record->delete()` | **YES** | DB constraints, handlers may throw |
 | External API calls | **YES** | Timeout, connection, malformed response |
 | Webhook handlers | **YES** | Unknown input format |
-| `$request->get()` | NO | Returns null if missing |
+| `$request->get()` | NO | Returns `''` if missing (default `$defvalue = ''`), so `?? default` never fires — use `?:` |
 | `vtlib_purify()` | NO | Sanitizes, doesn't throw |
-| Simple `pquery()` | NO | Returns result object, check with `getAffectedRowCount()` |
+| `pquery()` | NO | Does not throw — returns `false` on SQL error; check `=== false` before `num_rows()`/`fetchByAssoc()` (see `vtiger-pquery-silent-false`) |
 
 ## Critical Pitfalls
 
-1. **Global Catch**: API entry points should catch both `Exception` and `\Throwable`
-2. **Exit After setResponse**: `setResponse()` calls `exit` — still add `return;` after for safety
+1. **Global Catch**: entry points catch `Throwable` (covers `TypeError`/`ValueError`); catch `AppException` first when it needs its own error code
+2. **emit() vs setResponse()**: `Vtiger_Response::emit()` does NOT exit — `return;` after it yourself. `RestfulApiHandler::setResponse()` DOES `exit`
 3. **Log Categories**: MUST exist in `log4php.properties` — new category requires appender config
 4. **Permission Denied**: Use `AppException` (not Exception) for user-facing errors
 5. **CSRF Validation**: Always call `validateWriteAccess()` in POST Actions
@@ -74,6 +73,8 @@ Request → validateWriteAccess → checkPermission → isForbiddenFeature
 ```php
 class MyModule_SaveData_Action extends Vtiger_Action_Controller {
     public function checkPermission(Vtiger_Request $request) {
+        $request->validateWriteAccess();
+
         $moduleName = $request->getModule();
         $moduleModel = Vtiger_Module_Model::getInstance($moduleName);
         $userPrivilegesModel = Users_Privileges_Model::getCurrentUserPrivilegesModel();
@@ -92,7 +93,7 @@ class MyModule_SaveData_Action extends Vtiger_Action_Controller {
 
             $response->setResult(['success' => true, 'id' => $recordId]);
         }
-        catch (Exception $e) {
+        catch (Throwable $e) {
             $logger = LoggerManager::getLogger('PLATFORM');
             $logger->error('Save failed: ' . $e->getMessage());
             $response->setError(500, $e->getMessage());
@@ -102,9 +103,9 @@ class MyModule_SaveData_Action extends Vtiger_Action_Controller {
 }
 ```
 
-## Exemplars (ưu tiên code Tín Bùi / Tùng Nguyễn — PENDING REVIEW by user)
+## Exemplars
 
-- try-catch + Vtiger_Response error shape (tung.nguyen): `modules/CPMasterPlan/actions/HandleAjax.php`
+- AJAX action returning `{success:0,message}` result errors with `emit(); return;` guards (tung.nguyen): `modules/CPMasterPlan/actions/HandleAjax.php`. It has no try-catch and dispatches modes via `method_exists()` — for new code add the try-catch above and whitelist modes with `exposeMethod()`
 
 ## Verify
 

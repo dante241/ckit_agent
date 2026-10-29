@@ -1,6 +1,6 @@
 ---
 name: karpathy-guidelines
-description: Use this skill before EVERY non-trivial coding task. It enforces Andrej Karpathy-style engineering discipline — read-before-write, test-before-refactor, small steps, boring-is-better, delete-more-than-you-add. Apply whenever the user asks for code, refactor, debug, or review work; the AI MUST cite a rule from this skill before claiming "done".
+description: Use this skill before EVERY non-trivial coding task. It enforces Andrej Karpathy-style engineering discipline — read-before-write, test-before-refactor, small steps, boring-is-better, delete-more-than-you-add. Apply whenever the user asks for code, refactor, debug, or review work. Single home of the simplicity rules other skills (using-agent-skills, code-review-and-quality) link to; `ponytail` is the opt-in stricter mode.
 ---
 
 # Karpathy Guidelines — software engineering baseline
@@ -32,4 +32,4 @@ Original source: Andrej Karpathy's engineering principles for clear, simple, wor
 
 ## When uncertain
 
-Pick the smaller, more obvious step. Ask the user. Don't invent ambition.
+Pick the smaller, more obvious, reversible step and state the assumption. Check the repo/tools before asking; ask the user only on a true blocker (irreversible, outward-facing, or a choice only they can make). Don't invent ambition.

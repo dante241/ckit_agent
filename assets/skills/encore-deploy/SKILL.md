@@ -1,6 +1,6 @@
 ---
 name: encore-deploy
-description: Deploy/secrets/rollout runbook for the 8syncdev Encore Cloud backend and Vercel frontends. Triggers — "deploy gate/core to encore", "push backend to encore cloud", "set encore secrets", "rollout failed on encore", "build failed on encore", "payos secrets", "rotate a secret", "deploy frontend to vercel", "production deploy". Contains proven gotchas (secrets need a redeploy; vercel drops [...slug] dirs) — read BEFORE any backend deploy, secret rotation, or prod FE deploy.
+description: 8syncdev project ONLY (8 Sync Dev Encore Cloud backend + Vercel frontends) — not vtiger/CloudGO or other repos. Deploy/secrets/rollout runbook. Triggers (inside the 8syncdev repo) — "deploy gate/core to encore", "push backend to encore cloud", "set encore secrets", "rollout failed on encore", "build failed on encore", "payos secrets", "rotate a secret", "deploy frontend to vercel", "production deploy". Contains proven gotchas (secrets need a redeploy; vercel drops [...slug] dirs) — read BEFORE any 8syncdev backend deploy, secret rotation, or prod FE deploy.
 ---
 
 # encore-deploy — 8syncdev backend (Encore Cloud) + frontend (Vercel) deploy runbook
@@ -10,7 +10,7 @@ All facts below are session-verified (2026-06-12). Follow them literally; do not
 ## 1. Topology
 
 - `backend/` is a **git submodule** → GitHub `8-Sync-Dev/backend-encore-8sync`.
-- TWO Encore Go apps live in that one repo:
+- TWO Encore Go apps live in that one repo (as of 2026-06-12; skill `full-flow` describes a single Encore.ts app under `backend/services/` — `ls backend` / `git -C backend remote -v` first and stop if the layout below no longer matches):
   - `gate/` → Encore app **`8syncdev-gate-e852`** (auth + billing)
   - `8sync-core/` → Encore app **`8syncdev-core-cm62`** (health + coding)
   - `shared/` is a shared Go module wired via `go.work`.

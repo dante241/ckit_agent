@@ -5,10 +5,8 @@
 ## Database Instance
 
 ```php
-// ALWAYS use this pattern
+// Either form returns the same singleton — follow the file you are editing
 global $adb;
-
-// NEVER use (causes issues in some contexts)
 $adb = PearDatabase::getInstance();
 ```
 
@@ -82,7 +80,7 @@ if ($numRows > 0) {
 
 ### INSERT Operations
 
-**Using sql_insert_data Helper**
+**Using sql_insert_data Helper** — returns literal SQL with values already quoted via `sql_quote()` (NO `?` placeholders)
 
 ```php
 global $adb;
@@ -94,27 +92,28 @@ $data = [
 ];
 
 $sql = $adb->sql_insert_data('vtiger_account', $data);
-// Generates: INSERT INTO vtiger_account (accountid, accountname, website) VALUES (?, ?, ?)
+// Generates: INSERT INTO vtiger_account (accountid,accountname,website) VALUES ('123','ACME','acme.vn')
 
-$result = $adb->pquery($sql, array_values($data));
-$lastId = $adb->getLastInsertID();
+$result = $adb->pquery($sql);
 ```
+
+Prefer a hand-written INSERT with `?` placeholders for request/external data.
 
 **Manual INSERT**
 
 ```php
-$sql = "INSERT INTO vtiger_cpadvertisingaccount (account_id, account_name, status)
-        VALUES (?, ?, ?)";
-$adb->pquery($sql, [$accountId, $accountName, 'Active']);
+$sql = "INSERT INTO vtiger_cpadvertisingaccount (cpadvertisingaccountid, account_id, name, cpadvertisingaccount_active_status)
+        VALUES (?, ?, ?, ?)";
+$adb->pquery($sql, [$recordId, $accountId, $accountName, 'Active']);
 ```
 
 ### UPDATE Operations
 
 ```php
 $sql = "UPDATE vtiger_cpadvertisingaccount
-        SET last_sync_datetime = ?, status = ?
+        SET last_sync_datetime = ?, cpadvertisingaccount_active_status = ?
         WHERE cpadvertisingaccountid = ?";
-$adb->pquery($sql, [date('Y-m-d H:i:s'), 'Active', $recordId]);
+$result = $adb->pquery($sql, [date('Y-m-d H:i:s'), 'Active', $recordId]);
 
 // Check affected rows
 $affected = $adb->getAffectedRowCount($result);
@@ -145,6 +144,8 @@ $result = $adb->pquery($sql, $ids);
 
 ## Transactions
 
+PearDatabase has no `rollbackTransaction()`. A failed SQL inside the transaction marks it failed automatically; for other errors call `$adb->database->FailTrans()` so `completeTransaction()` rolls back.
+
 ```php
 global $adb;
 
@@ -156,14 +157,15 @@ try {
 
     $sql2 = "UPDATE vtiger_crmentity SET modifiedtime = ? WHERE crmid = ?";
     $adb->pquery($sql2, [date('Y-m-d H:i:s'), $id]);
-
-    $adb->completeTransaction();
 }
-catch (Exception $e) {
-    $adb->rollbackTransaction();
+catch (Throwable $e) {
+    $adb->database->FailTrans();
     error_log('Transaction failed: ' . $e->getMessage());
-    throw $e;
 }
+
+// hasFailedTransaction() is only meaningful BEFORE completeTransaction()
+$success = !$adb->hasFailedTransaction();
+$adb->completeTransaction();
 ```
 
 ## Real Codebase Examples
@@ -171,18 +173,12 @@ catch (Exception $e) {
 ### Simple JOIN with Aggregate
 
 ```php
-// From Accounts_Data_Helper::getSalesByAccount
-public static function getSalesByAccount($accountId) {
-    global $adb;
-
-    $sql = "SELECT SUM(vtiger_invoice.total) as total
-            FROM vtiger_invoice
-            INNER JOIN vtiger_crmentity ON vtiger_crmentity.crmid = vtiger_invoice.invoiceid
-            WHERE vtiger_crmentity.deleted = 0
-            AND vtiger_invoice.accountid = ?";
-
-    return $adb->getOne($sql, [$accountId]);
-}
+// Shape of Accounts_Data_Helper::getSalesByAccount (simplified)
+$sql = "SELECT SUM(total) AS sales
+        FROM vtiger_salesorder
+        INNER JOIN vtiger_crmentity ON (salesorderid = crmid AND deleted = 0)
+        WHERE sostatus NOT IN ('Created', 'Cancelled') AND accountid = ?";
+$sales = $adb->getOne($sql, [$accountId]);
 ```
 
 ### GROUP_CONCAT for Batch IDs

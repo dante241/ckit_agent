@@ -17,9 +17,9 @@ class MyModule_Save_Action extends Vtiger_Action_Controller {
 ```
 
 **What it checks:**
-- Request method is POST
-- CSRF token is valid
-- Throws `AppException` if validation fails
+- Request method is POST — else throws plain `Exception('Invalid request')` (skip with `validateWriteAccess(true)`)
+- HTTP referer (via `validateReadAccess()`)
+- CSRF token is valid — else throws plain `Exception('Unsupported request')`
 
 ---
 
@@ -43,14 +43,15 @@ class MyModule_Detail_View extends Vtiger_Index_View {
 
 ---
 
-### validateCSRF()
+### Manual CSRF check
 
-**Purpose:** Manual CSRF validation
+**Purpose:** CSRF validation outside `validateWriteAccess()`
 
-**When to use:** Custom entry points, webhooks (when needed)
+**When to use:** Custom entry points (when needed). `Vtiger_Request::validateCSRF()` is `protected` — call `validateWriteAccess()` instead, or use csrf-magic directly:
 
 ```php
-if (!csrf_check($request->get('csrf_token'))) {
+// csrf_check($fatal = true) reads __vtrftk from $_POST itself; pass false to get a bool instead of dying
+if (!csrf_check(false)) {
     throw new AppException('Invalid CSRF token');
 }
 ```
@@ -85,67 +86,72 @@ $description = vtlib_purify($request->get('description'));
 
 ```php
 $columnName = vtlib_purifyForSql($request->get('field'));
+
+if ($columnName === false || $columnName === '') {
+    throw new AppException('Invalid field');
+}
+
 $sql = "SELECT {$columnName} FROM vtiger_account";
 ```
 
 **Behavior:**
-- Validates alphanumeric + underscore
-- Prevents SQL injection in identifiers
+- Allows only `[_a-zA-Z0-9.]` (the `.` permits `table.column`)
+- Returns `false` on invalid input — and returns empty input unchanged — so always guard before interpolating
+- Prevents SQL injection in identifiers; better still, whitelist against known column names
 - Does NOT escape values (use pquery params)
 
 ---
 
 ### Request::get() Auto-Purify
 
-**Default behavior:** Auto-purifies with vtlib_purify()
+**Signature:** `get($key, $defvalue = '')` — a missing key returns `''` (not `null`), so `$request->get('x') ?? 'default'` never uses the default; use `?:` or `has()`/`isEmpty()`.
+
+**Default behavior:** JSON-looking strings (`[`/`{`) are decoded, then non-empty values are run through `vtlib_purify()` and `filterXSS()`
 
 ```php
 // Auto-purified
 $accountName = $request->get('accountname');
-
-// Same as
-$accountName = vtlib_purify($request->get('accountname'));
 ```
 
 ---
 
 ### Request::getRaw()
 
-**Purpose:** Get raw value without purification
+**Purpose:** Read from the raw value map. Without the third argument it STILL runs `vtlib_purify()` + `filterXSS()`; only `getRaw($key, $default, true)` returns the value untouched.
 
 **Use for:** JSON payloads, base64, hashes, API keys
 
 ```php
-// Raw value
-$jsonPayload = $request->getRaw('data');
+// Raw map, still purified
 $apiKey = $request->getRaw('api_key');
 
-// With optional skip purify
-$rawValue = $request->get('field', null, true); // true = skip purify
+// Untouched value (skip purify)
+$jsonPayload = $request->getRaw('data', '', true);
 ```
 
-**CRITICAL:** Only use for trusted input or when manually sanitizing
+**CRITICAL:** Skip-purify only for trusted input or when you sanitize manually
 
 ---
 
 ### Request::getForSql()
 
-**Purpose:** Get SQL-safe value for pquery()
+**Purpose:** Validate a request value as a SQL identifier (column/table name) — `Vtiger_Util_Helper::validateStringForSql()` over `vtlib_purifyForSql()`
 
-**Use for:** Query parameter values
+**Returns:** the value, or `false` when it contains anything outside `[_a-zA-Z0-9.]` (an empty string is also returned as `false`)
 
 ```php
-$recordId = $request->getForSql('record');
-$sql = "SELECT * FROM vtiger_account WHERE accountid = ?";
-$result = $GLOBALS['adb']->pquery($sql, [$recordId]);
+$sortColumn = $request->getForSql('orderby');
+
+if ($sortColumn === false) {
+    throw new AppException('Invalid sort column');
+}
 ```
 
-**Best Practice:** Use pquery params instead — auto-escapes
+**Values are NOT identifiers:** pass them as pquery params
 
 ```php
-// Preferred
 $recordId = (int) $request->get('record');
-$result = $GLOBALS['adb']->pquery($sql, [$recordId]);
+$result = $GLOBALS['adb']->pquery('SELECT accountname FROM vtiger_account WHERE accountid = ?', [$recordId]);
 ```
 
 ---
@@ -236,7 +242,8 @@ class MyModule_Save_Action extends Vtiger_Save_Action {
             if (!Users_Privileges_Model::isPermitted($moduleName, 'EditView', $recordId)) {
                 throw new AppException(vtranslate('LBL_PERMISSION_DENIED'));
             }
-        } else {
+        }
+        else {
             // Create new record
             $moduleModel = Vtiger_Module_Model::getInstance($moduleName);
             $userPrivilegesModel = Users_Privileges_Model::getCurrentUserPrivilegesModel();
@@ -300,7 +307,8 @@ class MyModule_Config_View extends Vtiger_Index_View {
 if (isForbiddenFeature('CustomReports')) {
     // Feature disabled — show upgrade notice
     $viewer->assign('upgradeRequired', true);
-} else {
+}
+else {
     // Feature enabled — show content
     $reports = $this->getReports();
     $viewer->assign('reports', $reports);
@@ -380,7 +388,8 @@ class MyModule_List_View extends Vtiger_Index_View {
             // Show basic list
             $viewer->assign('showUpgradeNotice', true);
             $viewer->assign('upgradeFeature', 'Advanced Filters');
-        } else {
+        }
+        else {
             // Show advanced list with filters
             $filters = $this->getAdvancedFilters();
             $viewer->assign('filters', $filters);

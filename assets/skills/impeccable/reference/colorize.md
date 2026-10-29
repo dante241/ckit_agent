@@ -30,7 +30,7 @@ Analyze the current state and identify opportunities:
    - **Wayfinding**: Helping users navigate and understand structure
    - **Delight**: Moments of visual interest and personality
 
-If any of these are unclear from the codebase, STOP and use Codex's structured user-input/question tool when available; if unavailable, ask directly in chat to clarify what you cannot infer.
+If any of these are unclear from the codebase, STOP and use the `ask` tool (or ask directly in chat) to clarify what you cannot infer.
 
 **CRITICAL**: More color ≠ better. Strategic color beats rainbow vomit every time. Every color should have a purpose.
 
@@ -139,7 +139,7 @@ Test that colorization improves the experience:
 - **Still accessible**: Do all color combinations meet WCAG standards?
 - **Not overwhelming**: Is color balanced and purposeful?
 
-When the palette earns its place, hand off to `$impeccable polish` for the final pass.
+When the palette earns its place, hand off to `impeccable polish` for the final pass.
 
 ## Live-mode signature params
 
@@ -207,7 +207,7 @@ The common mistake: using the accent color everywhere because it's "the brand co
 | Content Type | AA Minimum | AAA Target |
 |--------------|------------|------------|
 | Body text | 4.5:1 | 7:1 |
-| Large text (18px+ or 14px bold) | 3:1 | 4.5:1 |
+| Large text (≥24px, or ≥18.67px bold) | 3:1 | 4.5:1 |
 | UI components, icons | 3:1 | 4.5:1 |
 | Non-essential decorations | None | None |
 

@@ -6,9 +6,11 @@ For straightforward APIs with few endpoints, extend `IntegrationApiHandler` dire
 
 ### 3-File Architecture
 
-1. **Handler**: `include/Webservice/CloudBotApi/{Platform}ApiHandler.php`
-2. **API Definitions**: `include/Webservice/CloudBotApi/inbound_apis/{Platform}.php`
-3. **Enums**: `include/Webservice/CloudBotApi/enums/{Platform}.php`
+1. **Handler**: `include/Webservice/{Platform}ApiHandler.php` — class `{Platform}ApiHandler` (Endpoint.php only looks at this top-level path)
+2. **API Definitions**: `modules/CPAPIIntegration/inbound_apis/{channel}.php` (sample: `Inbound.sample.php`)
+3. **Enums (picklist mapping)**: `modules/CPAPIIntegration/enums/{channel}.php` — class `CPAPIIntegration_{channel}_Enum`; falls back to `enums/Base.php`
+
+`{channel}` = the handler's `$channel` property. Base class `include/Webservice/IntegrationApiHandler.php` extends `RestfulApiHandler` and uses traits `TraitAuthenticationApiHandler` + `TraitAPILogger` (`include/WebserviceTraits/`) — they come with the base class, do not `use` them again.
 
 ### Handler Skeleton
 
@@ -16,307 +18,268 @@ For straightforward APIs with few endpoints, extend `IntegrationApiHandler` dire
 <?php
 
 /**
- * {Platform} inbound API handler
- * Location: include/Webservice/CloudBotApi/{Platform}ApiHandler.php
+ * @author Your Name
+ * @email your.email@company.vn
+ * @create date YYYY.MM.DD
  */
 
-require_once 'include/Webservice/CloudBotApi/IntegrationApiHandler.php';
-require_once 'include/Webservice/CloudBotApi/traits/JWTTrait.php';
-require_once 'include/Webservice/CloudBotApi/traits/LoggerTrait.php';
+require_once('include/Webservice/IntegrationApiHandler.php');
 
 class ZaloApiHandler extends IntegrationApiHandler {
 
-    use JWTTrait;
-    use LoggerTrait;
+	// Selects inbound_apis/Zalo.php + enums/Zalo.php; constructor copies it into $logger and $source
+	protected $channel = 'Zalo';
 
-    protected $platform = 'Zalo';
+	// Actions callable without the token header
+	protected $skipCheckToken = [];
 
-    // CRITICAL: Read from config, don't hardcode true
-    protected function isEnabled(): bool {
-        global $zaloConfig;
-        return !empty($zaloConfig['api_enabled']) && $zaloConfig['api_enabled'];
-    }
+	// CRITICAL: read from config, don't hardcode true
+	public function isEnabled(): bool {
+		global $zaloConfig;
+		return !empty($zaloConfig['api_enabled']);
+	}
 
-    public function create_customer($request, $user) {
-        try {
-            // Validate required fields
-            $phone = $request['phone'] ?? '';
-            if (empty($phone)) {
-                return $this->setResponse(['error' => 'Phone is required'], 400);
-            }
+	// API /createCustomer
+	public function createCustomer(Vtiger_Request $request) {
+		$data = $this->getProcessedRequestData(__FUNCTION__, $request);
+		$result = $this->saveRecord('Contacts', $data, $this->findContactIdByPhone((string) ($data['mobile'] ?? '')));
 
-            // Create or update customer
-            $recordId = $this->syncRecord('Contacts', $request);
+		if (empty($result['success'])) {
+			$this->setResponse(200, ['success' => 0, 'message' => $result['message']]);
+		}
 
-            return $this->setResponse([
-                'success' => true,
-                'recordId' => $recordId,
-            ]);
-        }
-        catch (Exception $e) {
-            $this->logError(__FUNCTION__, $e->getMessage());
-            return $this->setResponse(['error' => $e->getMessage()], 500);
-        }
-    }
+		$this->setResponse(200, ['success' => 1, 'id' => $result['record']->getId()]);
+	}
 
-    public function get_customer($request, $user) {
-        try {
-            $phone = $request['phone'] ?? '';
-            if (empty($phone)) {
-                return $this->setResponse(['error' => 'Phone is required'], 400);
-            }
+	// API /getCustomer
+	public function getCustomer(Vtiger_Request $request) {
+		global $adb;
+		$phone = (string) $request->get('phone');
 
-            // Find customer
-            $sql = "SELECT contactid, firstname, lastname, phone, email
-                    FROM vtiger_contactdetails
-                    INNER JOIN vtiger_crmentity ON crmid = contactid
-                    WHERE phone = ? AND deleted = 0
-                    LIMIT 1";
-            $result = $GLOBALS['adb']->pquery($sql, [$phone]);
+		if ($phone === '') {
+			$this->setResponse(400, ['success' => 0, 'message' => 'Phone is required']);
+		}
 
-            if ($GLOBALS['adb']->num_rows($result) == 0) {
-                return $this->setResponse(['error' => 'Customer not found'], 404);
-            }
+		$sql = "SELECT c.contactid, c.firstname, c.lastname, c.mobile, c.email
+			FROM vtiger_contactdetails AS c
+			INNER JOIN vtiger_crmentity AS e ON (e.crmid = c.contactid AND e.deleted = 0)
+			WHERE c.mobile = ?
+			LIMIT 1";
+		$result = $adb->pquery($sql, [$phone]);
 
-            $customer = decodeUTF8($GLOBALS['adb']->fetchByAssoc($result));
+		if ($adb->num_rows($result) == 0) {
+			$this->setResponse(404, ['success' => 0, 'message' => 'Customer not found']);
+		}
 
-            return $this->setResponse([
-                'success' => true,
-                'customer' => $customer,
-            ]);
-        }
-        catch (Exception $e) {
-            $this->logError(__FUNCTION__, $e->getMessage());
-            return $this->setResponse(['error' => $e->getMessage()], 500);
-        }
-    }
+		$this->setResponse(200, ['success' => 1, 'customer' => $adb->fetchByAssoc($result)]);
+	}
+
+	// Upsert helper: 0 means create, otherwise saveRecord() updates this id
+	private function findContactIdByPhone(string $phone): int {
+		global $adb;
+		if ($phone === '') return 0;
+
+		$sql = "SELECT c.contactid
+			FROM vtiger_contactdetails AS c
+			INNER JOIN vtiger_crmentity AS e ON (e.crmid = c.contactid AND e.deleted = 0)
+			WHERE c.mobile = ?
+			LIMIT 1";
+
+		return (int) $adb->getOne($sql, [$phone]);
+	}
 }
 ```
+
+- Handler methods receive ONE argument, a `Vtiger_Request` (Endpoint.php calls `$instance->$method($request)`). It is NOT an array: use `$request->get('x')` / `$request->getAll()`, never `$request['x']`.
+- Method name = action with the first letter lowercased (`.../Zalo/CreateCustomer` → `createCustomer`). Unknown method → 400 `Method not found`.
+- `getProcessedRequestData(__FUNCTION__, $request)` looks up the definition keyed by the method name: 404 if missing, 403 if not `enabled`, checks HTTP `method`, validates/maps `params`, then returns CRM-keyed data.
 
 ### API Definitions File
 
 ```php
 <?php
 
-/**
- * Zalo API definitions
- * Location: include/Webservice/CloudBotApi/inbound_apis/Zalo.php
- */
-
-// TYPO ALERT: Variable name has typo but MUST keep for compatibility
+// modules/CPAPIIntegration/inbound_apis/Zalo.php
+// TYPO ALERT: variable name is read by IntegrationApiHandler::getAPIDefination() — MUST keep
 $intergrationAPIs = [
-    'create_customer' => [
-        'method' => 'POST',
-        'description' => 'Create or update customer',
-        'requireAuth' => true,
-    ],
-    'get_customer' => [
-        'method' => 'GET',
-        'description' => 'Get customer by phone',
-        'requireAuth' => true,
-    ],
+	'createCustomer' => [
+		'enabled' => true,
+		'method' => 'POST',
+		'params' => [
+			'phone' => [
+				'internal_key' => 'mobile',
+				'is_required' => true,
+			],
+			'name' => [
+				'internal_key' => 'lastname',
+				'is_required' => true,
+			],
+			'source' => [
+				'internal_key' => 'leadsource',
+				'type' => 'picklist',
+			],
+			'birthday' => [
+				'internal_key' => 'birthday',
+				'type' => 'date',
+			],
+			'company_code' => [
+				'type' => 'reference',
+				'internal_key' => 'account_id',
+				'extra_data' => ['module' => 'Accounts', 'search_field' => 'customer_code_1'],
+			],
+		],
+	],
 ];
 ```
+
+Keys per API: `enabled`, `method`, `params` (+ optional `group_params`). Per param: `internal_key` (CRM field; empty = keep name), `is_required`, `type` (`picklist`, `date`, `reference`…), `extra_data`. Full example: `modules/CPAPIIntegration/inbound_apis/Inbound.sample.php`.
 
 ### Enums File
 
 ```php
 <?php
 
-/**
- * Zalo enums and constants
- * Location: include/Webservice/CloudBotApi/enums/Zalo.php
- */
+// modules/CPAPIIntegration/enums/Zalo.php
+require_once('modules/CPAPIIntegration/enums/Base.php');
 
-class ZaloEnum {
-    const CUSTOMER_STATUS_ACTIVE = 'Active';
-    const CUSTOMER_STATUS_INACTIVE = 'Inactive';
+class CPAPIIntegration_Zalo_Enum extends CPAPIIntegration_Base_Enum {
 
-    const ORDER_STATUS_PENDING = 'Pending';
-    const ORDER_STATUS_CONFIRMED = 'Confirmed';
+	// [crm_field => [external_value => internal_value]]
+	protected const INTEGRATION_MAPPING = [
+		'leadsource' => [
+			'zalo_oa' => 'Zalo',
+		],
+	];
 }
 ```
 
 ## SAVE_UNSUPPORTED_FIELDS
 
-**Critical:** These fields are silently stripped before save:
+**Critical:** `saveRecord()` silently strips these keys before save (`IntegrationApiHandler::SAVE_UNSUPPORTED_FIELDS`):
 
 ```php
-const SAVE_UNSUPPORTED_FIELDS = [
-    'createdtime',
-    'modifiedtime',
-    'deleted',
-    'items',      // Inventory line items
-    'tags',
-];
+const SAVE_UNSUPPORTED_FIELDS = ['starred', 'tags', 'createdtime', 'createdby', 'modifiedtime', 'modifiedby', 'deleted', 'items'];
 ```
 
-Don't try to set these via API - they're auto-managed.
+Don't try to set these via API — they're auto-managed. Inventory line items go through the `$itemGroupKey` (default `items`) argument of `saveRecord()`, which calls `saveWithItems()`.
 
 ## setResponse() Pattern
 
 ```php
-// setResponse() calls exit() internally - still add return for clarity
-return $this->setResponse(['success' => true], 200);
+// Signature: setResponse($code, $data = '') — code FIRST; it echoes JSON and calls exit
+$this->setResponse(200, ['success' => 1, 'id' => $recordId]);
 
 // After this line, code never executes
-$this->logInfo("Never logged");  // Won't run
 ```
 
-## DRY Pattern: syncRecord()
+`TraitAPILogger::setResponse()` also writes the response into the API log when `saveLog()` opened one.
 
-```php
-// Define lookup fields for upsert
-const LOOKUP_FIELDS = [
-    'Contacts' => ['phone', 'email'],
-    'Accounts' => ['accountname', 'phone'],
-    'Products' => ['productcode'],
-];
+## Complex Inbound: Sub-handler Pattern (CloudBot)
 
-private function syncRecord(string $module, array $data): int {
-    $lookupFields = self::LOOKUP_FIELDS[$module] ?? [];
-
-    // Find existing record
-    $recordId = 0;
-    foreach ($lookupFields as $field) {
-        if (!empty($data[$field])) {
-            $recordId = $this->findRecordByField($module, $field, $data[$field]);
-            if ($recordId > 0) break;
-        }
-    }
-
-    if ($recordId > 0) {
-        // Update existing
-        $record = Vtiger_Record_Model::getInstanceById($recordId, $module);
-        $record->set('mode', 'edit');
-    }
-    else {
-        // Create new
-        $record = Vtiger_Record_Model::getCleanInstance($module);
-    }
-
-    // Set data
-    foreach ($data as $field => $value) {
-        if (!in_array($field, self::SAVE_UNSUPPORTED_FIELDS)) {
-            $record->set($field, $value);
-        }
-    }
-
-    $record->save();
-    return (int) $record->getId();
-}
-```
-
-## Complex Inbound: Subhandler Pattern
-
-For APIs with many endpoints, use subhandlers:
+For APIs with many endpoints, define `processActionBySubHandler()` on the router; Endpoint.php calls it instead of `$instance->$method()`. Real implementation: `include/Webservice/CloudBotApiHandler.php`.
 
 ```php
 <?php
 
-/**
- * CloudBot main handler with subhandler routing
- * Location: include/Webservice/CloudBotApi/CloudBotApiHandler.php
- */
+// include/Webservice/CloudBotApiHandler.php (abridged)
+require_once('include/Webservice/CloudBotApi/AbstractCloudBotApi.php');
 
-class CloudBotApiHandler extends IntegrationApiHandler {
+class CloudBotApiHandler extends AbstractCloudBotApi {
 
-    use JWTTrait;
-    use LoggerTrait;
+	// Actions that bypass checkSession()
+	protected $skipCheckToken = ['authenticate'];
 
-    protected $platform = 'CloudBot';
+	protected function getAPIHandlerByAction(string $action): AbstractCloudBotApi {
+		$handlerClass = '';
 
-    protected function isEnabled(): bool {
-        global $cloudBotConfig;
-        return !empty($cloudBotConfig['api_enabled']);
-    }
+		switch ($action) {
+			case 'saveTicket':
+			case 'validateCustomer': {
+				$handlerClass = 'CustomerServiceApiHandler';
+				break;
+			}
 
-    // Route to subhandlers by action
-    protected function getAPIHandlerByAction(string $action) {
-        $handlers = [
-            'create_customer' => 'CloudBotApi_Customer',
-            'create_order' => 'CloudBotApi_Order',
-            'sync_product' => 'CloudBotApi_Product',
-        ];
+			default: {
+				$handlerClass = 'CloudBotApiHandler';
+				break;
+			}
+		}
 
-        if (isset($handlers[$action])) {
-            require_once "include/Webservice/CloudBotApi/subhandlers/{$handlers[$action]}.php";
-            return new $handlers[$action]();
-        }
+		if ($handlerClass == 'CloudBotApiHandler') {
+			return $this;
+		}
 
-        return null;
-    }
+		if (!file_exists("include/Webservice/CloudBotApi/{$handlerClass}.php")) {
+			$this->setResponse(200, ['success' => 0, 'message' => 'Invalid action']);
+		}
 
-    public function __call($method, $args) {
-        $handler = $this->getAPIHandlerByAction($method);
+		require_once("include/Webservice/CloudBotApi/{$handlerClass}.php");
+		$apiHandler = new $handlerClass();
+		$apiHandler->setLogId($this->logId);
 
-        if (!$handler) {
-            return $this->setResponse(['error' => 'Invalid action'], 404);
-        }
+		return $apiHandler;
+	}
 
-        return call_user_func_array([$handler, 'handle'], $args);
-    }
+	/** @return void */
+	public function processActionBySubHandler(string $action, Vtiger_Request $request) {
+		$apiHandler = $this->getAPIHandlerByAction($action);
+
+		if (!method_exists($apiHandler, $action)) {
+			$this->setResponse(200, ['success' => 0, 'message' => 'Invalid action']);
+		}
+
+		$apiHandler->$action($request);
+	}
 }
 ```
 
-**Subhandler:**
+**Sub-handler** — `include/Webservice/CloudBotApi/{Class}.php`, extends `AbstractCloudBotApi` (which sets `$channel = 'CloudBot'`, `isEnabled()`, its own `checkSession()`, cache manager). Add the new action to the router's `switch`.
 
 ```php
 <?php
 
-/**
- * Customer subhandler
- * Location: include/Webservice/CloudBotApi/subhandlers/CloudBotApi_Customer.php
- */
+// include/Webservice/CloudBotApi/CustomerServiceApiHandler.php (shape)
+require_once('include/Webservice/CloudBotApi/AbstractCloudBotApi.php');
 
-require_once 'include/Webservice/CloudBotApi/AbstractCloudBotApi.php';
+class CustomerServiceApiHandler extends AbstractCloudBotApi {
 
-class CloudBotApi_Customer extends AbstractCloudBotApi {
+	// API /validateCustomer
+	public function validateCustomer(Vtiger_Request $request) {
+		// Shared utilities from AbstractCloudBotApi: doSave(), searchModule(), getRecordDetail(), syncCustomerInfo(), $cacheManager
+		$data = $this->getProcessedRequestData(__FUNCTION__, $request);
 
-    public function handle($request, $user) {
-        // Shared utilities from AbstractCloudBotApi:
-        // - checkSession()
-        // - doSave()
-        // - searchModule()
-        // - syncCustomerInfo()
-        // - cacheManager
-
-        $phone = $request['phone'] ?? '';
-        if (empty($phone)) {
-            return $this->setResponse(['error' => 'Phone required'], 400);
-        }
-
-        $recordId = $this->syncCustomerInfo($request);
-
-        return $this->setResponse(['success' => true, 'recordId' => $recordId]);
-    }
+		$this->setResponse(200, ['success' => 1, 'data' => $data]);
+	}
 }
 ```
 
 ## Critical Pitfalls
 
-1. **Extend IntegrationApiHandler** - NOT standalone class
-2. **$intergrationAPIs typo** - MUST keep (compatibility)
-3. **SAVE_UNSUPPORTED_FIELDS** - silently stripped, don't try to set
-4. **setResponse() calls exit** - still add `return;` for clarity
-5. **isEnabled() from config** - don't hardcode `true`
-6. **Use syncRecord()** - DRY pattern for upsert
-7. **LOOKUP_FIELDS constant** - define module-specific lookup fields
+1. **Extend IntegrationApiHandler** - NOT standalone class; file must be `include/Webservice/{Platform}ApiHandler.php`
+2. **$intergrationAPIs typo** - MUST keep (read by `getAPIDefination()`)
+3. **SAVE_UNSUPPORTED_FIELDS** - silently stripped by `saveRecord()`, don't try to set
+4. **setResponse($code, $data) calls exit** - code first, data second
+5. **`public function isEnabled(): bool`** - parent is `abstract public`; read from config, don't hardcode `true`
+6. **`$request` is `Vtiger_Request`** - use `$request->get()`, not array access
+7. **Upsert** - resolve the existing id yourself, then pass it as `saveRecord()`'s 3rd argument
 
 ## URL Format
 
 ```
-POST https://crm.domain.com/api/IntegrationAPI/Zalo/create_customer
+# 1. Get a token (GET only)
+GET https://crm.domain.com/api/IntegrationAPI/Zalo/auth?username=admin&access_key_md5={md5(user accesskey)}
+→ {"success":1,"access_token":"...","created_time":...,"expire_time":...}
+
+# 2. Call an action with the token header
+POST https://crm.domain.com/api/IntegrationAPI/Zalo/createCustomer
 
 Headers:
-  Authorization: Bearer {JWT_TOKEN}
+  token: {access_token}
   Content-Type: application/json
 
 Body:
 {
   "phone": "0901234567",
-  "firstname": "Nguyen",
-  "lastname": "Van A",
-  "email": "a@example.com"
+  "name": "Nguyen Van A"
 }
 ```

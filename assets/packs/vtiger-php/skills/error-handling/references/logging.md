@@ -1,8 +1,8 @@
 # Logging Patterns
 
-## LoggerManager (Log4PHP)
+## LoggerManager (custom lightweight logger)
 
-VTiger uses Log4PHP for structured logging across modules.
+`libraries/log4php/LoggerManager.php` is a small in-house logger that only borrows log4php's config file format — it is NOT the Apache Log4PHP library.
 
 ### Basic Usage
 
@@ -13,6 +13,17 @@ $logger->error('Failed to save record: ' . $errorMessage);
 $logger->debug('Request data: ' . json_encode($data));
 $logger->fatal('Critical system failure');
 ```
+
+Each level method takes ONLY `$message` (non-strings are `var_export`ed). A second "context" argument is silently dropped — put the context into the message string (e.g. `json_encode`).
+
+### When Does a Line Actually Get Written?
+
+Both gates must pass:
+
+1. **`$loggerConfig`** in `config_override.php` — the per-level switch (`ERROR`/`FATAL`/`INFO`/`WARN`/`DEBUG`). All are `false` by default, so nothing is written until you enable a level.
+2. **Category threshold** in `log4php.properties` — `log4php.logger.PLATFORM=INFO,A6` writes INFO and above (INFO, WARN, ERROR, FATAL) for that category.
+
+A category missing from `log4php.properties` falls back to the root logger (`log4php.rootLogger.VTIGERCRM=FATAL,A1` → `logs/vtigercrm.log`, FATAL only).
 
 ### Log Levels
 
@@ -28,7 +39,7 @@ $logger->fatal('Critical system failure');
 
 ## Category → Log File Mapping
 
-Categories are defined in `log4php.properties`. Each category writes to specific log file.
+Categories are defined in `log4php.properties`. Each category writes to a specific log file.
 
 ### Common Categories
 
@@ -36,34 +47,39 @@ Categories are defined in `log4php.properties`. Each category writes to specific
 |----------|----------|---------|
 | `PLATFORM` | `platform.log` | General system logs, webhooks, utils |
 | `WEBSERVICE` | `webservice.log` | REST API calls (Webservices) |
+| `OPEN_API` | `open_api.log` | OpenAPI endpoints |
 | `CALLCENTER` | `callcenter.log` | Call center integrations, phone logs |
 | `WORKFLOW` | `workflow.log` | Workflow task execution |
 | `NOTIFICATIONS` | `notifications.log` | FCM push notifications |
 | `ADMIN_AUDIT` | `admin_audit.log` | Admin actions, user changes |
 | `BANKHUB_INTEGRATION` | `bankhub_integration.log` | Payment gateway webhooks |
-| `ZALO_INTEGRATION` | `zalo_integration.log` | Zalo ZNS, Zalo API |
-| `FACEBOOK_INTEGRATION` | `facebook_integration.log` | Facebook Ads, Messenger |
+| `SOCIAL_INTEGRATION` | `social_integration.log` | Facebook / Zalo / social channels |
+| `SYNC_ZNS` | `sync_zns.log` | Zalo ZNS sync |
+| `SMS_OTT` | `sms_ott.log` | SMS / OTT messages |
 | `GOOGLE_INTEGRATION` | `google_integration.log` | Google Ads, Analytics |
-| `TIKTOK_INTEGRATION` | `tiktok_integration.log` | TikTok Ads |
-| `BACKGROUND_JOBS` | `background_jobs.log` | Cron jobs, queue processing |
+| `TIKTOKSHOP_INTEGRATION` | `tiktokshop_integration.log` | TikTok Shop |
+| `QUEUE` | `queue.log` | Queue processing |
+| `SQL_ERRORS` | `sql_errors.log` | Failed SQL (written by `PearDatabase::checkError()`) |
+
+Full list: `grep '^log4php.logger' log4php.properties`.
 
 ### Adding New Category
 
 **CRITICAL:** New categories MUST be added to `log4php.properties` before use.
 
 ```properties
-# In log4php.properties
-log4php.appender.A42 = LoggerAppenderRollingFile
-log4php.appender.A42.file = logs/my_new_integration.log
-log4php.appender.A42.MaxFileSize = 5MB
-log4php.appender.A42.MaxBackupIndex = 10
-log4php.appender.A42.layout = LoggerLayoutPattern
-log4php.appender.A42.layout.ConversionPattern = %d{Y-m-d H:i:s} %c %5p %m%n
-
-log4php.logger.MY_NEW_INTEGRATION = DEBUG, A42
+# In log4php.properties — copy an existing block
+log4php.logger.MY_NEW_INTEGRATION=INFO,A46
+log4php.appender.A46=LoggerAppenderRollingFile
+log4php.appender.A46.MaxFileSize=10MB
+log4php.appender.A46.MaxBackupIndex=10
+log4php.appender.A46.layout=LoggerLayoutTTCC
+log4php.appender.A46.layout.ContextPrinting="true"
+log4php.appender.A46.layout.DateFormat="%c"
+log4php.appender.A46.File=logs/my_new_integration.log
 ```
 
-**Appender ID:** Use next available (currently max is A41, so use A42, A43, etc.)
+**Appender ID:** Use the next free one (currently max is A45, so use A46). The file key must be `File` (capital F) — the logger reads `File`; any other spelling logs to `vtigercrm.log`.
 
 ---
 
@@ -134,31 +150,30 @@ CloudGoApiUtils::saveLog(
 ### 3. IntegrationAPI Logging (TraitAPILogger)
 
 ```php
-$this->saveLog($description, $data, $status);
+$this->saveLog($action, $data);
 ```
 
-**Category:** N/A (writes to `vtiger_cp_export_log` table)
+**Signature:** `saveLog($action, $data)` — a no-op unless `$this->enableLog` is true (`IntegrationApiHandler` defaults it to `true`).
 
-**File:** Database table, not log file
+**Storage:** `CPLogAPI_Logger_Helper::saveLogApi()` — the CPLogAPI store (`vtiger_cpcallapilog` in the SQLite3 backend by default, Elastic when configured), not a log file.
+
+**Lifecycle:** `saveLog()` records the INBOUND request and keeps `$this->logId`; the trait's `setResponse($code, $data)` then writes status (`success`/`error` from `$data['success']`), response body and HTTP code onto the same entry before calling `parent::setResponse()` (which `exit`s).
 
 **Use For:**
-- IntegrationAPI handlers (inbound API)
-- External system integration logs
-- Audit trail for API operations
+- IntegrationAPI handlers (inbound API) — `IntegrationApiHandler` already uses the trait
+- Audit trail for API operations (view via the CPLogAPI module)
 
 **Example:**
 ```php
-class ShopifyApiHandler extends IntegrationApiHandler {
-    use TraitAPILogger;
+class MyChannelApiHandler extends IntegrationApiHandler {
 
-    protected function processOrder($data) {
-        try {
-            $orderId = $this->createSalesOrder($data);
-            $this->saveLog('Order created', ['order_id' => $orderId], 'success');
-        }
-        catch (Exception $e) {
-            $this->saveLog('Order creation failed', ['error' => $e->getMessage()], 'error');
-        }
+    protected $channel = 'MY_CHANNEL';
+
+    public function createOrder() {
+        $body = $this->getRequestBody(); // pseudo-code: read the decoded request body
+        $this->saveLog('createOrder', $body);
+
+        $this->setResponse(200, ['success' => 1, 'data' => []]); // completes the log entry, then exits
     }
 }
 ```
@@ -167,11 +182,11 @@ class ShopifyApiHandler extends IntegrationApiHandler {
 
 ### 4. Workflow Task Logging
 
-```php
-VTTask::saveLog($description, $data, $taskId);
-```
+There is no `VTTask::saveLog()`. Log through the `WORKFLOW` category:
 
-**Category:** `WORKFLOW`
+```php
+$logger = LoggerManager::getLogger('WORKFLOW');
+```
 
 **File:** `logs/workflow.log`
 
@@ -180,18 +195,19 @@ VTTask::saveLog($description, $data, $taskId);
 - Scheduled workflow actions
 - Workflow debugging
 
-**Example:**
+**Example (custom task class):**
 ```php
-class VTSendEmailTask extends VTTask {
+class MyModuleSampleTask extends VTTask {
+
     public function doTask($entity) {
         $logger = LoggerManager::getLogger('WORKFLOW');
-        $logger->info("Sending email for workflow: {$this->id}");
+        $logger->info("Running workflow task: {$this->id}");
 
         try {
-            $this->sendEmail($entity);
+            $this->sendEmail($entity); // pseudo-code
             $logger->info('Email sent successfully');
         }
-        catch (Exception $e) {
+        catch (Throwable $e) {
             $logger->error("Email failed: {$e->getMessage()}");
         }
     }
@@ -203,12 +219,12 @@ class VTSendEmailTask extends VTTask {
 ### 5. Admin Audit Logging
 
 ```php
-AdminAudit_Helper::saveLog($category, $description, $data);
+Vtiger_AdminAudit_Helper::saveLog($category, $description, $logData = null);
 ```
 
-**Category:** `ADMIN_AUDIT`
+**Category:** `ADMIN_AUDIT` (the helper forces `$loggerConfig['INFO'] = true`, so it writes even when INFO is globally off)
 
-**File:** `logs/admin_audit.log` + `vtiger_admin_audit` table
+**File:** `logs/admin_audit.log` only (no DB table). Each line also carries user, IP, request URL and the full POST data.
 
 **Use For:**
 - Admin panel changes
@@ -218,14 +234,13 @@ AdminAudit_Helper::saveLog($category, $description, $data);
 
 **Example:**
 ```php
-AdminAudit_Helper::saveLog(
+Vtiger_AdminAudit_Helper::saveLog(
     'USER_MANAGEMENT',
     'User role changed',
     [
         'user_id' => $userId,
         'old_role' => 'Sales Manager',
         'new_role' => 'Admin',
-        'changed_by' => $currentUserId
     ]
 );
 ```
@@ -235,10 +250,10 @@ AdminAudit_Helper::saveLog(
 ### 6. General Logging (Global saveLog)
 
 ```php
-saveLog($category, $description, $data);
+saveLog($logger, $description, $data = null);
 ```
 
-**Category:** Parameter-specified
+Global function loaded through `include/utils/utils.php` on every request. `$logger` is the category name; writes at INFO level with user + IP, `$data` is `json_encode`d.
 
 **File:** Depends on category
 
@@ -250,12 +265,12 @@ saveLog($category, $description, $data);
 **Example:**
 ```php
 saveLog(
-    'FACEBOOK_INTEGRATION',
+    'SOCIAL_INTEGRATION',
     'Campaign sync completed',
     [
         'account_id' => $accountId,
         'campaigns_synced' => count($campaigns),
-        'duration_ms' => $duration
+        'duration_ms' => $duration,
     ]
 );
 ```
@@ -277,11 +292,12 @@ class MyModule_Process_Action extends Vtiger_Action_Controller {
             $logger->info('Process completed successfully');
             $response->setResult($result);
         }
-        catch (Exception $e) {
-            $logger->error('Process failed: ' . $e->getMessage(), [
+        catch (Throwable $e) {
+            $context = json_encode([
                 'module' => $request->getModule(),
-                'user' => Users_Record_Model::getCurrentUserModel()->getId()
+                'user' => Users_Record_Model::getCurrentUserModel()->getId(),
             ]);
+            $logger->error('Process failed: ' . $e->getMessage() . ' ' . $context);
             $response->setError(500, $e->getMessage());
         }
 
@@ -322,7 +338,7 @@ class BankHubWebhook extends Vtiger_EntryPoint {
             http_response_code(200);
             echo json_encode(['status' => 'ok']);
         }
-        catch (Exception $e) {
+        catch (Throwable $e) {
             WebhookUtils::saveLog(
                 'BankHub webhook error',
                 $headers,
@@ -341,16 +357,18 @@ class BankHubWebhook extends Vtiger_EntryPoint {
 
 ### Cron Job Logging
 
-```php
-class MyModule_CronHandler extends Vtiger_CronHandler {
-    public function execute() {
-        $logger = LoggerManager::getLogger('BACKGROUND_JOBS');
+Cron classes are plain `<Module>_<Component>_Cron` classes with a `process()` method (no base class — see `modules/Project/crons/calculateProjectCost.php`).
 
+```php
+class MyModule_SyncData_Cron {
+
+    public function process() {
+        $logger = LoggerManager::getLogger('QUEUE');
         $logger->info('Cron job started');
 
         try {
             $records = $this->getRecordsToProcess();
-            $logger->info("Processing {count($records)} records");
+            $logger->info('Processing ' . count($records) . ' records');
 
             foreach ($records as $record) {
                 $this->processRecord($record);
@@ -358,7 +376,7 @@ class MyModule_CronHandler extends Vtiger_CronHandler {
 
             $logger->info('Cron job completed successfully');
         }
-        catch (Exception $e) {
+        catch (Throwable $e) {
             $logger->error('Cron job failed: ' . $e->getMessage());
             throw $e;
         }
@@ -370,24 +388,24 @@ class MyModule_CronHandler extends Vtiger_CronHandler {
 
 ### External API Call Logging
 
+Pseudo-code — the connector class and `$this->httpClient` are illustrative.
+
 ```php
-class FacebookAdsConnector {
+class MySocialConnector {
+
     protected function makeGetRequest($endpoint, $params) {
-        $logger = LoggerManager::getLogger('FACEBOOK_INTEGRATION');
+        $logger = LoggerManager::getLogger('SOCIAL_INTEGRATION');
 
         $url = $this->buildUrl($endpoint, $params);
         $logger->debug("API Request: GET {$url}");
 
         try {
             $response = $this->httpClient->get($url);
-            $logger->info('API call successful', ['endpoint' => $endpoint]);
+            $logger->info("API call successful: {$endpoint}");
             return json_decode($response, true);
         }
-        catch (Exception $e) {
-            $logger->error("API call failed: {$e->getMessage()}", [
-                'endpoint' => $endpoint,
-                'params' => $params
-            ]);
+        catch (Throwable $e) {
+            $logger->error("API call failed: {$e->getMessage()} - " . json_encode(['endpoint' => $endpoint, 'params' => $params]));
             throw $e;
         }
     }

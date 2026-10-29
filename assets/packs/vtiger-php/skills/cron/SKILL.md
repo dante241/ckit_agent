@@ -35,14 +35,14 @@ Before implementation, determine the appropriate pattern:
 
 **Cron Pattern:**
 - Service file: `cron/modules/<Module>/<Name>.service`
-- Logic class: `modules/<Module>/crons/<name>.php`
-- Runs via vtigercron.php on schedule
+- Logic class: `<Module>_<Component>_Cron` in `modules/<Module>/crons/<Component>.php` (autoloaded, no `require_once`)
+- Runs via `vtigercron.php` (repo root) on schedule
 
 **Queue Pattern:**
-- Service file: `cron/modules/<Module>/<Name>.service`
-- Process class: `modules/<Module>/services/<ProcessName>.php`
-- Extends BaseProcess, runs continuously via supervisord
-- Uses CPQueue module for task management
+- Job class: `modules/CPQueue/Jobs/<JobName>.php` with `static run(Task $task)` (the work)
+- Consumer service: `cron/modules/<Module>/<Name>.service`
+- Consumer class: `modules/<Module>/services/<ProcessName>.php` extends `BaseProcess` (one batch per run, Supervisor restarts it)
+- Enqueue via `CPQueue_Server_Model::getCleanInstance()->addTask('<JobName>', $data)`
 
 ## File Locations
 
@@ -52,9 +52,12 @@ cron/modules/<Module>/
 
 modules/<Module>/
 ├── crons/
-│   └── taskName.php              # Cron logic class
+│   └── <Component>.php           # Cron logic class <Module>_<Component>_Cron
 └── services/
-    └── ProcessName.php           # Queue process class
+    └── ProcessName.php           # Queue consumer (extends BaseProcess)
+
+modules/CPQueue/Jobs/
+└── <JobName>.php                 # Queue job: static run(Task $task)
 ```
 
 ## Registration
@@ -67,8 +70,8 @@ $this->createCronjob(
     'TaskName',                    // Name
     3600,                          // Frequency in seconds
     'Module',                      // Module name
-    'cron/modules/Module/TaskName.service',  // Handler path
-    'Cronjob'                      // run_by: 'Cronjob' or 'Supervisor'
+    'cron/modules/Module/TaskName.service',  // Handler path (unique per task)
+    'Cronjob'                      // run_by: 'Cronjob' or 'Supervisor' (Supervisor rows use frequency 60)
 );
 ```
 
@@ -79,23 +82,22 @@ $this->createCronjob(
 3. **Memory Leaks**: Use batch processing for large datasets, clear variables
 4. **Missing decodeUTF8()**: Always decode fetchByAssoc() results
 5. **Direct SQL Concatenation**: Use pquery() with params, never concatenate
-6. **Missing Supervisor Config**: Queue processes need supervisord configuration
-7. **No Batch Limit**: Queue processes must limit batch size (default 200)
-8. **CPU Spike**: Queue processes must sleep(2) between batches
+6. **Supervisor process missing**: save the task in Settings → Scheduler (or run QuickRepair) so `CPQueue_Supervisor_Provider` creates it
+7. **No Batch Limit**: Queue consumers must limit batch size (default 200)
+8. **Wrong run_by**: `vtigercron.php` skips `run_by='Supervisor'` rows; queue consumers must be Supervisor rows
 
 ## Architecture
 
 **Cron Pattern (2 files):**
 - Thin service wrapper calls logic class
-- Logic class: `{Module}_{Name}_Cron` naming
+- Logic class: `{Module}_{Component}_Cron` naming
 - Method: `process()` for execution
 - Error isolation per record
 
-**Queue Pattern (2 files):**
-- Thin service wrapper instantiates process
-- Process extends BaseProcess
-- Framework handles queue polling, batch limits, sleep
-- Methods: `beforeExecuteTasks()`, `afterExecuteTasks()`
+**Queue Pattern (job + consumer):**
+- Job class `run(Task $task)` handles one task
+- Thin service wrapper instantiates the consumer and calls `processQueue()` (one batch, then sleep 2s and exit)
+- Optional hooks in the consumer: `beforeExecuteTasks()`, `afterExecuteTasks()`
 
 ## References
 
@@ -116,11 +118,11 @@ $this->createCronjob(
 ## Testing
 
 ```bash
-# Run all cron tasks
-php cron/vtigercron.php
+# Run all due Cronjob tasks (vtigercron.php is at the repo root; CLI args are ignored)
+php vtigercron.php
 
-# Run specific task
-php cron/vtigercron.php -m "TaskName"
+# Run specific task by vtiger_cron_task.name (still subject to the frequency check)
+php -r '$_REQUEST["service"] = "TaskName"; require "vtigercron.php";'
 ```
 
 ## Next Steps
@@ -131,7 +133,7 @@ php cron/vtigercron.php -m "TaskName"
 4. Create migration for registration
 5. Test manually before deploying
 
-## Exemplars (ưu tiên code Tín Bùi / Tùng Nguyễn — PENDING REVIEW by user)
+## Exemplars (ưu tiên code Tín Bùi / Tùng Nguyễn)
 
 - Cron service chuẩn: `cron/modules/CPSocialIntegration/SyncZaloGroupInfo.service`
 - Migration đăng ký cron: `modules/CPMigration/migrations/2026.06.22.12.35.00_SyncZaloGroupInfoCron.php`
@@ -139,7 +141,7 @@ php cron/vtigercron.php -m "TaskName"
 ## Verify
 
 ```bash
-# Chạy service trực tiếp 1 lần, xem output + exit code:
-php vtigercron.php <ServiceName>   # hoặc invoke file .service theo pattern module
+# Chạy 1 task qua runner thật, xem output:
+php -r '$_REQUEST["service"] = "<ServiceName>"; require "vtigercron.php";'
 mysql <db> -e "SELECT name,status,laststart,lastend FROM vtiger_cron_task WHERE name LIKE '%<Service>%'"
 ```

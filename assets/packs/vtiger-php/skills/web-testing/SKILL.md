@@ -11,6 +11,8 @@ version: 3.0.0
 
 Comprehensive web testing: unit, integration, E2E, load, security, visual regression, accessibility.
 
+> **Scope: generic / greenfield Node projects.** Commands below assume a Node toolchain (`package.json`, Playwright/Vitest config) and GitHub Actions. The vtiger repo has none of these: it uses `.gitlab-ci.yml` and `phpunit.xml.dist` (covers `domains/*/tests` only). For vtiger work use the `testing` skill (PHPUnit / standalone scripts), `k6-loadtest-vtiger-readonly` + `test/load-test/` for load tests, and the omp `browser` eval global for UI checks.
+
 ## Quick Start
 
 ```bash
@@ -45,6 +47,8 @@ npx lighthouse https://example.com     # Performance
 - `./references/database-testing.md` - Testcontainers, transactions
 - `./references/ci-cd-testing-workflows.md` - GitHub Actions, sharding
 - `./references/contract-testing.md` - Pact, MSW patterns
+- `./references/interactive-testing-patterns.md` - Forms, keyboard, drag-and-drop, hover/modals
+- `./references/shadow-dom-testing.md` - Web Components / shadow DOM selectors
 
 ### Cross-Browser & Mobile
 - `./references/cross-browser-checklist.md` - Browser/device matrix
@@ -59,10 +63,11 @@ npx lighthouse https://example.com     # Performance
 - `./references/accessibility-testing.md` - WCAG, axe-core
 - `./references/security-testing-overview.md` - OWASP Top 10
 - `./references/security-checklists.md` - Auth, API, headers
+- `./references/vulnerability-payloads.md` - SQLi/XSS/etc. test payloads
 
 ### API & Load
 - `./references/api-testing.md` - Supertest, GraphQL
-- `./references/load-testing-k6.md` - k6 patterns
+- `./references/load-testing-k6.md` - k6 patterns (vtiger: use `k6-loadtest-vtiger-readonly` + `test/load-test/`)
 
 ### Checklists
 - `./references/pre-release-checklist.md` - Complete release checklist
@@ -85,7 +90,7 @@ node ./scripts/analyze-test-results.js \
 ```
 Parses Playwright/Vitest/JUnit results into unified summary.
 
-## CI/CD Integration
+## CI/CD Integration (GitHub Actions example; vtiger uses `.gitlab-ci.yml`)
 
 ```yaml
 jobs:

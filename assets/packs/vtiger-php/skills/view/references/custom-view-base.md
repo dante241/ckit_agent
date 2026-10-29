@@ -37,7 +37,8 @@ class <Module>_<ViewName>_View extends CustomView_Base_View {
         parent::__construct($isFullView = true);
     }
 
-    public function checkPermission(Vtiger_Request $request) {
+    function checkPermission(Vtiger_Request $request) {
+        parent::checkPermission($request);   // keep the forbidden-feature gate
         // Custom permission logic (not isAdmin — module-specific)
     }
 
@@ -163,7 +164,7 @@ CustomView_BaseController_Js('<Module>_<ViewName>_Js', {}, {
 
 ## When to Use
 
-- Module-specific config pages (NOT global Settings — use `BaseConfig_View` instead)
+- Module-specific config pages (NOT global Settings — use `Settings_Vtiger_BaseConfig_View` instead)
 - Custom reports with module-specific UI
 - Chat/messaging interfaces
 - Any custom full-page view needing auto-loaded resources from `modules/{Module}/resources/`

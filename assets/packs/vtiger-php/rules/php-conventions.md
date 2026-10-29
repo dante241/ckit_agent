@@ -30,9 +30,11 @@ alwaysApply: true
 | **Control (if/for/foreach/while/switch)** | K&R — same line | `if ($id > 0) {` |
 | **`else`/`elseif`/`catch`/`finally`** | Stroustrup — OWN line after `}` | see below |
 
+Classes/methods are K&R across the codebase. `else`/`catch` placement is mixed in existing code (cuddled `} else` / `} catch` is about as common as the own-line form) — new and edited code uses the own-line form; don't copy the cuddled style from nearby legacy code.
+
 ```php
-// CORRECT (this codebase)
-class V1_RecordController extends V1_BaseHandler {
+// CORRECT
+class ModuleName_ClassName_Helper {
 
     public function list(array $params): array {
         if (empty($params)) {
@@ -48,7 +50,7 @@ class V1_RecordController extends V1_BaseHandler {
 }
 
 // WRONG (PSR-12 Allman — do NOT use)
-class V1_RecordController extends V1_BaseHandler
+class ModuleName_ClassName_Helper
 {
     public function list(array $params): array
     {
@@ -65,7 +67,7 @@ private function serializeRow(
 ): array {
 ```
 
-Verified against 18/22 V1 classes (`Response.php`, `Router.php`, `BaseHandler.php`, `AuthController.php`, `MeController.php`, …). One file header per file — never duplicate the `@author` block (fold tags into the existing class docblock).
+One file header per file — never duplicate the `@author` block (fold tags into the existing class docblock).
 
 ## Class Naming: `<Module>_<Component>_<Type>`
 
@@ -88,8 +90,8 @@ class Products_CheckWarrantyAjax_Action extends Vtiger_Action_Controller { }
 // Helpers → modules/<Module>/helpers/<Component>.php
 class CPBranch_Logic_Helper { }
 
-// Crons → modules/<Module>/crons/<Component>.php
-class CPChatbotConfig_BotChatAudit_Cron { }
+// Crons → modules/<Module>/crons/<Component>.php (rare — most cron logic lives in models called from cron/modules/<Module>/*.service)
+class Project_CalculateProjectCost_Cron { }
 ```
 
 **File name = `<Component>` part only.** Do NOT include type suffix (e.g., `GeminiAudit.php` not `GeminiAuditHelper.php`).
@@ -139,14 +141,23 @@ $adsAccountId = (string) $adsAccount->get('account_id');
 $expiresIn = (int) $token['expires_in'];
 ```
 
-## Type Declarations (PHP 7+)
+## PHP 8.3: class, function input/output, checks before calling, variables, errors
+
+Full standard (MUST): rule `php83.md` = verbatim copy of `docs/php83-coding-rules.md`; cite rule codes (C/F/P/V/E/R/S) in review findings. In short: typed properties with defaults, typed parameters + return types on new functions (callers cast first), `null` / `[]` / `bool` / `throw` instead of `array|false`, check record existence + permission + `false`/`null` before calling, `===`, `catch (Throwable)` at entry points.
+
+## Validate Once, Then Trust (user rule 2026-10-26)
+
+Trong một hàm, một biến chỉ được "đảm bảo kiểu" MỘT lần — tại chỗ xác lập nó; sau đó dùng trần, KHÔNG lặp lại guard:
 
 ```php
-public function isValid(): bool { }
-public function getId(): int { }
-public function getInstance(): self { }
-public function process(string $module, int $recordId, bool $force = false): bool { }
+$participants = $participantsData['participants'] ?? [];           // đảm bảo một lần tại nguồn
+$participantIds = array_map(fn($p) => $p['id'], $participants);    // array_map luôn trả array
+$total = count($participantIds);                                   // KHÔNG count($participantIds ?? [])
 ```
+
+- `?? []` / `is_array()` đặt ở chỗ GÁN (dữ liệu từ request/DB/API vào), không rải theo mỗi lần dùng.
+- Biến đã qua `array_map/array_filter/explode/array_keys...` hoặc đã gán `?? []` → dùng `count($x)` trần.
+- Hàm nhận mảng → khai báo `array $param` (hoặc guard đầu hàm một lần) thay vì phòng thủ ở từng dòng.
 
 ## Early Return Pattern
 
@@ -163,7 +174,7 @@ public function processRequest(Vtiger_Request $request): bool {
     try {
         return $this->processRecord($recordId);
     }
-    catch (Exception $e) {
+    catch (Throwable $e) {    // entry point: Exception does not catch TypeError/ValueError on PHP 8
         error_log('Error: ' . $e->getMessage());
         return false;
     }
@@ -172,7 +183,7 @@ public function processRequest(Vtiger_Request $request): bool {
 // Empty / short-circuit guards
 if (empty($adsAccountId)) return [];
 if (empty($connector) || !$connector instanceof BaseConnector) return [];
-if ($id == 0) return;
+if ($id === 0) return;
 ```
 
 ## Logical AND Short-Circuit (codebase convention)
@@ -182,7 +193,7 @@ if ($id == 0) return;
 !empty($campaignId) && $recordModel = Vtiger_Record_Model::getInstanceById($campaignId);
 
 // Conditional record retrieval
-$campaignId > 0 && $sourceCampaign = Vtiger_Record_Model::getInstanceByConditions('Campaigns', ['crmid' => $lastCampaignId]);
+$campaignId > 0 && $sourceCampaign = Vtiger_Record_Model::getInstanceByConditions('Campaigns', ['crmid' => $campaignId]);
 
 // Short inline operations
 !empty($data['start_time']) && $data['start_time'] = date('Y-m-d', strtotime($data['start_time']));
@@ -204,7 +215,7 @@ date('Y-m-d H:i:s', strtotime("+ $expiresIn seconds"))
 date('Y-m-d', strtotime($dateString))
 
 // Always reject invalid datetimes
-!in_array($lastSyncDateTime, ['', '0000-00-00 00:00:00'])
+!in_array($lastSyncDateTime, ['', '0000-00-00 00:00:00'], true)
 ```
 
 ## Instance Check Pattern
@@ -255,26 +266,35 @@ public function getActiveSocialCampaignIds(): array {
 ## Class Structure Pattern
 
 ```php
-class ModuleName_ClassName_Model extends Vtiger_Base_Model {
+final class ModuleName_ClassName_Helper {
 
-    // 1. Constants first
-    public const STATUS_ACTIVE = 'ACTIVE';
+    // 1. Typed constants
+    public const string STATUS_ACTIVE = 'ACTIVE';
 
-    // 2. Singleton (if needed)
-    public static function getInstance(): self {
-        static $instance = null;
-        return $instance ?: $instance = new self();
+    // 2. Static properties (keyed cache only)
+    /** @var array<int, self> */
+    private static array $instances = [];
+
+    // 3. Properties: visibility + type + default
+    /** @var list<int> */
+    private array $recordIds = [];
+
+    // 4. Constructor, then static factory
+    public function __construct(private readonly int $userId) {}
+
+    public static function getInstance(int $userId): self {
+        return self::$instances[$userId] ??= new self($userId);
     }
 
-    // 3. Public methods
+    // 5. Public methods
     public function isEnabled(): bool { }
 
-    // 4. Protected / private methods
+    // 6. Protected / private methods
     protected function internalMethod(): void { }
 }
 ```
 
-Order: Constants → Singleton `getInstance()` → Public methods → Protected/private methods.
+Order: Constants → static properties → properties → `__construct` → static factory (`getInstance`, `fromRow`) → public → protected → private. Property/const typing rules: `php83.md` C1-C10.
 
 ## Empty Line Rules
 
@@ -340,10 +360,10 @@ $socialCampaign['status'] = $campaignStatusMapping[$socialCampaign['status']] ??
 
 ```php
 $campaign = array_merge($campaign, [
-    'campaigntype'                => capitalizeFirstLetter($channel) . ' Ads',
-    'source'                      => capitalizeFirstLetter($channel) . ' Ads',
+    'campaigntype' => capitalizeFirstLetter($channel) . ' Ads',
+    'source' => capitalizeFirstLetter($channel) . ' Ads',
     'related_cpadvertisingaccount' => $adsAccountRecord->getId(),
-    'assigned_user_id'            => $accountMainOwner,
+    'assigned_user_id' => $accountMainOwner,
 ]);
 ```
 
@@ -368,8 +388,8 @@ WHERE c.social_campaign_id IS NOT NULL
 Always include `deleted = 0` when joining `vtiger_crmentity`:
 
 ```php
-INNER JOIN vtiger_crmentity ON crmid = cpsocialfeedbackid AND deleted = 0
-INNER JOIN vtiger_crmentity AS e ON e.crmid = c.campaignid AND e.deleted = 0
+INNER JOIN vtiger_crmentity ON (crmid = cpsocialfeedbackid AND deleted = 0)
+INNER JOIN vtiger_crmentity AS e ON (e.crmid = c.campaignid AND e.deleted = 0)
 ```
 
 ## Record Model Patterns
@@ -396,7 +416,7 @@ Use when triggering save handlers is expensive or unnecessary:
 ```php
 public function updateLastSyncDateTime() {
     $id = (int) $this->getId();
-    if ($id == 0) return;
+    if ($id === 0) return;
 
     $sql = "UPDATE vtiger_table SET last_sync_datetime = ? WHERE id = ?";
     $GLOBALS['adb']->pquery($sql, [date('Y-m-d H:i:s'), $id]);

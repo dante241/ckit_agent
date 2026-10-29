@@ -50,14 +50,17 @@ class <Module>_<ViewName>_View extends CustomView_Base_View {
         parent::__construct($isFullView = true);
     }
 
-    public function checkPermission(Vtiger_Request $request): void {
+    // Same signature as Vtiger_Index_View::checkPermission(); keep the parent forbidden-feature gate
+    function checkPermission(Vtiger_Request $request) {
+        parent::checkPermission($request);
         $moduleName = (string) $request->getModule();
+
         if (!Users_Privileges_Model::isPermitted($moduleName, 'DetailView')) {
             throw new AppException(vtranslate('LBL_PERMISSION_DENIED'));
         }
     }
 
-    public function process(Vtiger_Request $request): void {
+    function process(Vtiger_Request $request) {
         $moduleName = (string) $request->getModule();
 
         $viewer = $this->getViewer($request);
@@ -97,66 +100,79 @@ layouts/v7/modules/<Module>/
 ├── resources/<ViewName>.js                       # JS controller (core views)
 ```
 
-**Key difference:** Must manually include JS/CSS via `getHeaderScripts()`/`getHeaderCss()` with dot notation.
+**Key difference:** Must manually include JS/CSS via `getHeaderScripts()`/`getHeaderCss()`. The header lists hold `Vtiger_JsScript_Model` / `Vtiger_CssScript_Model` objects (templates call `getSrc()`/`getHref()`), so always convert names with `checkAndConvertJsScripts()` / `checkAndConvertCssStyles()` — never append raw arrays.
 
 ```php
-public function process(Vtiger_Request $request): void {
+function process(Vtiger_Request $request) {
     $viewer = $this->getViewer($request);
     $viewer->assign('MODULE', $request->getModule());
     $viewer->view('CustomView.tpl', $request->getModule());  // resolves to layouts/v7/
 }
 
-public function getHeaderScripts(Vtiger_Request $request): array {
-    $scripts = parent::getHeaderScripts($request);
-    $scripts[] = ['src' => 'modules.<Module>.resources.<ViewName>'];
-    return $scripts;
+function getHeaderScripts(Vtiger_Request $request) {
+    $headerScriptInstances = parent::getHeaderScripts($request);
+    $moduleName = $request->getModule();
+    // Dot name: tries modules/<Module>/resources/<ViewName>.js, falls back to layouts/v7/modules/<Module>/resources/<ViewName>.js
+    $jsScriptInstances = $this->checkAndConvertJsScripts(["modules.{$moduleName}.resources.<ViewName>"]);
+
+    return array_merge($headerScriptInstances, $jsScriptInstances);
 }
 
-public function getHeaderCss(Vtiger_Request $request): array {
-    $css = parent::getHeaderCss($request);
-    $css[] = ['href' => 'modules.<Module>.resources.<ViewName>'];
-    return $css;
+function getHeaderCss(Vtiger_Request $request) {
+    $headerCssInstances = parent::getHeaderCss($request);
+    $moduleName = $request->getModule();
+    $cssInstances = $this->checkAndConvertCssStyles(["~modules/{$moduleName}/resources/<ViewName>.css"]);
+
+    return array_merge($headerCssInstances, $cssInstances);
 }
 ```
 
-### 3. Consolidated Modal View — ViewModal.php (PREFERRED for modals)
+### 3. Modal / AJAX-fragment views — `ViewAjax.php` with `mode` dispatch (PREFERRED for modals)
 
-> **ALWAYS prefer `ViewModal.php`** over creating separate modal view files.
-> Check if `modules/{Module}/views/ViewModal.php` exists — reuse it. Create only if absent.
+> Reuse `modules/{Module}/views/ViewAjax.php` if it exists (30+ modules have one); create it only if absent. Exemplar: `modules/CPMasterPlan/views/ViewAjax.php`.
 
 ```php
-class ModuleName_ViewModal_View extends CustomView_Base_View {
-    function __construct() {
-        $this->exposeMethod('getUpdateStatusModal');
-        $this->exposeMethod('getAnotherModal');
-    }
+class ModuleName_ViewAjax_View extends CustomView_Base_View {
 
-    function checkPermission(Vtiger_Request $request) { return; }
+    function checkPermission(Vtiger_Request $request) {
+        parent::checkPermission($request);
+        $moduleName = (string) $request->getModule();
+        $recordId = (int) $request->get('record');
 
-    public function process(Vtiger_Request $request) {
-        $mode = $request->getMode();
-        if (!empty($mode) && $this->isMethodExposed($mode)) {
-            $this->invokeExposedMethod($mode, $request);
-            return;
+        if (!Users_Privileges_Model::isPermitted($moduleName, 'DetailView', $recordId ?: false)) {
+            throw new AppException(vtranslate('LBL_PERMISSION_DENIED'));
         }
     }
 
-    public function getUpdateStatusModal(Vtiger_Request $request) {
-        $viewer = new Vtiger_Viewer();
+    function process(Vtiger_Request $request) {
+        $mode = lcfirst((string) $request->get('mode'));
+
+        if (method_exists($this, $mode)) {
+            $this->$mode($request);
+        }
+        else {
+            throw new AppException(vtranslate('LBL_METHOD_NOT_FOUND', $request->getModule()));
+        }
+    }
+
+    function getUpdateStatusModal(Vtiger_Request $request) {
+        $viewer = $this->getViewer($request);
         $viewer->assign('MODULE', $request->getModule());
         $viewer->display('modules/ModuleName/tpls/UpdateStatusModal.tpl');
     }
 }
 ```
 
-URL: `index.php?module=SalesOrder&view=ViewModal&mode=getUpdateStatusModal&record=123`
+URL: `index.php?module=ModuleName&view=ViewAjax&mode=getUpdateStatusModal&record=123` (AJAX request → WebUI skips preProcess/postProcess)
 TPL: `modules/{Module}/tpls/{ModalName}.tpl` (NOT layouts/v7/)
 
 ### 4. Ajax Fragment View (`Vtiger_BasicAjax_View`)
 
-HTML fragment without header/footer. Use for standalone modal views (only if ViewModal.php is inappropriate):
+HTML fragment without header/footer. Use for standalone fragments only if `ViewAjax.php` is inappropriate:
 - One-off modals and popups
 - AJAX-loaded content
+
+Note: its parent declares `function checkPermission() { }` with NO parameter — an override must keep that exact signature (a `Vtiger_Request $request` param fatals "must be compatible").
 
 URL: `index.php?module=Contacts&view=CustomModal`
 
@@ -166,7 +182,7 @@ URL: `index.php?module=Contacts&view=CustomModal`
 |----------|-----|-----------------|
 | New custom page (config, report, dashboard) | `CustomView_Base_View` | `$viewer->display('modules/...')` |
 | Override core view (List, Detail, Edit) | `Vtiger_*_View` | `$viewer->view('Name.tpl', $module)` |
-| Modal dialog | `ViewModal.php` (consolidated) | `$viewer->display('modules/...')` |
+| Modal dialog | `ViewAjax.php` (consolidated, `mode` dispatch) | `$viewer->display('modules/...')` |
 | AJAX fragment | `Vtiger_BasicAjax_View` | `$viewer->view('Name.tpl', $module)` |
 
 ## View Lifecycle
@@ -188,12 +204,12 @@ Ajax:      checkPermission → process
 ## Critical Rules
 
 1. **Default to `CustomView_Base_View`** for new custom views — auto-loads JS/CSS, simpler code
-2. **Prefer ViewModal.php** — consolidate modal views into one file per module, use `mode` param to route
+2. **Prefer ViewAjax.php** — consolidate modal views into one file per module, use `mode` param to route
 3. **View = HTML, Action = JSON**: Never return JSON from View. Use Action controllers instead.
 4. **`display()` vs `view()`**: `CustomView_Base_View` uses `$viewer->display('modules/...')`, `Vtiger_Index_View` uses `$viewer->view('Name.tpl', $module)`
 5. **TPL location**: `CustomView_Base_View` → `modules/{Module}/tpls/`, `Vtiger_Index_View` → `layouts/v7/modules/{Module}/`
 6. **JS/CSS location**: Custom views → `modules/{Module}/resources/`, Core views → `layouts/v7/modules/{Module}/resources/` (JS) + `modules/{Module}/resources/` (CSS)
-7. **Dot Notation for Assets**: Use `modules.Contacts.resources.CustomView` (NOT file paths) — only needed for `Vtiger_Index_View`
+7. **Asset names go through `checkAndConvertJsScripts()` / `checkAndConvertCssStyles()`**: dot names (`modules.Contacts.resources.CustomView`, resolved repo-root first, then `layouts/v7/` fallback for JS) or `~modules/...` paths — only needed for `Vtiger_Index_View`
 8. **Author name** — use actual dev name in file headers, never "Claude AI"
 
 ## Reference Files
@@ -213,7 +229,7 @@ Ajax:      checkPermission → process
 
 ```bash
 php -l <file>
-rm -f test/templates_c/*.php   # clear Smarty cache — TPL đổi mà không clear = thấy bản cũ
+# TPL edits recompile automatically (Smarty compile_check); if output still looks stale: rm -f cache/templates_c/v7/*
 curl -s 'http://localhost/vtiger/index.php?module=<Module>&view=<ViewName>' -H 'Cookie: PHPSESSID=<sid>' | grep -c '<div'
-# Kỳ vọng: >0, không blank page. UI thay đổi → chụp screenshot qua chrome-devtools MCP đính vào report.
+# Kỳ vọng: >0, không blank page. UI thay đổi → chụp screenshot qua omp `browser` (tab.goto + tab.screenshot) đính vào report.
 ```

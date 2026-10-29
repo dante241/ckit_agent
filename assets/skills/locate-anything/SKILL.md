@@ -24,7 +24,7 @@ adds a **click-center** per box so you can drive the `browser` tool straight to 
 | --- | --- |
 | "What does this screen say / what's the error?" (describe) | model-native/built-in vision or image inspect |
 | "Where EXACTLY is the Sign-in button?" (coordinates to click) | **`8sync locate`** (this skill) |
-| Read structure of a graph/dashboard | render + read as image (`8sync shot`, image-routing); codegraph canvas: `8sync shot 'http://127.0.0.1:8731/codegraph?shot=1'` — non-vision models then get positions via **`8sync locate`** (automatic) |
+| Read structure of a graph/dashboard | render + read as image (`8sync shot`, image-routing); codegraph canvas: `8sync shot 'http://127.0.0.1:8731/codegraph?shot=1'` — non-vision models then get positions via **`8sync locate`** (after setup) |
 | Precise code/config/text | read as TEXT (never image) |
 
 Self-check: if the next action is a **click / crop / measure at a pixel**, you want a
@@ -36,8 +36,9 @@ BOX → `8sync locate`. If it's "understand the content", you want vision/image 
 8sync locate --setup   # clones + cmake-builds locate-anything.cpp, downloads q8_0 GGUF (~6.3 GB)
 ```
 
-Builds with CUDA if the toolkit is present, else CPU (still ~1.7–3× faster than the
-official PyTorch path). Artifacts live under `~/.cache/ckit/locate-anything/`.
+Builds with CUDA if the toolkit is present, else CPU (Metal on macOS is untested). Artifacts
+live under `~/.cache/ckit/locate-anything/` — **check that directory exists before relying on
+`8sync locate`**; if it is missing, setup has not run (≈6.3 GB download — ask before running it).
 
 ## Use
 

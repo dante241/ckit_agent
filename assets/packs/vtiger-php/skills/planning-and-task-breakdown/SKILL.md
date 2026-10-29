@@ -1,7 +1,6 @@
 ---
 name: planning-and-task-breakdown
 disable-model-invocation: true
-user-invokable: true
 description: Breaks work into ordered tasks. Use when you have a spec or clear requirements and need to break work into implementable tasks. Use when a task feels too large to start, when you need to estimate scope, or when parallel work is possible.
 ---
 
@@ -92,15 +91,15 @@ Each task follows this structure:
 - [ ] [Specific, testable condition]
 
 **Verification:**
-- [ ] Tests pass: `npm test -- --grep "feature-name"`
-- [ ] Build succeeds: `npm run build`
-- [ ] Manual check: [description of what to verify]
+- [ ] Syntax: `php -l <changed file>` for every changed PHP file
+- [ ] Tests pass: PHPUnit for `domains/*/tests` (`phpunit.xml.dist`), standalone `test/` script for legacy modules (see the `testing` skill)
+- [ ] Manual check: [what to verify in the running app via the `browser` tool]
 
 **Dependencies:** [Task numbers this depends on, or "None"]
 
 **Files likely touched:**
-- `src/path/to/file.ts`
-- `tests/path/to/test.ts`
+- `modules/<Module>/actions/<Action>.php`
+- `layouts/v7/modules/<Module>/<View>.tpl`
 
 **Estimated scope:** [Small: 1-2 files | Medium: 3-5 files | Large: 5+ files]
 ```
@@ -226,4 +225,4 @@ Before starting implementation, confirm:
 
 ## See Also
 
-Acceptance criteria are per-task and answer "did we build the right thing?". They sit on top of the project-wide Definition of Done, the standing bar every task clears before it counts as done. See `references/definition-of-done.md`.
+Acceptance criteria are per-task and answer "did we build the right thing?". The end-to-end phases (plan → implement → verify → review) and where plans live (`.omp/plans/<ticket>-<slug>/`) are in `rule://primary-workflow`; test tiers and the test-case table are in the `testing` skill.

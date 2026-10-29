@@ -6,9 +6,10 @@ Generates a complete Next.js/React project structure with TypeScript,
 Tailwind CSS, and best practice configurations.
 
 Usage:
-    python frontend_scaffolder.py my-app --template nextjs
-    python frontend_scaffolder.py dashboard --template react --features auth,api
-    python frontend_scaffolder.py landing --template nextjs --dry-run
+    python3 frontend_scaffolder.py my-app --template nextjs
+    python3 frontend_scaffolder.py dashboard --template react --features auth,api
+    python3 frontend_scaffolder.py landing --template nextjs --dry-run
+    python3 frontend_scaffolder.py --list-features
 """
 
 import argparse
@@ -922,7 +923,8 @@ def main():
     )
     parser.add_argument(
         "name",
-        help="Project name (kebab-case recommended)"
+        nargs="?",
+        help="Project name (kebab-case recommended); not needed with --list-*"
     )
     parser.add_argument(
         "--dir", "-d",
@@ -977,6 +979,9 @@ def main():
             if deps:
                 print(f"    Adds: {deps}")
         return
+
+    if not args.name:
+        parser.error("the following arguments are required: name")
 
     features = []
     if args.features:

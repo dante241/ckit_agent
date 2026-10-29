@@ -1,6 +1,6 @@
 ---
 name: senior-frontend
-description: Frontend development skill for React, Next.js, TypeScript, and Tailwind CSS applications. Use when building React components, optimizing Next.js performance, analyzing bundle sizes, scaffolding frontend projects, implementing accessibility, or reviewing frontend code quality.
+description: Greenfield React/Next.js (App Router) + TypeScript + Tailwind engineering helpers. Use when scaffolding a new React/Next.js project, generating React component/hook boilerplate, analyzing a package.json bundle, or applying Next.js App Router performance patterns. Not for visual design/anti-slop (design-taste-frontend, impeccable) or vtiger/CloudGO jQuery/Smarty UI.
 ---
 
 # Senior Frontend
@@ -26,12 +26,12 @@ Generate a new Next.js or React project with TypeScript, Tailwind CSS, and best 
 
 1. Run the scaffolder with your project name and template:
    ```bash
-   python scripts/frontend_scaffolder.py my-app --template nextjs
+   python3 ~/.omp/skills/senior-frontend/scripts/frontend_scaffolder.py my-app --template nextjs
    ```
 
-2. Add optional features (auth, api, forms, testing, storybook):
+2. Optional feature flags (auth, api, forms, testing, storybook):
    ```bash
-   python scripts/frontend_scaffolder.py dashboard --template nextjs --features auth,api
+   python3 ~/.omp/skills/senior-frontend/scripts/frontend_scaffolder.py dashboard --template nextjs --features auth,api
    ```
 
 3. Navigate to the project and install dependencies:
@@ -44,17 +44,24 @@ Generate a new Next.js or React project with TypeScript, Tailwind CSS, and best 
    npm run dev
    ```
 
+### What the scaffolder actually produces
+
+- **Base files are real**: layout, home page, `ui/` Button/Input/Card, layout Header/Footer/Sidebar, hooks, `cn()` utils, health route, configs.
+- **Pinned stack is old**: `next ^14`, `react ^18`, `tailwindcss ^3.4` (v3 `postcss.config.js` + `@tailwind` directives), `eslint ^8` (`.eslintrc.json`). Current majors are Next 16 / React 19 / Tailwind v4. For a new project on the current stack, prefer `npx create-next-app@latest` and use this scaffold only as a folder-layout reference; Tailwind v4 setup follows `design-taste-frontend` §3.A.
+- **`--features` only writes placeholder files**: every feature file (`lib/auth.ts`, `middleware.ts`, `lib/api-client.ts`, login/register forms, `vitest.config.ts`, `.storybook/*` …) contains just `// TODO: Implement <KEY>`. The feature packages are added to `dependencies` (not `devDependencies`) at version `"latest"`. Implement those files yourself or drop the flag; never ship the stubs.
+- `app/(auth)/login` and `app/(auth)/register` pages are static "Authentication" headings, not working forms.
+
 ### Scaffolder Options
 
 | Option | Description |
 |--------|-------------|
-| `--template nextjs` | Next.js 14+ with App Router and Server Components |
-| `--template react` | React + Vite with TypeScript |
-| `--features auth` | Add NextAuth.js authentication |
-| `--features api` | Add React Query + API client |
-| `--features forms` | Add React Hook Form + Zod validation |
-| `--features testing` | Add Vitest + Testing Library |
+| `--template nextjs` | Next.js 14 App Router project (default) |
+| `--template react` | React 18 + Vite 5 with TypeScript |
+| `--features auth\|api\|forms\|testing\|storybook` | Comma-separated; adds deps + placeholder files only (see above) |
+| `--dir` | Output directory (default `.`) |
+| `--list-templates` / `--list-features` | Print templates / features and exit |
 | `--dry-run` | Preview files without creating them |
+| `--json` | JSON output |
 
 ### Generated Structure (Next.js)
 
@@ -64,6 +71,7 @@ my-app/
 │   ├── layout.tsx        # Root layout with fonts
 │   ├── page.tsx          # Home page
 │   ├── globals.css       # Tailwind + CSS variables
+│   ├── (auth)/login|register/page.tsx  # static placeholders
 │   └── api/health/route.ts
 ├── components/
 │   ├── ui/               # Button, Input, Card
@@ -86,23 +94,25 @@ Generate React components with TypeScript, tests, and Storybook stories.
 
 1. Generate a client component:
    ```bash
-   python scripts/component_generator.py Button --dir src/components/ui
+   python3 ~/.omp/skills/senior-frontend/scripts/component_generator.py Button --dir src/components/ui
    ```
 
 2. Generate a server component:
    ```bash
-   python scripts/component_generator.py ProductCard --type server
+   python3 ~/.omp/skills/senior-frontend/scripts/component_generator.py ProductCard --type server
    ```
 
 3. Generate with test and story files:
    ```bash
-   python scripts/component_generator.py UserProfile --with-test --with-story
+   python3 ~/.omp/skills/senior-frontend/scripts/component_generator.py UserProfile --with-test --with-story
    ```
 
-4. Generate a custom hook:
+4. Generate a custom hook (writes `useFormValidation.ts`):
    ```bash
-   python scripts/component_generator.py FormValidation --type hook
+   python3 ~/.omp/skills/senior-frontend/scripts/component_generator.py FormValidation --type hook
    ```
+
+Names may be PascalCase, kebab-case or snake_case (`product-card` → `ProductCard`).
 
 ### Generator Options
 
@@ -113,23 +123,27 @@ Generate React components with TypeScript, tests, and Storybook stories.
 | `--type hook` | Custom React hook |
 | `--with-test` | Include test file |
 | `--with-story` | Include Storybook story |
+| `--no-index` | Skip the `index.ts` barrel |
 | `--flat` | Create in output dir without subdirectory |
 | `--dry-run` | Preview without creating files |
 
 ### Generated Component Example
 
+The template is a generic wrapper. Replace the `<div>` with the element the component really renders (a clickable thing is a `<button>`, navigation is `<nav>`, etc.) before using it.
+
 ```tsx
 'use client';
 
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
-interface ButtonProps {
+// Generic wrapper: swap <div> for the semantic element this renders
+// (<button>, <nav>, <section>, <article>...) and add state/handlers as needed.
+export interface ProductCardProps {
   className?: string;
   children?: React.ReactNode;
 }
 
-export function Button({ className, children }: ButtonProps) {
+export function ProductCard({ className, children }: ProductCardProps) {
   return (
     <div className={cn('', className)}>
       {children}
@@ -148,7 +162,7 @@ Analyze package.json and project structure for bundle optimization opportunities
 
 1. Run the analyzer on your project:
    ```bash
-   python scripts/bundle_analyzer.py /path/to/project
+   python3 ~/.omp/skills/senior-frontend/scripts/bundle_analyzer.py /path/to/project
    ```
 
 2. Review the health score and issues:
@@ -167,7 +181,7 @@ Analyze package.json and project structure for bundle optimization opportunities
 
 4. Re-run with verbose mode to check import patterns:
    ```bash
-   python scripts/bundle_analyzer.py . --verbose
+   python3 ~/.omp/skills/senior-frontend/scripts/bundle_analyzer.py . --verbose
    ```
 
 ### Bundle Score Interpretation
@@ -200,51 +214,83 @@ Reference: `references/react_patterns.md`
 
 ### Compound Components
 
-Share state between related components:
+Share state between related components through context. Every sub-component used in the JSX must be attached to the parent:
 
 ```tsx
-const Tabs = ({ children }) => {
+'use client';
+
+import { createContext, useContext, useId, useState } from 'react';
+
+type TabsState = { active: number; setActive: (index: number) => void; id: string };
+const TabsContext = createContext<TabsState | null>(null);
+
+function useTabs() {
+  const ctx = useContext(TabsContext);
+  if (!ctx) throw new Error('Tabs.* must be rendered inside <Tabs>');
+  return ctx;
+}
+
+function Tabs({ children }: { children: React.ReactNode }) {
   const [active, setActive] = useState(0);
+  const id = useId();
   return (
-    <TabsContext.Provider value={{ active, setActive }}>
+    <TabsContext.Provider value={{ active, setActive, id }}>
       {children}
     </TabsContext.Provider>
   );
-};
+}
+
+function TabList({ children }: { children: React.ReactNode }) {
+  return <div role="tablist">{children}</div>;
+}
+
+function Tab({ index, children }: { index: number; children: React.ReactNode }) {
+  const { active, setActive, id } = useTabs();
+  return (
+    <button
+      type="button"
+      role="tab"
+      id={`${id}-tab-${index}`}
+      aria-selected={active === index}
+      aria-controls={`${id}-panel-${index}`}
+      tabIndex={active === index ? 0 : -1}
+      onClick={() => setActive(index)}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TabPanel({ index, children }: { index: number; children: React.ReactNode }) {
+  const { active, id } = useTabs();
+  if (active !== index) return null;
+  return (
+    <div role="tabpanel" id={`${id}-panel-${index}`} aria-labelledby={`${id}-tab-${index}`}>
+      {children}
+    </div>
+  );
+}
 
 Tabs.List = TabList;
+Tabs.Tab = Tab;
 Tabs.Panel = TabPanel;
 
 // Usage
 <Tabs>
   <Tabs.List>
-    <Tabs.Tab>One</Tabs.Tab>
-    <Tabs.Tab>Two</Tabs.Tab>
+    <Tabs.Tab index={0}>One</Tabs.Tab>
+    <Tabs.Tab index={1}>Two</Tabs.Tab>
   </Tabs.List>
-  <Tabs.Panel>Content 1</Tabs.Panel>
-  <Tabs.Panel>Content 2</Tabs.Panel>
+  <Tabs.Panel index={0}>Content 1</Tabs.Panel>
+  <Tabs.Panel index={1}>Content 2</Tabs.Panel>
 </Tabs>
 ```
 
+For production tabs also add ArrowLeft/ArrowRight/Home/End roving focus (WAI-ARIA Tabs pattern), or use Radix `@radix-ui/react-tabs`.
+
 ### Custom Hooks
 
-Extract reusable logic:
-
-```tsx
-function useDebounce<T>(value: T, delay = 500): T {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedValue(value), delay);
-    return () => clearTimeout(timer);
-  }, [value, delay]);
-
-  return debouncedValue;
-}
-
-// Usage
-const debouncedSearch = useDebounce(searchTerm, 300);
-```
+Extract reusable logic into `use*` hooks; `useDebounce`, `useLocalStorage`, `useMediaQuery` and friends are in `references/react_patterns.md` (Custom Hooks).
 
 ### Render Props
 
@@ -286,9 +332,11 @@ Use Server Components by default. Add 'use client' only when you need:
 - Browser APIs
 
 ```tsx
-// Server Component (default) - no 'use client'
-async function ProductPage({ params }) {
-  const product = await getProduct(params.id);  // Server-side fetch
+// app/products/[id]/page.tsx - Server Component (default), no 'use client'
+// Next 15+: params is a Promise
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const product = await getProduct(id);  // Server-side fetch
 
   return (
     <div>
@@ -297,12 +345,29 @@ async function ProductPage({ params }) {
     </div>
   );
 }
+```
 
-// Client Component
+```tsx
+// components/add-to-cart-button.tsx - 'use client' must be the first line of its own file
 'use client';
-function AddToCartButton({ productId }) {
+
+import { useState } from 'react';
+
+export function AddToCartButton({ productId }: { productId: string }) {
   const [adding, setAdding] = useState(false);
-  return <button onClick={() => addToCart(productId)}>Add</button>;
+  return (
+    <button
+      type="button"
+      disabled={adding}
+      onClick={async () => {
+        setAdding(true);
+        await addToCart(productId);
+        setAdding(false);
+      }}
+    >
+      Add
+    </button>
+  );
 }
 ```
 
@@ -311,13 +376,14 @@ function AddToCartButton({ productId }) {
 ```tsx
 import Image from 'next/image';
 
-// Above the fold - load immediately
+// Above the fold / LCP image: raise fetch priority
+// (Next 16 deprecated `priority`; use fetchPriority="high", or `preload` when it must start in <head>)
 <Image
   src="/hero.jpg"
   alt="Hero"
   width={1200}
   height={600}
-  priority
+  fetchPriority="high"
 />
 
 // Responsive image with fill
@@ -345,12 +411,13 @@ async function Dashboard() {
 }
 
 // Streaming with Suspense
-async function ProductPage({ params }) {
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   return (
     <div>
-      <ProductDetails id={params.id} />
+      <ProductDetails id={id} />
       <Suspense fallback={<ReviewsSkeleton />}>
-        <Reviews productId={params.id} />
+        <Reviews productId={id} />
       </Suspense>
     </div>
   );
@@ -361,7 +428,7 @@ async function ProductPage({ params }) {
 
 ## Accessibility and Testing
 
-Reference: `references/frontend_best_practices.md`
+Reference: `references/frontend_best_practices.md` (full checklist, ARIA, focus management)
 
 ### Accessibility Checklist
 
@@ -372,7 +439,9 @@ Reference: `references/frontend_best_practices.md`
 5. **Focus Indicators**: Visible focus states
 
 ```tsx
-// Accessible button
+// Accessible icon-only button (icon set per design-taste-frontend §3.C: Phosphor first)
+import { XIcon } from '@phosphor-icons/react';
+
 <button
   type="button"
   aria-label="Close dialog"
@@ -418,18 +487,7 @@ test('dialog is accessible', async () => {
 
 ### Common Next.js Config
 
-```js
-// next.config.js
-const nextConfig = {
-  images: {
-    remotePatterns: [{ hostname: 'cdn.example.com' }],
-    formats: ['image/avif', 'image/webp'],
-  },
-  experimental: {
-    optimizePackageImports: ['lucide-react', '@heroicons/react'],
-  },
-};
-```
+See `references/nextjs_optimization_guide.md` (Configuration Reference) for a full `next.config` with images, `optimizePackageImports`, headers and bundle analyzer.
 
 ### Tailwind CSS Utilities
 

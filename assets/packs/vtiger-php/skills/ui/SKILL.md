@@ -25,7 +25,7 @@ user-invocable: false
 | Notification | `app.helper.showSuccessNotification()` | Show success/error messages |
 | Modal | `app.helper.showModal()` | Display modal dialogs |
 | Confirmation | `app.helper.showConfirmationBox()` | Confirm user actions |
-| Form Validation | `form.vtValidate()` | Validate form inputs |
+| Form Validation | `form.vtValidate()` + `form.valid()` | Validate form inputs |
 | Translation | `app.vtranslate()` | Get JS translations |
 
 ## Key JavaScript Objects
@@ -74,7 +74,7 @@ app.helper.showConfirmationBox({
 |------|----------|-----------|-------------|
 | **Core View** (inherit parent) | `layouts/v7/modules/{Module}/resources/Detail.js` | `Vtiger_Detail_Js` / `Vtiger_List_Js` / `Vtiger_Edit_Js` | Yes (by convention) |
 | **Custom View** (standalone controller) | `modules/{Module}/resources/SocialConfig.js` | `CustomView_BaseController_Js` | Yes (by `CustomView_Base_View`) |
-| **Standalone** (no inheritance) | `modules/{Module}/resources/EditView.js` | None | No (manual include via `getHeaderScripts`) |
+| **Standalone** (no inheritance) | `modules/{Module}/resources/EditView.js` | None | No (manual include via `modules/{Module}/custom/EditView.php` or `getHeaderScripts`) |
 
 ### Other File Locations
 
@@ -132,6 +132,10 @@ CustomView_BaseController_Js('ModuleName_ViewName_Js', {}, {
         this.initForm();
     },
 
+    getForm: function() {
+        return $('form#config');   // the base controller has no getForm(); define it per view
+    },
+
     initForm: function() {
         let self = this;
         let form = this.getForm();
@@ -167,7 +171,7 @@ CustomView_BaseController_Js('ModuleName_ViewName_Js', {}, {
 ## Standalone JS (no inheritance)
 
 Location: `modules/{Module}/resources/{Name}.js`
-Must include manually via `getHeaderScripts()`. No base class, no `_super()`.
+Must be included manually (see below). No base class, no `_super()`.
 
 ### Pattern A: Object Literal
 
@@ -223,13 +227,29 @@ $(function() {
 });
 ```
 
-### Loading Standalone JS in PHP View
+### Loading Standalone JS
+
+**EditView / DetailView of an entity module** — `Vtiger_Edit_View` / `Vtiger_Detail_View` `require` `modules/{Module}/custom/EditView.php` / `custom/DetailView.php` when present; its `$displayParams['scripts']` is printed into the page (e.g. `modules/CPMasterPlan/custom/EditView.php`):
 
 ```php
-public function getHeaderScripts(Vtiger_Request $request): array {
-    $scripts = parent::getHeaderScripts($request);
-    $scripts[] = ['src' => 'modules.SalesOrder.resources.EditView'];
-    return $scripts;
+<?php
+
+$displayParams = [
+	'scripts' => '
+		<link type="text/css" rel="stylesheet" href="{vresource_url("modules/CPMasterPlan/resources/EditView.css")}">
+		<script type="text/javascript" src="{vresource_url("modules/CPMasterPlan/resources/EditView.js")}"></script>
+	',
+];
+```
+
+**Any view controller** — override `getHeaderScripts()` (same signature as the parent) and convert names with `checkAndConvertJsScripts()`; the template calls `->getSrc()` on every item, so never push raw arrays (e.g. `modules/CPAgenda/views/Edit.php`):
+
+```php
+function getHeaderScripts(Vtiger_Request $request) {
+	$headerScriptInstances = parent::getHeaderScripts($request);
+	$jsScriptInstances = $this->checkAndConvertJsScripts(['modules.SalesOrder.resources.EditView']);
+
+	return array_merge($headerScriptInstances, $jsScriptInstances);
 }
 ```
 
@@ -237,17 +257,23 @@ public function getHeaderScripts(Vtiger_Request $request): array {
 
 ## Button with CSS Class Pattern (for custom JS)
 
-When JS lives in `modules/{Module}/resources/` (not on the controller), use CSS class + event delegation:
+When JS lives in `modules/{Module}/resources/` (not on the controller), use a CSS class + event delegation. Only `DETAILVIEWBASIC` buttons render `linkcss` as a class; the `DETAILVIEW` "more" dropdown `<li>/<a>` renders no custom class, so use a `javascript:` `linkurl` there instead.
 
 ```php
-// In models/DetailView.php
-$linkModelList['DETAILVIEW'][] = Vtiger_Link_Model::getInstanceFromValues([
-    'linktype' => 'DETAILVIEW',
-    'linklabel' => vtranslate('LBL_UPDATE_STATUS', $moduleName),
-    'linkurl' => 'javascript:void(0)',
-    'linkclass' => 'update-so-status-btn',
-    'linkicon' => 'fa-refresh',
-]);
+// In models/DetailView.php (class {Module}_DetailView_Model extends Vtiger_DetailView_Model)
+public function getDetailViewLinks($linkParams) {
+	$linkModelList = parent::getDetailViewLinks($linkParams);
+
+	$linkModelList['DETAILVIEWBASIC'][] = Vtiger_Link_Model::getInstanceFromValues([
+		'linktype' => 'DETAILVIEWBASIC',
+		'linklabel' => 'LBL_UPDATE_STATUS',
+		'linkurl' => 'javascript:void(0)',
+		'linkcss' => 'update-so-status-btn',
+		'linkicon' => 'fa fa-refresh',
+	]);
+
+	return $linkModelList;
+}
 ```
 
 ```javascript
@@ -265,7 +291,7 @@ jQuery(document).on('click', '.update-so-status-btn', function(e) {
 2. **app.request.post** NOT jQuery.ajax (VTiger wrapper handles errors)
 3. **Clone modal DOM** if reusing — modals are removed on close
 4. **showProgress/hideProgress** for async operations
-5. **form.vtValidate** triggers VTiger validation engine
+5. **Validation** — `form.vtValidate()` only sets up jQuery Validate and returns a truthy object; check `form.valid()` before submitting
 6. **Custom JS location** — `modules/{Module}/resources/`, NOT `layouts/v7/` for custom features
 7. **Author name** — use actual dev name, never "Claude AI"
 8. **Core view JS** — ALWAYS call `this._super()` in `registerEvents`
@@ -286,6 +312,6 @@ jQuery(document).on('click', '.update-so-status-btn', function(e) {
 ## Verify
 
 ```bash
-# JS đổi → browser cache-buster tĩnh KHÔNG đổi: bắt buộc hard-refresh (Ctrl+Shift+R) / fresh context
-# Verify bằng chrome-devtools MCP: mở trang, thao tác, chụp screenshot, check console errors
+# JS/CSS loaded via vresource_url() get an mtime cache-buster, so a normal reload picks up edits (no hard refresh needed)
+# Verify with the omp `browser` tool: browser.open → tab.goto(url) → interact → tab.screenshot(); check console errors via tab.evaluate / tab.run
 ```

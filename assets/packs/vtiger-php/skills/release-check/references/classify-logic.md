@@ -6,8 +6,10 @@ Implementation details cho `/release-check` Step 2–4.
 
 ### CLI
 ```bash
-glab mr list --merged --label "Dev done" --target-branch master --per-page 100 --output json
+glab mr list --merged --label "Dev done" --target-branch master --per-page 100 --page <N> --output json
 ```
+
+`scan-mrs.sh` gọi lệnh này cho cả `Dev done` và `Chờ release`, lặp `--page` tới khi một trang trả < 100 MR.
 
 **Quan trọng:**
 - Flag đúng là `--merged` (hoặc `-M`), KHÔNG phải `--state=merged` (glab không support `--state`)
@@ -46,181 +48,83 @@ Ví dụ:
 - `MR: [Bug] #17236: Fix productid` → `17236`
 - `[Refactor] Remove dead code` → null
 
-## §2. Classify rules
+## §2. Classify rules (`scripts/classify.py` → `classify()`)
+
+Status lấy từ `status-<DATE>.tsv` do `pms-status-batch.js` sinh (1 lần login PMS, fetch song song) — KHÔNG gọi MCP từng ticket.
 
 ```
-IF ticket_id IS NULL:
-    category = "no_ticket"
-ELSE:
-    ticketstatus = mcp__pms__pms_ticket_detail(id=ticket_id).ticketstatus
-    IF call fail OR ticket not found:
-        category = "ticket_not_found"
-    ELSE IF ticketstatus IN ("Wait Close", "Closed"):
-        category = "ready"
-    ELSE:
-        category = "testing"
+IF ticket_id IS NULL:                              → no_ticket        (ticket_status = "NO_TICKET")
+ELSE IF ticket không có trong TSV
+     OR status IN ("NOT_FOUND", "ERROR"):          → ticket_not_found (ticket_status = status | "UNQUERIED")
+ELSE IF status IN ("Wait Close", "Closed"):        → ready
+ELSE IF MR đang có label "Chờ release":            → regressed (ticket bị reopen/quay lại Testing → rollback label)
+ELSE:                                              → still_testing
 ```
 
 **Chú ý giá trị enum:**
-- Exact title-case: `"Wait Close"` (có space), `"Closed"`
+- Exact title-case: `"Wait Close"` (có space), `"Closed"` (`READY_STATUSES` trong classify.py)
 - **Không phải** `"WaitClose"`, `"closed"`, `"waitclose"`
-- Lấy từ `languages/en_us/HelpDesk.php` và CloudWORK portal API
 
 ## §3. Output schema — classified-YYYY-MM-DD.json
 
 ```json
 {
-  "generated_at": "2026-04-23T14:30:00Z",
+  "scan_date": "2026-04-23",
   "repo": "acme/vtiger",
-  "label_filter": "Dev done",
-  "flags": {
-    "dry_run": false,
-    "since": null,
-    "limit": null
-  },
-  "stats": {
-    "total_scanned": 12,
-    "ready": 5,
-    "testing": 6,
-    "no_ticket": 0,
-    "ticket_not_found": 1,
-    "transitioned_new": 3,
-    "transitioned_already": 2
-  },
+  "label_filter": "Dev done | Chờ release",
+  "total_scanned": 55,
+  "summary": {"ready": 2, "regressed": 1, "still_testing": 46, "no_ticket": 6, "ticket_not_found": 0},
   "ready": [
     {
       "iid": 218,
+      "ticket_id": "22284",
       "title": "[Chatbox] Request #22284: Improve Zalo template",
       "author": "dev.a",
-      "source_branch": "feat/22284-chatbox-zalo",
-      "sha": "def456...",
-      "merge_commit_sha": "abc123...",
-      "labels": ["Chờ release"],
       "merged_at": "2026-04-20T10:30:00Z",
       "web_url": "https://git.example.com/acme/vtiger/-/merge_requests/218",
-      "ticket_id": "22284",
-      "ticketstatus": "Closed",
-      "labeled_in_this_run": false
+      "labels": ["Dev done"],
+      "merge_commit_sha": "abc123...",
+      "squash_commit_sha": "",
+      "sha": "def456...",
+      "ticket_status": "Closed",
+      "ticket_record_id": "1346675",
+      "ticket_label": "...",
+      "ticket_categories": "...",
+      "ticket_assignee": "..."
     }
   ],
-  "testing": [
-    {
-      "iid": 230,
-      "title": "[Fix] #17670: ...",
-      "ticket_id": "17670",
-      "ticketstatus": "In Progress",
-      ...
-    }
-  ],
-  "no_ticket": [
-    { "iid": 225, "title": "[Refactor] cleanup", ... }
-  ],
-  "ticket_not_found": [
-    { "iid": 227, "title": "[Bug] #99999: ...", "ticket_id": "99999", "error": "Ticket not found" }
-  ]
+  "regressed": [],
+  "still_testing": [],
+  "no_ticket": [{"iid": 225, "ticket_id": null, "title": "[Refactor] cleanup", "ticket_status": "NO_TICKET", "...": "..."}],
+  "ticket_not_found": [{"iid": 227, "ticket_id": "99999", "ticket_status": "NOT_FOUND", "...": "..."}]
 }
 ```
 
-**Field `labeled_in_this_run`:** true nếu Step 3 vừa gọi `glab mr update --label "Chờ release" --unlabel "Dev done"` cho MR này trong run hiện tại. False nếu MR đã có `Chờ release` từ trước hoặc `--dry-run`.
+`ticket_record_id`/`ticket_label`/`ticket_categories`/`ticket_assignee` chỉ có ở MR đã lấy được status (ready / regressed / still_testing).
 
-## §4. glab label transition API
+## §4. Label transitions (`scripts/run.sh` Step 5, skip khi `--dry-run`)
 
-### Transition label (add + remove trong 1 call)
 ```bash
+# Promote: ready MR chưa có "Chờ release"
 glab mr update <iid> --label "Chờ release" --unlabel "Dev done"
+# Rollback: mọi MR trong regressed[]
+glab mr update <iid> --label "Dev done" --unlabel "Chờ release"
 ```
 
-**Verify:** `glab mr update --label X --unlabel Y` thực hiện `+X / -Y` trong một request, idempotent. Test:
-```bash
-glab mr view 218 --output json | jq '.labels'
-# Trước: ["Dev done"]
-glab mr update 218 --label "Chờ release" --unlabel "Dev done"
-glab mr view 218 --output json | jq '.labels'
-# Sau: ["Chờ release"]
-```
+- Idempotent: ready MR đã có `Chờ release` bị lọc bằng `jq 'select((.labels | index("Chờ release")) | not)'` — không gọi API.
+- `glab mr update` fail → in `FAILED to transition/rollback !<iid>` ra stderr, chạy tiếp MR khác. Không có counter trong JSON.
 
-Nếu MR đã có `Chờ release` + `Dev done` đồng thời (edge case): `--label X` no-op (đã có), `--unlabel Y` vẫn remove Y → kết quả vẫn đúng `["Chờ release"]`.
+## §5. Error handling
 
-## §5. Idempotent check
+| Error scenario | Hành vi thật |
+|---|---|
+| `glab mr list` lỗi auth/network | `scan-mrs.sh` chạy `set -euo pipefail` → dừng với lỗi của glab; user tự chạy `glab auth status` |
+| PMS không có ticket | TSV `NOT_FOUND` → `ticket_not_found` |
+| PMS lỗi request | TSV `ERROR` → `ticket_not_found` |
+| `glab mr update` lỗi | Log stderr, continue |
 
-Trước khi gọi `glab mr update`, check từ response `labels[]` ở Step 1:
+## §6. Markdown report
 
-```bash
-LABELS=$(jq -r '.labels' /tmp/mr-$iid.json)
-if echo "$LABELS" | jq -e 'any(. == "Chờ release")' > /dev/null; then
-    TRANSITIONED_ALREADY=true
-else
-    glab mr update $iid --label "Chờ release" --unlabel "Dev done"
-    TRANSITIONED_NEW=true
-fi
-```
-
-## §6. Stats counter
-
-Khi sinh terminal summary:
-
-```
-transitioned_new     = Số MR ready được transition "Dev done → Chờ release" TRONG lần chạy này
-transitioned_already = Số MR ready đã có "Chờ release" trước đó (không gọi API)
-
-Nếu --dry-run: transitioned_new = 0, transitioned_already = <count of ready with "Chờ release">
-```
-
-## §7. Error classification
-
-| Error scenario | Category | Log |
-|---|---|---|
-| `glab mr list` lỗi auth/network | ABORT | Hướng dẫn `glab auth status` |
-| PMS trả `{error: "not found"}` | `ticket_not_found` | Log vào ticket_not_found[].error |
-| PMS timeout/connection error | Retry 1 lần, fail → `ticket_not_found` | Log error |
-| `glab mr update` lỗi | Continue (log warning) | Ghi vào stats.transition_failed |
-
-## §8. Markdown report template
-
-```markdown
-# Release Check — {{generated_at}}
-
-**Repo:** {{repo}} | **Filter:** `Dev done` | **Total scanned:** {{total}}
-**Generated:** {{generated_at}} | **Dry-run:** {{dry_run}}
-
-## Summary
-
-| Category | Count |
-|----------|-------|
-| ✅ Ready to release (transitioned → Chờ release) | {{ready.length}} |
-| ⏳ Still testing | {{testing.length}} |
-| ⚠️ No ticket | {{no_ticket.length}} |
-| ❌ Ticket not found | {{ticket_not_found.length}} |
-
-{{#if not dry_run}}
-**Transitions in this run:** {{transitioned_new}} new, {{transitioned_already}} already had `Chờ release`.
-{{/if}}
-
-## ✅ Ready to release
-
-| MR | Ticket | Status | Title | Author | Merged at | Transitioned |
-|----|--------|--------|-------|--------|-----------|--------------|
-| [!{{iid}}]({{web_url}}) | #{{ticket_id}} | {{ticketstatus}} | {{title}} | {{author}} | {{merged_at | date}} | {{#if labeled_in_this_run}}🆕{{else}}✓{{/if}} |
-
-## ⏳ Still testing
-
-| MR | Ticket | Status | Title | Author | Merged at |
-|----|--------|--------|-------|--------|-----------|
-| [!{{iid}}]({{web_url}}) | #{{ticket_id}} | {{ticketstatus}} | {{title}} | {{author}} | {{merged_at | date}} |
-
-## ⚠️ No ticket
-
-| MR | Title | Author |
-|----|-------|--------|
-| [!{{iid}}]({{web_url}}) | {{title}} | {{author}} |
-
-## ❌ Ticket not found
-
-| MR | Ticket ID | Title | Error |
-|----|-----------|-------|-------|
-| [!{{iid}}]({{web_url}}) | #{{ticket_id}} | {{title}} | {{error}} |
-
----
+`report-<DATE>.md` do `render_markdown()` trong classify.py sinh (bảng theo 5 bucket, ticket link sang PMS khi có `PMS_BASE_URL` + record id, ma trận theo author). Đọc hàm đó khi cần đổi format — không duy trì template riêng ở đây.
 
 **Next step:** Chạy `/release-bundle` để cherry-pick các MR ready (label `Chờ release`) sang `vtiger_release`.
-```

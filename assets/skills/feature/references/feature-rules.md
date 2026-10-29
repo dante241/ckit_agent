@@ -17,7 +17,7 @@
 | Vai | Agent | Dự phòng |
 |---|---|---|
 | Khảo sát code (plan, auto-discuss) | `scout` | — |
-| Thư viện/API bên ngoài | `librarian` | `scout` + `web_search` |
+| Thư viện/API bên ngoài | `scout` + `web_search` | — |
 | Cân nhắc phương án, viết code (`go`) | `task` | — |
 | Review plan | `reviewer` | — |
 | Review code (`ship`) | `code-reviewer` | `reviewer` |

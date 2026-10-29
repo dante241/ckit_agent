@@ -6,7 +6,7 @@ condition: ".*"
 
 # Language Configuration
 
-> Loads only when editing language files.
+> Auto-loads when editing language files; also the review checklist for every language-file change.
 
 ## 3-Tier Loading Order
 
@@ -26,29 +26,30 @@ Team determined by `$developerTeam` in `config.env.php`.
 // HTML / Template labels — use trailing commas
 $languageStrings = array(
     // Module basics
-    'ModuleName'        => 'Module Display Name',
+    'ModuleName' => 'Module Display Name',
     'SINGLE_ModuleName' => 'Single Record Name',
-    'LBL_ADD_RECORD'    => 'Add New Record',
+    'LBL_ADD_RECORD' => 'Add New Record',
 
     // View titles: LBL_VIEW_<VIEWNAME>_TITLE
     'LBL_VIEW_CONFIG_TITLE' => 'Configuration',
 
     // Field labels
-    'LBL_STATUS'                              => 'Status',
-    'LBL_CPADVERTISINGACCOUNT_CURRENCY_CODE'  => 'Currency Code',
-    'LBL_LAST_SYNC_DATETIME'                  => 'Last sync datetime',
+    'LBL_STATUS' => 'Status',
+    'LBL_CPADVERTISINGACCOUNT_CURRENCY_CODE' => 'Currency Code',
+    'LBL_LAST_SYNC_DATETIME' => 'Last sync datetime',
 
     // Picklist values (key === value when no localization needed)
-    'Active'   => 'Active',
+    'Active' => 'Active',
     'Inactive' => 'Inactive',
 );
 
 // JavaScript labels
 $jsLanguageStrings = array(
-    'JS_SAVE_SUCCESS'         => 'Saved successfully',
-    'JS_DELETE_CONFIRMATION'  => 'Are you sure?',
-    'JS_RECORDS_SELECTED'     => '{0} records selected',  // {0} = placeholder
-    'JS_ERROR_OCCURRED'       => 'An error occurred',
+    'JS_SAVE_SUCCESSFULLY' => 'Save Successfully',
+    'JS_DELETE_CONFIRMATION' => 'Are you sure to delete record?',
+    'JS_RECORDS_SELECTED' => '%s records selected',  // app.vtranslate('JS_RECORDS_SELECTED', count): each %s is replaced in order
+    'JS_DELETE_WIDGET' => 'Delete dashlet \'%widget_title\'?',  // app.vtranslate(key, {widget_title: name}): %key replaced by name
+    'JS_ERROR' => 'Error',
 );
 ```
 

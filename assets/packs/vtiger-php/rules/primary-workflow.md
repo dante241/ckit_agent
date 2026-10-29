@@ -57,7 +57,7 @@ Analyze requirements → activate matching skills automatically:
 | Inventory (SO, Invoice) | `inventory` |
 
 **Activate:** Read skill's `SKILL.md` + `references/*.md`.
-**Lite mode:** Only Quick Reference (§10) + skill's `SKILL.md`.
+**Lite mode:** Only the Quick Reference section of `cloudgo-development-rules.md` + skill's `SKILL.md`.
 **Full mode:** Full `cloudgo-development-rules.md` + all skill references.
 
 ## Phase 3: Research & Context Gathering
@@ -99,7 +99,7 @@ _(filled in Phase 10)_
 
 **Simple:** Lite todolist directly, no plan.md, no user review gate.
 **Medium:** Create plan.md → user reviews → create todolist. No planning agent.
-**Complex:** Spawn a `task` agent to draft plan.md (or run `/feature`) → user reviews → todolist → `todo` with one item per task, in dependency order.
+**Complex:** Spawn a `task` agent to draft plan.md (or run `/feature`) → user reviews → todolist with one item per task, in dependency order.
 
 ## Phase 5: Gateway — User Confirmation
 
@@ -115,7 +115,7 @@ _(filled in Phase 10)_
 ## Phase 7: Implementation
 
 - Simple/medium: implement directly. Complex: spawn `task` agents, one per task, each with its own file list (they never touch the plan/todolist; the orchestrator does).
-- `todo` → `start` when starting a task, `done` when finished
+- Check off each task in `todolist.md` when finished
 - File separation per `cloudgo-development-rules.md` File Separation Rules section
 - **After each PHP file:** Run `php -l <file>`
 - **Method existence verification:** Before calling parent/base class methods, verify with Serena `find_symbol`. Do NOT trust skill references blindly.
@@ -161,20 +161,19 @@ Spawn `code-reviewer` per task. If review fails → fix and re-review. DO NOT pr
 | **verify-sql** | Reports, DB queries, migrations with SELECT | Verify SQL on real DB + `php -l` |
 | **verify-only** | Migrations (DDL), language strings, config, CSS/JS | `php -l` + code review sufficient |
 
-**must-test:** Load `testing` skill → test cases (TC-01...) → standalone PHP scripts in `test/test-{component}-{module}-{feature}.php` → include security tests (Vietnamese text, XSS, SQL injection).
+**must-test:** Load `testing` skill → test cases (TC-01...) → legacy code (`modules/`, `include/`, `api/`…): standalone PHP scripts in `test/test-{component}-{module}-{feature}.php` (gitignored, local only); `domains/*/tests`: PHPUnit (`phpunit.xml.dist`, `tools/vendor/bin/phpunit`, rule `domain-tests.md`) → include security tests (Vietnamese text, XSS, SQL injection).
 
-**Frontend E2E (when UI involved):** Use MCP Playwright → `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`/`browser_type`, `browser_console_messages`. Test: page load, form submit, validation, AJAX, permissions.
+**Frontend E2E (when UI involved):** Use the omp `browser` (eval global: `browser.open` → `tab.goto` / `tab.screenshot` / `tab.evaluate`, `tab.run` for the raw Puppeteer page). Test: page load, form submit, validation, AJAX, permissions, console errors.
 
-**Rules:** No mocks. Backend = real DB. E2E = real URLs. No PHPUnit — standalone PHP scripts only.
+**Rules:** No mocks. Backend = real DB. E2E = real URLs. PHPUnit only for `domains/*/tests`; legacy code uses standalone PHP scripts.
 
 ## Phase 10: Completion & Documentation
 
-1. `todo` → `done` for every task (if used)
-2. **Update todolist** `.omp/plans/<ticket-id>-<feature-name>/todolist.md`: status → Completed, check off tasks, fill Test Results + Completion Notes
-3. Summarize to user
-4. If docs impact → spawn `docs-manager`
-5. **If migrations created:** remind user to run pending migrations
-6. **If fails mid-way:** revert partial changes, document in todolist, notify user
+1. **Update todolist** `.omp/plans/<ticket-id>-<feature-name>/todolist.md`: status → Completed, check off tasks, fill Test Results + Completion Notes
+2. Summarize to user
+3. If docs impact → spawn `docs-manager`
+4. **If migrations created:** remind user to run pending migrations
+5. **If fails mid-way:** revert partial changes, document in todolist, notify user
 
 ## Rollback Strategy
 
@@ -196,7 +195,7 @@ Spawn `code-reviewer` per task. If review fails → fix and re-review. DO NOT pr
 | Syntax check | `php -l` after every PHP file |
 | SQL verification | Test SQL on real DB before code review |
 | File separation | NO inline CSS/JS — per `cloudgo-development-rules.md` |
-| User gate | Never code without user confirmation (Phase 5) |
+| User gate | Never code without user confirmation (Phase 5) — except Lite mode, which skips Phase 5 |
 | Knowledge lookup | Read `docs/knowledge/INDEX.md` + module file BEFORE coding |
 | Review gate | Code review must pass before next task |
 | Rollback | Revert partial changes; no partial code in codebase |
@@ -219,9 +218,3 @@ Spawn `code-reviewer` per task. If review fails → fix and re-review. DO NOT pr
 ### Complex bug (cross-module, unclear cause)
 1. Knowledge lookup (esp. flow files) → 2. Todolist → 3. Spawn `debugger` agent → 4. Load skills → 5. Implement fix → 6. Spawn `tester` → 7. If fails, repeat 6 → 8. Update todolist
 
----
-
-## Visual Explanations
-
-When topic has 3+ interacting components or user asks "explain"/"visualize":
-- `/preview --explain <topic>` | `/preview --diagram <topic>` | `/preview --slides <topic>` | `/preview --ascii <topic>`

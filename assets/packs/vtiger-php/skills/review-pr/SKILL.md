@@ -1,29 +1,26 @@
 ---
 name: review-pr
 disable-model-invocation: true
-description: "Review GitLab Merge Request for bugs, security, logic, and CLAUDE.md compliance. Posts comment and auto-merges if clean."
-user-invokable: true
-allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), mcp__gitLab__*, mcp__pms__*, Agent, Read, Grep, Glob
+description: "Review GitLab Merge Request for bugs, security, logic, and AGENTS.md/.omp/rules compliance. Posts comment and auto-merges if clean."
+allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), mcp__pms_*, Agent, Read, Grep, Glob
 ---
 
 # Review PR Skill (GitLab)
 
 > Review GitLab Merge Requests for bugs, security, logic errors, and coding standards compliance. Post results as MR comment. Auto-merge if clean.
 
-## Tool Priority (MCP first, CLI fallback)
+## Tools
 
-**Ưu tiên dùng GitLab MCP tools** (`mcp__gitLab__*`) nếu available. Nếu MCP không load hoặc lỗi → fallback sang `glab` CLI.
+GitLab: dùng `glab` CLI (không có GitLab MCP được mount). PMS: dùng `xd://mcp__pms_*` (`mcp__pms_tickets`, `mcp__pms_ticket_detail`, `mcp__pms_ticket_update`, `mcp__pms_ticket_status`, `mcp__pms_comments`, `mcp__pms_users`).
 
-| Operation | MCP Tool (ưu tiên) | glab CLI (fallback) |
-|-----------|-------------------|---------------------|
-| View MR | `mcp__gitLab__get_merge_request` | `glab mr view <ID>` |
-| Get diff | `mcp__gitLab__get_merge_request_diffs` | `glab mr diff <ID>` |
-| List MRs | `mcp__gitLab__list_merge_requests` | `glab mr list` |
-| Post comment | `mcp__gitLab__create_merge_request_note` | `glab mr comment <ID>` |
-| Merge MR | `mcp__gitLab__accept_merge_request` | `glab mr merge <ID>` |
-| List comments | `mcp__gitLab__list_merge_request_notes` | `glab mr view <ID> --comments` |
-
-**Detection logic:** Tại Step 0, thử gọi MCP tool trước. Nếu tool không tồn tại hoặc trả lỗi → set `$USE_CLI=true` và dùng `glab` cho toàn bộ flow.
+| Operation | glab CLI |
+|-----------|----------|
+| View MR | `glab mr view <ID>` |
+| Get diff | `glab mr diff <ID>` |
+| List MRs | `glab mr list` |
+| Post comment | `glab mr comment <ID>` |
+| Merge MR | `glab mr merge <ID>` |
+| List comments | `glab mr view <ID> --comments` / `glab api .../notes` |
 
 ## Usage
 
@@ -35,8 +32,8 @@ allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*
 ```
 
 **Default behavior (no flag):**
-- Không có lỗi CRITICAL/HIGH → tự động post comment + tự động merge (squash). Không hỏi user.
-- Có lỗi CRITICAL/HIGH → trình kết quả cho user, hỏi ý kiến trước khi post.
+- Không có lỗi CRITICAL/HIGH/PERFORMANCE → tự động post comment + tự động merge (squash). Không hỏi user.
+- Có lỗi CRITICAL/HIGH/PERFORMANCE → trình kết quả cho user, hỏi ý kiến trước khi post.
 
 ## Workflow
 
@@ -58,11 +55,12 @@ allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*
    glab mr view <MR_NUMBER> --repo $REPO
    ```
 
-3. Pre-checks — stop if any is true:
+4. Pre-checks — stop if any is true:
    - MR is `closed` or `merged`
    - MR is `draft` (WIP)
-   - MR has a comment from `tung.nguyen` containing "Code Review" (already reviewed by human)
    - **MR `target_branch` ≠ `master`** — skill này CHỈ áp dụng cho MR merge vào `master`. Với target `develop`, `release-*`, `hotfix/*`, v.v. → BLOCK ngay, không review, không merge, không gắn label. Thông báo user: `"MR !<NUMBER> target '$target' is not master — skill /review-pr chỉ xử lý MR vào master. Dừng."`
+
+   MR đã có review cũ (kể cả note "## Code Review" do chính skill này post dưới tài khoản `tung.nguyen`) **không** phải lý do dừng: Step 0.5 so sánh với review trước; nếu chỉ review phần commit mới → dùng skill `gitlab-mr-delta-rereview`.
 
 ### Step 0.5 + 0.6: Previous comments & PMS ticket verification (BẮT BUỘC)
 
@@ -99,7 +97,8 @@ git diff origin/<TARGET>..mr/<MR_NUMBER> --stat
    - **Relationships**: Quan hệ giữa các module (1-N, N-N)
    - **Gotchas & edge cases**: Các lỗi đã biết, cần tránh
    - **Business rules**: Quy tắc nghiệp vụ đặc thù của module
-5. Truyền knowledge context này cho TẤT CẢ 5 agents ở Step 3
+5. **Coding rules (BẮT BUỘC):** map file đổi → rule theo bảng *Path-scoped sibling rules* trong `.omp/rules/cloudgo-development-rules.md`, `read rule://<name>` từng rule khớp, luôn kèm `cloudgo-development-rules` + `error-patterns` → `$RULES_CONTEXT` (danh sách `.omp/rules/<name>.md`). Rule code là tiêu chí review: `scope: tool:edit/write` của rule chỉ quyết định lúc rule tự nạp (khi sửa), KHÔNG phải lý do bỏ/bác finding; loại file rule áp dụng vẫn theo nội dung rule.
+6. Truyền knowledge context + `$RULES_CONTEXT` cho TẤT CẢ 5 agents ở Step 3 và mọi validator ở Step 4
 
 ### Step 2.5: Business Logic Extraction (BẮT BUỘC)
 
@@ -160,7 +159,7 @@ unknowns: [<câu hỏi nghiệp vụ agent chưa giải đáp được — sẽ 
 
 ### Step 3: Parallel Review (5 agents)
 
-Dùng `agent: code-reviewer` cho tất cả agents. Launch 5 agents song song (1 lời gọi `task`, 5 item), mỗi agent nhận: MR title, description, full diff, knowledge context, và **`$BUSINESS_MANIFEST` từ Step 2.5**.
+Dùng `agent: code-reviewer` cho tất cả agents. Launch 5 agents song song (1 lời gọi `task`, 5 item), mỗi agent nhận: MR title, description, full diff, knowledge context, `$RULES_CONTEXT` và **`$BUSINESS_MANIFEST` từ Step 2.5**.
 
 **Yêu cầu CHUNG cho mọi agent:** Ngoài list lỗi, mỗi agent PHẢI trả về **Coverage Report** cho cả `business_rules` VÀ `ticket_requirements`:
 
@@ -211,7 +210,7 @@ Orchestrator tổng hợp coverage + requirement_check từ 5 agents:
 - **Expensive operations không có guard**: Kiểm tra feature flag/config TRƯỚC khi query DB hoặc gọi API
 
 **Agent 2: Rules compliance & Security**
-Audit changes against `cloudgo-development-rules.md`:
+Audit changes against `cloudgo-development-rules.md` và mọi rule trong `$RULES_CONTEXT`:
 
 - **File separation (NON-NEGOTIABLE)**: No inline CSS/JS in PHP/TPL files. No HTML in PHP classes.
   - CSS MUST be in `modules/<Module>/resources/<ViewName>.css`
@@ -223,7 +222,7 @@ Audit changes against `cloudgo-development-rules.md`:
 - **XSS**: `.text()` not `.html()` for dynamic content; `vtlib_purify()` for user input; jQuery DOM construction not string concatenation
 - **CSRF**: `$request->validateWriteAccess()` on ALL write Action controllers
 - **PHP headers**: `@author`, `@email`, `@create date` (required on new files)
-- **Type declarations**: Return types, parameter types per PHP 7+ conventions
+- **Type declarations**: Return types, parameter types theo `php-conventions.md`
 - **Language file directory** (MEDIUM): Language files phải đúng path theo `$developerTeam` trong `config.env.php` (hiện tại `R&D`):
   - R&D → `languages/<locale>/ModuleName.php` (root, KHÔNG được đặt trong `dev/`)
   - DEV → `languages/<locale>/dev/ModuleName.php`
@@ -232,8 +231,8 @@ Audit changes against `cloudgo-development-rules.md`:
 - **Autoload rule** (MEDIUM): Các class theo convention `<Module>_<Component>_<Type>` được autoload — KHÔNG dùng `require_once`. Chỉ dùng `require_once` cho `include/utils/`, `include/Webservice/`, `modules/Reports/custom/` hoặc non-module paths.
 - **Migration naming** (MEDIUM): Migration files phải theo format `YYYY.MM.DD.HH.mm.ss_DescriptiveName.php`.
 
-**Agent 3: Clean Code & Structure (sonet)**
-Audit code quality theo `cloudgo-development-rules.md`:
+**Agent 3: Clean Code & Structure**
+Audit code quality theo `cloudgo-development-rules.md` và mọi rule trong `$RULES_CONTEXT`:
 
 - **Method length**: Mỗi method ≤ 30 dòng. Nếu vượt → flag và gợi ý tách
 - **Class/File length**: Mỗi file ≤ 200 dòng code. Nếu vượt → flag và gợi ý modularize
@@ -250,16 +249,16 @@ Audit code quality theo `cloudgo-development-rules.md`:
 - **Error handling**: try/catch cho external calls, `error_log()` cho errors
 - **BlocksAndFieldsRegister** (HIGH): Field mới PHẢI đăng ký trong `modules/{Module}/BlocksAndFieldsRegister.php` (Quick Repair sẽ tạo DB column). KHÔNG tạo field bằng raw SQL migration. Thiếu register → flag HIGH.
 - **JS AJAX pattern** (MEDIUM): Phải dùng `app.request.post()` / `app.request.get()`, không dùng raw `$.ajax()`, `$.post()`, `$.get()`.
-- **Class structure order** (MEDIUM): Constants → Singleton `getInstance()` → Public methods → Protected/private methods. Sai thứ tự → flag MEDIUM.
+- **Class structure order** (MEDIUM): theo `php-conventions.md` § Class Structure — Constants → static properties → properties → `__construct` → static factory (`getInstance`) → public → protected → private. Sai thứ tự → flag MEDIUM.
 
-**Agent 4: Bug scan (sonet)**
+**Agent 4: Bug scan**
 Scan diff for obvious bugs — only flag issues visible in the diff:
 - Code that will fail to compile or parse
 - Logic errors that produce wrong results regardless of input
 - Undefined variables, wrong method signatures
 - Missing return statements, off-by-one errors
 
-**Agent 5: Logic nghiệp vụ & security deep review + Ticket requirement verification (sonet)**
+**Agent 5: Logic nghiệp vụ & security deep review + Ticket requirement verification**
 Dùng knowledge context từ Step 2 + `ticket_requirements` từ Step 2.5 để review:
 
 **A. Ticket requirement verification (BẮT BUỘC — ưu tiên đầu tiên):**
@@ -304,7 +303,7 @@ Dùng knowledge context từ Step 2 + `ticket_requirements` từ Step 2.5 để 
 
 For each issue from Step 3:
 - Launch validation subagent với `agent: code-reviewer` (model do omp chọn qua `~/.config/ckit/models.toml`)
-- Subagent nhận: MR context + mô tả lỗi + source code liên quan
+- Subagent nhận: MR context + mô tả lỗi + source code liên quan + `$RULES_CONTEXT`; vi phạm rule code là lỗi thật — không bác chỉ vì rule có `scope: tool:edit/write` (trigger lúc sửa); loại file rule áp dụng vẫn theo nội dung rule
 - Phải xác nhận với độ tin cậy cao rằng lỗi là thật
 - Loại bỏ những issue không được xác nhận
 
@@ -351,11 +350,6 @@ Score each validated issue 0-100:
 
 **BẮT BUỘC: Toàn bộ comment PHẢI viết bằng tiếng Việt có dấu.**
 
-Format the review comment:
-
-**Nếu có lỗi:**
-
-```markdown
 Comment format chuẩn (2 template: có lỗi / clean): đọc [references/comment-templates.md](references/comment-templates.md) khi đến bước post.
 
 ### Step 6.5 → 7.5: Label, merge, update PMS
@@ -390,10 +384,11 @@ Do NOT flag these:
 |------|--------|
 | **Target branch MANDATORY = master** | Skill CHỈ áp dụng cho MR có `target_branch = master`. Target khác (`develop`, `release-*`, `hotfix/*`, `feature/*`, v.v.) → block ngay ở Step 0 Pre-check, không review, không gắn label, không merge. |
 | **Ticket ID MANDATORY** | MR title BẮT BUỘC có `#<digits>`. Thiếu → block ngay, KHÔNG review code. Không có ngoại lệ. |
-| **PMS verification MANDATORY** | Ticket phải tồn tại trên PMS. Search bằng `mcp__pms__pms_tickets(filters=[{name:"ticket_no",value:"<ID>",operator:"c"}])` trước (stored format là `#<ID>`), lấy record_id → rồi `pms_ticket_detail(id=record_id)`. Không tìm thấy → block. |
+| **PMS verification MANDATORY** | Ticket phải tồn tại trên PMS. Search bằng `mcp__pms_tickets(filters=[{name:"ticket_no",value:"#<ID>",operator:"e"}])` trước (stored format là `#<ID>`), lấy record_id → rồi `mcp__pms_ticket_detail(id=record_id)`. Không tìm thấy → block. |
 | **GitLab only** | Uses `glab` CLI, not `gh` |
 | **Diff from GitLab** | Always use `glab mr diff` first (correct target branch) |
 | **Knowledge required** | MUST read knowledge files before reviewing logic |
+| **Coding rules required** | Step 2 load mọi rule khớp file đổi (`$RULES_CONTEXT`) và truyền cho 5 agents + validators. Rule code là tiêu chí review; `scope: tool:edit/write` chỉ quyết định lúc rule tự nạp, không quyết định có áp dụng khi review; loại file rule áp dụng theo glob ở bảng + nội dung rule |
 | **Business manifest MANDATORY** | Step 2.5 phải build Business Logic Manifest (YAML) trước khi review. Không có manifest → block. Manifest rỗng mà không phải refactor → yêu cầu chạy lại. |
 | **Knowledge cross-check** | Mỗi `business_rule` phải đối chiếu với `docs/knowledge/modules/<Module>.md`. Mâu thuẫn nghiệp vụ → CRITICAL. |
 | **Coverage gate** | Comment BẮT BUỘC có section "Phạm vi nghiệp vụ đã review". Merge chỉ cho phép khi 100% `business_rules` có status `reviewed: true` từ ít nhất 1 agent. |
@@ -403,8 +398,8 @@ Do NOT flag these:
 | **Side effect audit** | Rule có save/update record phải trace handler chain (via knowledge `handlers` section). Loop/duplicate event → CRITICAL. |
 | **High signal** | Confidence threshold 80 — no noise |
 | **Validate all** | Every issue gets a validation subagent |
-| **Auto post + merge khi clean** | Default: không có CRITICAL/HIGH → tự động post comment + merge, không hỏi user |
-| **Ask user khi có blocker** | Có CRITICAL/HIGH → trình kết quả + `ask` trước khi post |
+| **Auto post + merge khi clean** | Default: không có CRITICAL/HIGH/PERFORMANCE → tự động post comment + merge, không hỏi user |
+| **Ask user khi có blocker** | Có CRITICAL/HIGH/PERFORMANCE → trình kết quả + `ask` trước khi post |
 | **Post always** | Always post comment, even if clean (trừ khi `--dry-run`) |
 | **Merge convention** | `[Category] #Ticket: Description` format |
 | **Squash merge** | Use `--squash --yes` when merging |
@@ -412,7 +407,7 @@ Do NOT flag these:
 | **No auto-merge on issues** | CRITICAL/HIGH/PERFORMANCE blocks merge |
 | **Performance blocks merge** | Mọi lỗi do Agent 1 (Performance review) phát hiện đều block auto-merge, bất kể severity. PERFORMANCE là tiêu chí chặn độc lập với scale CRITICAL/HIGH/MEDIUM/LOW. |
 | **Flags override default** | `--no-merge` = post nhưng không merge; `--dry-run` = chỉ in, không làm gì |
-| **Label "Dev done"** | Clean MR nhận label "Dev done" sau khi merge. release-check sẽ transition `Dev done → Chờ release` khi PMS ticket đã verify. |
-| **PMS status → Testing sau merge** | Step 7.5 BẮT BUỘC update ticket status sang `Testing` qua `mcp__pms__pms_ticket_update(id=$TICKET_RECORD_ID, ...)`. Dùng `$TICKET_RECORD_ID` (numeric record_id), KHÔNG dùng ticket_no. |
-| **PMS comment optional** | `pms_comments(action="add")` yêu cầu `assigned_user_id` — nếu không xác định được reviewer user ID thì skip (rating_note đã đủ context). |
+| **Label "Dev done"** | Clean MR nhận label "Dev done" ở Step 6.5, trước khi merge (Step 7 yêu cầu label đã gán). release-check sẽ transition `Dev done → Chờ release` khi PMS ticket đã verify. |
+| **PMS status → Testing sau merge** | Step 7.5 BẮT BUỘC update ticket status sang `Testing` qua `mcp__pms_ticket_update(id=$TICKET_RECORD_ID, ...)`. Dùng `$TICKET_RECORD_ID` (numeric record_id), KHÔNG dùng ticket_no. |
+| **PMS comment optional** | `mcp__pms_comments(action="add")` yêu cầu `assigned_user_id` — nếu không xác định được reviewer user ID thì skip (rating_note đã đủ context). |
 | **No subjective downgrade** | Rule là mechanical, KHÔNG được downgrade severity dựa trên "cảm tính" reviewer |

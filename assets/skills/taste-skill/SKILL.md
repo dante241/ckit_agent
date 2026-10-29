@@ -86,14 +86,14 @@ Once you have the design read (Section 0) and dials (Section 1), pick the right 
 ### 2.A When to reach for a real design system (use official packages)
 | Brief reads as… | Reach for | Why |
 |---|---|---|
-| Microsoft / enterprise SaaS / dashboards | `@fluentui/react-components` or `@fluentui/web-components` | Official Fluent UI, Microsoft tokens, accessibility done |
+| Microsoft / enterprise SaaS (dashboards are out of scope, see Section 12) | `@fluentui/react-components` or `@fluentui/web-components` | Official Fluent UI, Microsoft tokens, accessibility done |
 | Google-ish UI, Material-flavored product | `@material/web` + Material 3 tokens | Official, theme-able via Material Theming |
 | IBM-style B2B / enterprise analytics | `@carbon/react` + `@carbon/styles` | Official Carbon, mature data-density patterns |
 | Shopify app surfaces | `polaris.js` web components / Polaris React | Required for Shopify admin UI |
 | Atlassian / Jira-style product | `@atlaskit/*` + `@atlaskit/tokens` | Official Atlassian DS |
 | GitHub-style devtool / community page | `@primer/css` or `@primer/react-brand` | Official Primer; Brand variant for marketing |
 | Public-sector UK service | `govuk-frontend` | Legally / regulatorily expected |
-| US public-sector / trust-first | `uswds` | Same |
+| US public-sector / trust-first | `@uswds/uswds` | Same |
 | Fast local-business / agency MVP | Bootstrap 5.3 | Boring, fast, works |
 | Modern accessible React foundation | `@radix-ui/themes` | Primitives + polished theme |
 | Modern SaaS where you own the components | shadcn/ui (`npx shadcn@latest add ...`) | You own the code, easy to customise; never ship default state |
@@ -138,7 +138,7 @@ Unless the design read picks a real design system (Section 2.A), these are the d
 * **NEVER** use `useState` to track continuous values driven by user input (mouse position, scroll progress, pointer physics, magnetic hover). Use Motion's `useMotionValue` / `useTransform` / `useScroll`. `useState` re-renders the React tree on every change and collapses on mobile.
 
 ### 3.C Icons
-* **Allowed libraries (priority order):** `@phosphor-icons/react`, `hugeicons-react`, `@radix-ui/react-icons`, `@tabler/icons-react`.
+* **Allowed libraries (priority order):** `@phosphor-icons/react`, `@hugeicons/react` (+ `@hugeicons/core-free-icons`), `@radix-ui/react-icons`, `@tabler/icons-react`.
 * **Discouraged:** `lucide-react`. Acceptable only when the user explicitly asks for it or the project already depends on it.
 * **NEVER hand-roll SVG icons.** If a glyph is missing, install a second library or compose from primitives - do not draw icon paths from scratch.
 * **One family per project.** Do not mix Phosphor with Lucide in the same component tree.
@@ -151,7 +151,7 @@ Discouraged by default in code, markup, and visible text. Replace symbols with i
 * Standardize breakpoints (`sm 640`, `md 768`, `lg 1024`, `xl 1280`, `2xl 1536`).
 * Contain page layouts using `max-w-[1400px] mx-auto` or `max-w-7xl`.
 * **Viewport Stability:** NEVER use `h-screen` for full-height Hero sections. ALWAYS use `min-h-[100dvh]` to prevent layout jumping on mobile (iOS Safari address bar).
-* **Grid over Flex-Math:** NEVER use complex flexbox percentage math (`w-[calc(33%-1rem)]`). ALWAYS use CSS Grid (`grid grid-cols-1 md:grid-cols-3 gap-6`).
+* **Grid over Flex-Math:** NEVER use complex flexbox percentage math (`w-[calc(33%-1rem)]`). ALWAYS use CSS Grid (`grid grid-cols-1 md:grid-cols-12 gap-6` with unequal `md:col-span-*`; equal 3-up card rows are banned, see Section 9.C).
 
 ### 3.F Dependency Verification (mandatory)
 Before importing ANY 3rd-party library, check `package.json`. If the package is missing, output the install command first. **Never** assume a library exists.
@@ -175,7 +175,7 @@ LLMs default to clichés. Override these defaults proactively. Each rule has a c
   * **Serif is only acceptable when ONE of these is explicitly true:**
     - The brand brief literally names a serif font, OR
     - The aesthetic family is genuinely editorial / luxury / publication / manuscript / heritage / vintage AND you can articulate why this specific serif fits this specific brand
-  * For everything else (creative agency, design studio, modern brand, premium consumer, portfolio, lifestyle), **default sans-serif display** (Geist Display, ABC Diatype, Söhne Breit, Cabinet Grotesk Display, Migra Sans, GT Walsheim, Inter Display, PP Neue Montreal). Sans display fonts are not "boring" — they are the default for the same reason black is the default in fashion.
+  * For everything else (creative agency, design studio, modern brand, premium consumer, portfolio, lifestyle), **default sans-serif display** (Geist Display, ABC Diatype, Söhne Breit, Cabinet Grotesk Display, Migra Sans, GT Walsheim, Inter Display, PP Neue Montreal). Sans display fonts are not "boring": they are the default for the same reason black is the default in fashion.
   * **EMPHASIS RULE (related):** When you want to emphasize a word within a headline (the kinetic "and `spatial` design" type move), use **italic or bold of the SAME font**. Do NOT inject a random serif word into a sans headline (or vice versa) just to add visual interest. Mixed-family emphasis is amateur. Italic/bold emphasis in the same family is the right move.
   * **Specifically BANNED as defaults:** `Fraunces` and `Instrument_Serif` (the two LLM-favorite display serifs).
   * **If a serif is justified** (rare, per the above), rotate from this pool, do NOT reuse the same serif across consecutive projects: PP Editorial New, GT Sectra Display, Cardinal Grotesque, Reckless Neue, Tiempos Headline, Recoleta, Cormorant Garamond, Playfair Display, EB Garamond, IvyPresto, Migra, Editorial Old, Saol Display, Söhne Breit Kursiv, Domaine Display, Canela, Schnyder, Tobias, NB Architekt, ITC Galliard.
@@ -266,15 +266,15 @@ Landing pages and portfolios are **visual products**. Text-only pages with fake-
 **Priority order for visual assets:**
 1. **Image-generation tool first.** If ANY image-gen tool is available in the environment (`generate_image`, MCP image tool, IDE-integrated gen, OpenAI image tools, etc.) you MUST use it to create section-specific assets: hero photography, product shots, texture backgrounds, mood images. Generate at the right aspect ratio for the section. Do not skip this step because hand-rolled CSS feels faster.
 2. **Real web images second.** When no gen tool is available, use real photography sources. Acceptable defaults:
-   * `https://picsum.photos/seed/{descriptive-seed}/{w}/{h}` for placeholder photography (seed should describe the section, e.g. `marrow-cookware-kitchen`)
+   * `https://picsum.photos/seed/{descriptive-seed}/{w}/{h}` for placeholder photography (seed should describe the section, e.g. `marrow-cookware-kitchen`). These are stand-ins: list every picsum placement in the final response as "replace with real asset".
    * Actual stock or brand URLs when the brief provides them
    * Open-license sources (Unsplash via direct URL, Pexels) if explicitly allowed
-3. **Last resort: tell the user.** If neither is possible, do NOT fill the page with hand-rolled SVG illustrations or div-based "fake screenshots." Instead, leave clearly-labeled placeholder slots (`<!-- TODO: hero product photo, 1600x1200 -->`) and at the end of the response say: *"This page needs real images at: \[list of placements\]. Please generate or provide them."*
+3. **Last resort: tell the user.** If neither is possible, do NOT fill the page with hand-rolled SVG illustrations or div-based "fake screenshots", and do NOT ship `<!-- TODO -->` placeholder slots. Leave the image region out of the layout and at the end of the response say: *"This page needs real images at: \[list of placements with sizes, e.g. hero product photo 1600x1200\]. Please generate or provide them."*
 
 **Even minimalist sites need real images.** A pure-text page is not minimalism. It is incomplete work. Even an editorial Linear-style site needs at least 2-3 real images (hero, one product/lifestyle shot, one supporting image). Generate B&W minimalist photography if the brief is restrained; do not skip images entirely because the dial is low.
 
 **Real company logos for social proof.** When the brief calls for a "Trusted by / Used by / Customers" logo wall, do NOT default to plain text wordmarks (`<span>Acme Co</span>` styled in a row). Use real SVG logos:
-* **Source: Simple Icons** (`https://cdn.simpleicons.org/{slug}/ffffff` for any color, or `simple-icons` npm package). Covers most known brands.
+* **Source: Simple Icons** (`https://cdn.simpleicons.org/{slug}/{hex}` with your off-white/off-black token hex, e.g. `f4f4f5`, never pure `ffffff` per Section 8.B; or the `simple-icons` npm package). Covers most known brands.
 * **Alternative: devicon** for tech-stack logos (`@svgr/cli` or CDN).
 * **Make-up the brand name? Then make-up an SVG mark too.** Generate a simple monogram (one letter in a circle, two-letter ligature, abstract glyph) rendered as an inline `<svg>` matching the page style. Plain text wordmarks for invented brand names look generic.
 * **Always** ensure logos render in both light and dark mode (white-on-dark, black-on-light, or single-color theme variable).
@@ -412,7 +412,7 @@ export function StickyStack({ cards }: { cards: React.ReactNode[] }) {
       {cards.map((card, i) => (
         <div
           key={i}
-          className="stack-card sticky top-0 min-h-[100dvh] flex items-center justify-center"
+          className="stack-card min-h-[100dvh] flex items-center justify-center"
         >
           {card}
         </div>
@@ -422,7 +422,7 @@ export function StickyStack({ cards }: { cards: React.ReactNode[] }) {
 }
 ```
 
-Critical points: `start: "top top"`, `pin: true`, every card except the last is pinned, the scale/opacity transform is driven by the NEXT card's scroll trigger (so previous card shrinks as next one arrives).
+Critical points: `start: "top top"`, `pin: true`, every card except the last is pinned, the scale/opacity transform is driven by the NEXT card's scroll trigger (so previous card shrinks as next one arrives). ScrollTrigger owns the pinning: do not also add CSS `sticky` to `.stack-card`, the two mechanisms fight.
 
 ### 5.B Horizontal-Pan - Canonical Skeleton
 
@@ -535,7 +535,7 @@ Use this for: feature lists, testimonial grids, logo walls, anything that just n
 * Respect `prefers-color-scheme: dark`. Default to system preference unless the brand insists on one mode.
 
 ### 6.D Core Web Vitals Targets
-* **LCP** < 2.5s. Hero image must be `next/image priority` or preloaded.
+* **LCP** < 2.5s. Hero image must be `next/image` with `fetchPriority="high"` (or `preload`; `priority` is deprecated since Next 16).
 * **INP** < 200ms. Heavy work off main thread.
 * **CLS** < 0.1. Reserve space for images, fonts, embeds.
 * Run Lighthouse before declaring a page done.
@@ -559,7 +559,7 @@ NEVER spam arbitrary `z-50` or `z-10`. Use z-index strictly for systemic layer c
 
 ### MOTION_INTENSITY (Level 1-10)
 * **1-3 (Static):** No automatic animations. CSS `:hover` and `:active` states only. `prefers-reduced-motion` is the default mode anyway.
-* **4-7 (Fluid CSS):** `transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1)`. `animation-delay` cascades for load-ins. Focus on `transform` and `opacity`.
+* **4-7 (Fluid CSS):** `transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1)` (never `transition: all`, see Section 6.A). `animation-delay` cascades for load-ins.
 * **8-10 (Advanced Choreography):** Complex scroll-triggered reveals, parallax, scroll-driven animation (CSS `animation-timeline` or GSAP ScrollTrigger). Use Motion hooks. **NEVER use `window.addEventListener('scroll')`** - it is a hard ban, not a "prefer-not." See Section 5.D for the allowed alternatives.
 
 ### VISUAL_DENSITY (Level 1-10)
@@ -615,7 +615,7 @@ Avoid these signatures unless the brief explicitly asks for them.
 ### 9.D Content & Data ("Jane Doe" Effect)
 * **NO generic names.** "John Doe", "Sarah Chan", "Jack Su" → use creative, realistic, locale-appropriate names.
 * **NO generic avatars.** No SVG "egg" or Lucide user icons → use believable photo placeholders or specific styling.
-* **NO fake-perfect numbers.** Avoid `99.99%`, `50%`, `1234567`. Use organic, messy data (`47.2%`, `+1 (312) 847-1928`).
+* **NO fake-perfect numbers.** Avoid `99.99%`, `50%`, `1234567`. Use real figures from the brief; if a number must be invented, label it as mock (Section 4.9). Do not swap in organic-looking invented precision.
 * **NO startup-slop brand names.** "Acme", "Nexus", "SmartFlow", "Cloudly" → invent contextual, premium names that sound real.
 * **NO filler verbs.** "Elevate", "Seamless", "Unleash", "Next-Gen", "Revolutionize" → concrete verbs only.
 
@@ -704,7 +704,7 @@ This rule is non-negotiable. The agent has historically ignored em-dash limits w
 
 ## 10. REFERENCE VOCABULARY (Pattern Names the Agent Should Know)
 
-This is a vocabulary, not a library. The agent should KNOW these pattern names to communicate about them, design with them in mind, and reach for them when the design read calls for them. **Implementations and code sketches live in the Block Library (Section 12), which is populated iteratively.**
+This is a vocabulary, not a library. The agent should KNOW these pattern names to communicate about them, design with them in mind, and reach for them when the design read calls for them. No vendored implementations ship with this skill; build each pattern from the brief using the conventions in Sections 3-6.
 
 ### Hero Paradigms
 * **Asymmetric Split Hero** - Text on one side, asset on the other, generous white space.
@@ -832,68 +832,7 @@ Never modify without explicit user approval:
 
 ---
 
-## 12. THE BLOCK LIBRARY (Contract - Implementations Land Here Iteratively)
-
-The Reference Vocabulary (Section 10) names patterns. The Block Library implements them with real props, real motion specs, and real code sketches.
-
-**Status:** schema defined here. Blocks will be added iteratively. Do not freelance new blocks without following this schema.
-
-### 12.A File Location
-```
-skills/taste-skill/blocks/
-  hero/
-    asymmetric-split.md
-    editorial-manifesto.md
-    kinetic-type.md
-    ...
-  feature/
-    bento-grid.md
-    sticky-scroll-stack.md
-    zig-zag.md
-    ...
-  social-proof/
-  pricing/
-  cta/
-  footer/
-  navigation/
-  portfolio/
-  transition/
-```
-
-### 12.B Required Frontmatter
-```yaml
----
-name: asymmetric-split-hero
-category: hero
-dial_compatibility:
-  variance: [6, 10]
-  motion: [3, 10]
-  density: [2, 5]
-when_to_use: "Landing pages with one strong asset and one strong message. Default hero for SaaS, agency, premium consumer."
-not_for: "Editorial / manifesto launches where the message IS the design."
-stack: ["react", "next", "tailwind", "motion"]
----
-```
-
-### 12.C Required Body Sections
-1. **Visual sketch** - short ASCII or description of the layout.
-2. **Props API** - the component's interface.
-3. **Code sketch** - minimal working implementation (Server Component default, Client island for motion).
-4. **Mobile fallback** - explicit collapse rules for `< 768px`.
-5. **Motion variants** - one variant per `MOTION_INTENSITY` band (1-3, 4-7, 8-10). Reduced-motion fallback explicit.
-6. **Dark-mode notes** - token strategy specific to this block.
-7. **Anti-patterns** - common ways this block goes wrong.
-8. **References** - links to real examples in production.
-
-### 12.D Block-Library Discipline
-* One block per file. No multi-block files.
-* Every block must work standalone (drop it into a page, it renders).
-* Every block must pass the Pre-Flight Check (Section 14).
-* Blocks that depend on a design system from Section 2.A live under `blocks/<category>/<name>--<system>.md` (e.g. `feature/bento-grid--material.md`).
-
----
-
-## 13. OUT OF SCOPE
+## 12. OUT OF SCOPE
 
 This skill is NOT for:
 * Dashboards / dense product UI / admin panels (use Fluent, Carbon, Atlassian, or Polaris from Section 2.A).
@@ -907,7 +846,7 @@ If the brief is one of the above, **say so explicitly**, point to the right tool
 
 ---
 
-## 14. FINAL PRE-FLIGHT CHECK
+## 13. FINAL PRE-FLIGHT CHECK
 
 Run this matrix before outputting code. This is the last filter.
 
@@ -944,7 +883,7 @@ Run this matrix before outputting code. This is the last filter.
 - [ ] **Section-Layout-Repetition** check: no two sections share the same layout family (at least 4 different families across 8 sections)?
 - [ ] **Bento has rhythm AND exact cell count** (N items → N cells, no empty cells in middle or at end)?
 - [ ] **Long lists use the right UI component** (not default `<ul>` with `divide-y` for > 5 items - see Section 4.9 alternatives)?
-- [ ] **Real images used** (gen-tool first, then Picsum-seed, then explicit placeholder slots) - NO div-based fake screenshots, NO hand-rolled decorative SVGs, NO pure-text minimalism?
+- [ ] **Real images used** (gen-tool first, then Picsum-seed listed as stand-ins, else image regions omitted and missing assets reported; no TODO slots) - NO div-based fake screenshots, NO hand-rolled decorative SVGs, NO pure-text minimalism?
 - [ ] **No pills/labels overlaid on images** (no `Plate · Brand`, no `Field notes - journal`)?
 - [ ] **No photo-credit captions as decoration** (`Field study no. 12 · Ines Caetano`)?
 - [ ] **No version footers** (`v1.4.2`, `Build 0048`) on marketing pages?
@@ -980,227 +919,4 @@ If a single checkbox cannot be honestly ticked, the page is not done. Fix it bef
 
 ---
 
-# APPENDICES - Real Source-Backed Reference Material
-
-The sections below are vendored reference content. They give the agent real install commands, real canonical doc links, and real working starter snippets for each design system named in Section 2. Use them to ground decisions in production reality, not training-data fiction.
-
-## Appendix A - Install Commands per Design System
-
-```bash
-# Material Web (Material 3)
-npm install @material/web
-
-# Fluent UI React (v9)
-npm install @fluentui/react-components
-
-# Fluent UI Web Components (framework-free)
-npm install @fluentui/web-components @fluentui/tokens
-
-# IBM Carbon
-npm install @carbon/react @carbon/styles
-
-# Radix Themes
-npm install @radix-ui/themes
-
-# shadcn/ui (open code, owned components)
-npx shadcn@latest init
-npx shadcn@latest add button card badge separator input
-
-# Primer CSS (GitHub product/devtool UI)
-npm install --save @primer/css
-
-# Primer Brand (GitHub marketing UI)
-npm install @primer/react-brand
-
-# GOV.UK Frontend
-npm install govuk-frontend
-
-# USWDS (US Web Design System)
-npm install uswds
-
-# Atlassian Design System (Atlaskit)
-yarn add @atlaskit/css-reset @atlaskit/tokens @atlaskit/button @atlaskit/badge @atlaskit/section-message @atlaskit/card
-
-# Bootstrap 5.3
-npm install bootstrap
-
-# Shopify Polaris Web Components (Shopify apps only)
-# Add this to your app HTML head:
-#   <meta name="shopify-api-key" content="%SHOPIFY_API_KEY%" />
-#   <script src="https://cdn.shopify.com/shopifycloud/polaris.js"></script>
-```
-
-## Appendix B - Canonical Sources (read these before reinventing)
-
-### Material Web
-- https://github.com/material-components/material-web
-- https://material-web.dev/theming/material-theming/
-- https://m3.material.io/develop/web
-
-### Fluent UI
-- https://fluent2.microsoft.design/get-started/develop
-- https://fluent2.microsoft.design/components/web/react/
-- https://github.com/microsoft/fluentui
-- https://learn.microsoft.com/en-us/fluent-ui/web-components/
-
-### Carbon
-- https://carbondesignsystem.com/
-- https://github.com/carbon-design-system/carbon
-- https://carbondesignsystem.com/developing/react-tutorial/overview/
-- https://carbondesignsystem.com/developing/web-components-tutorial/overview/
-
-### Shopify Polaris
-- https://shopify.dev/docs/api/app-home/web-components
-- https://github.com/Shopify/polaris-react
-- https://polaris-react.shopify.com/components
-
-### Atlassian
-- https://atlassian.design/get-started/develop
-- https://atlassian.design/components/button/examples
-- https://atlaskit.atlassian.com/packages/design-system/button/example/disabled
-- https://atlassian.design/tokens/design-tokens
-
-### Primer
-- https://primer.style/
-- https://github.com/primer/css
-- https://github.com/primer/brand
-
-### GOV.UK
-- https://design-system.service.gov.uk/components/button/
-- https://design-system.service.gov.uk/styles/layout/
-- https://github.com/alphagov/govuk-frontend
-
-### USWDS
-- https://designsystem.digital.gov/documentation/developers/
-- https://designsystem.digital.gov/components/button/
-- https://designsystem.digital.gov/components/card/
-- https://github.com/uswds/uswds
-
-### Bootstrap
-- https://getbootstrap.com/docs/5.3/layout/grid/
-- https://getbootstrap.com/docs/5.3/components/card/
-
-### Tailwind
-- https://tailwindcss.com/docs/dark-mode
-- https://tailwindcss.com/blog/tailwindcss-v4
-
-### Radix
-- https://www.radix-ui.com/themes/docs/components/theme
-- https://www.radix-ui.com/themes/docs/components/card
-- https://github.com/radix-ui/themes
-
-### shadcn/ui
-- https://ui.shadcn.com/docs
-- https://ui.shadcn.com/docs/components/card
-- https://github.com/shadcn-ui/ui
-
-### Native CSS / W3C standards
-- https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/backdrop-filter
-- https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-color-scheme
-- https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-reduced-motion
-- https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Grid_layout
-- https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Scroll-driven_animations
-- https://drafts.csswg.org/scroll-animations-1/
-
-### Apple Liquid Glass (Apple platforms only)
-- https://developer.apple.com/design/human-interface-guidelines/materials
-- https://developer.apple.com/documentation/TechnologyOverviews/liquid-glass
-- https://developer.apple.com/documentation/TechnologyOverviews/adopting-liquid-glass
-- https://developer.apple.com/documentation/SwiftUI/Material
-
----
-
-## Appendix C - Apple Liquid Glass: Honest Web Approximation
-
-Do **not** treat random CSS snippets as official Apple Liquid Glass.
-
-### What is official
-Apple documents Liquid Glass inside Apple's Human Interface Guidelines and Developer Documentation for **Apple platforms**. It is a dynamic material used across Apple platform UI. Apple's native implementation belongs to Apple platform APIs and system components, **not a public web CSS package**.
-
-Relevant official docs:
-- Apple Human Interface Guidelines → Materials
-- Apple Developer Documentation → Liquid Glass
-- Apple Developer Documentation → Adopting Liquid Glass
-- SwiftUI → Material
-
-### What is NOT official
-There is no `liquid-glass.css` from Apple for normal websites.
-
-A web approximation can use:
-- `backdrop-filter`
-- transparent backgrounds
-- layered borders
-- highlight overlays
-- gradients
-- motion
-- strong contrast fallbacks
-
-But that is **web glassmorphism / frosted-glass approximation**, not official Apple Liquid Glass. Label it as such in comments.
-
-### Safer web approximation skeleton
-
-```css
-.liquid-glass-web-approx {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  border-radius: 999px;
-  border: 1px solid rgb(255 255 255 / .32);
-  background:
-    linear-gradient(135deg, rgb(255 255 255 / .30), rgb(255 255 255 / .08)),
-    rgb(255 255 255 / .12);
-  backdrop-filter: blur(24px) saturate(180%) contrast(1.05);
-  -webkit-backdrop-filter: blur(24px) saturate(180%) contrast(1.05);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / .48),
-    inset 0 -1px 0 rgb(255 255 255 / .12),
-    0 18px 60px rgb(0 0 0 / .18);
-}
-
-.liquid-glass-web-approx::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  background:
-    radial-gradient(circle at 20% 0%, rgb(255 255 255 / .55), transparent 34%),
-    linear-gradient(90deg, rgb(255 255 255 / .18), transparent 42%, rgb(255 255 255 / .14));
-  pointer-events: none;
-}
-
-.liquid-glass-web-approx::after {
-  content: "";
-  position: absolute;
-  inset: 1px;
-  border-radius: inherit;
-  border: 1px solid rgb(255 255 255 / .14);
-  pointer-events: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  .liquid-glass-web-approx {
-    border-color: rgb(255 255 255 / .18);
-    background:
-      linear-gradient(135deg, rgb(255 255 255 / .16), rgb(255 255 255 / .04)),
-      rgb(15 23 42 / .42);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / .22),
-      0 18px 60px rgb(0 0 0 / .42);
-  }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .liquid-glass-web-approx {
-    background: rgb(255 255 255 / .96);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-}
-```
-
-**Important:** `prefers-reduced-transparency` has uneven browser support; test it. Always provide enough contrast even without blur.
-
----
-
-**End of appendices.** Install commands above are reality anchors. The Apple Liquid Glass skeleton is a labeled approximation, not an Apple-issued package. For canonical docs per design system, consult the system's official docs (links in Section 2 plus Appendix B).
+Install commands per design system, canonical doc links, and the Apple Liquid Glass web approximation: `references/design-system-sources.md`.

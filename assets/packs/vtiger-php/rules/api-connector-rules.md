@@ -1,16 +1,16 @@
 ---
 description: "API connector/integration transport — V1 REST /api/v1, thin adapter. Auto-load (TTSR) khi sửa file khớp."
-scope: "tool:edit(include/Webservice/**/*.php), tool:write(include/Webservice/**/*.php), tool:edit(modules/CPAPIIntegration/**/*.php), tool:write(modules/CPAPIIntegration/**/*.php), tool:edit(modules/CPOTTIntegration/**/*.php), tool:write(modules/CPOTTIntegration/**/*.php), tool:edit(modules/CPMauticIntegration/**/*.php), tool:write(modules/CPMauticIntegration/**/*.php)"
+scope: "tool:edit(include/Webservice/**/*.php), tool:write(include/Webservice/**/*.php), tool:edit(modules/CP*Integration/**/*.php), tool:write(modules/CP*Integration/**/*.php)"
 condition: ".*"
 ---
 
 # API Connector Patterns
 
-> Loads when editing API connector / integration files (`include/Webservice/**`, `modules/CP*Integration/**`).
+> Auto-loads when editing API connector / integration files (`include/Webservice/**`, `modules/CP*Integration/**`); also the review checklist for those files.
 
-## V1 REST API (`/api/v1`) — Request Transport Rules (MANDATORY)
+## V1 REST API (`/api/v1`) — Request Transport Rules (MANDATORY where V1 exists)
 
-These apply to the public `/api/v1` gateway (`include/Webservice/V1/**`). LOCKED project decision — later phases MUST comply.
+These apply to the public `/api/v1` gateway (`include/Webservice/V1/**`). That code lives only on branch `feature/cloudgo-crm-api-v1` (absent on `master` / `integration/php83-full`); the `V1_*` classes and `API-DOCUMENTATION.md` named below exist only there. LOCKED project decision — later phases MUST comply.
 
 - **No JSON payload in a GET (or DELETE) query.** A GET/DELETE request MUST NOT carry a JSON-encoded value in a query parameter (e.g. `?filters=<json>`). GET is for path params + simple scalar/flat query params only (`?limit=25`, `?sort=-modifiedtime`, `?view=detail`).
 - **Structured / JSON input → POST with a JSON body.** Any endpoint needing structured input (filter sets, bulk ids, search criteria, nested objects) MUST be a POST with the data in the request body. Example: list+filter is `POST /{module}/list` with body `{filters, sort, cursor, fields, limit, cvid}` — NOT `GET /{module}?filters=...`.
@@ -51,9 +51,9 @@ A V1 endpoint is a thin REST/JSON adapter over logic VTiger ALREADY has. Do NOT 
 | Picklist values (role-aware) | `Vtiger_Field_Model::getAssignedPicklistValues()` / module `getPicklistValuesDetails()`. |
 | Permissions (module/action/record/field) | `Users_Privileges_Model::isPermitted($module,$action,$recordId)`, `Vtiger_Record_Model::isEditable()/isDeletable()`, `$field->getPermissions()`. NEVER hand-roll ACL SQL. |
 | Login / credentials | `Users::doLogin()` (covers crypt_type/LDAP/AD) — see `V1_AuthController` precedent. |
-| Custom view / saved filter | `CustomView_Record_Model` / `CustomView::getAllFilterByModule()`. |
+| Custom view / saved filter | `CustomView_Record_Model` (`CustomView_Record_Model::getAllFilterByModule()`). |
 
-Use Serena (`find_symbol`, `get_symbols_overview`, `search_for_pattern`) or Grep on `modules/<Module>/actions/` and `modules/Vtiger/models/` to find these before coding.
+Use codegraph (`xd://mcp__codegraph_explore`), Serena (`find_symbol`, `get_symbols_overview`) or Grep on `modules/<Module>/actions/` and `modules/Vtiger/models/` to find these before coding.
 
 **Step 2 — reuse the model/helper, adapt only the edges.** Take the native model methods and event pipeline as-is; in the V1 layer add ONLY: JSON (de)serialization (`V1_FieldSerializer`), the envelope (`V1_Response`), cursor pagination, and a pre-save validation gate. Do not duplicate save/delete/permission/query logic that the model already encapsulates.
 
@@ -65,44 +65,55 @@ Use Serena (`find_symbol`, `get_symbols_overview`, `search_for_pattern`) or Grep
 
 ## Config Initialization
 
+Real example: `modules/CPSocialAdsIntegration/BaseConnector.php`.
+
 ```php
 protected function initConfigs() {
-    $config = Config_Model::getInstance()->getChannelConfig($this->channel);
-    $this->host         = (string) $config['host'];
-    $this->apiVersion   = (string) $config['api_version'];
-    $this->clientId     = (string) $config['client_id'];
+    $config = CPSocialAdsIntegration_Config_Model::getInstance()->getChannelConfig($this->channel);
+
+    $this->host = (string) $config['host'];
+    $this->apiVersion = (string) $config['api_version'];
+    $this->clientId = (string) $config['client_id'];
     $this->clientSecret = (string) $config['client_secret'];
 }
 ```
 
 ## Token Renewal Logic
 
-Standard refresh flow — check expiry threshold, call refresh API, persist new token + new expiry, update connector status:
+Standard refresh flow — check expiry threshold, call refresh API, persist new token + new expiry, update connector status. Real example: `modules/CPSocialAdsIntegration/connectors/FacebookAds.php`:
 
 ```php
-public function renewAccessToken(Record_Model $record): string {
-    $accessToken   = $record->getAccessToken();
-    $expiredDate   = (string) $record->get('token_expired_date');
+public function renewAccessToken(CPAdvertisingAccount_Record_Model $adsAccountRecord): string {
+    $accessToken = $adsAccountRecord->getAccessToken();
+    $expiredDate = (string) $adsAccountRecord->get('token_expired_date');
     $daysThreshold = 2;
 
     // Refresh if missing expiry OR within threshold of expiring
     if (empty($expiredDate) || strtotime($expiredDate) < strtotime("+{$daysThreshold} days")) {
-        $result = $this->makePostRequest($url, __FUNCTION__, $params);
+        $params = [
+            'grant_type' => 'fb_exchange_token',
+            'client_id' => $this->clientId,
+            'client_secret' => $this->clientSecret,
+            'fb_exchange_token' => $accessToken,
+        ];
+
+        $serviceUrl = $this->getServiceUrl('/oauth/access_token');
+        $result = $this->makeGetRequest($serviceUrl, __FUNCTION__, $params);
 
         if (!empty($result['access_token'])) {
-            $expiresIn   = (int) $result['expires_in'];
+            $expiresIn = (int) $result['expires_in'];
             $accessToken = (string) $result['access_token'];
 
-            $record->set('access_token', $accessToken);
-            $record->set('token_expired_date', date('Y-m-d H:i:s', strtotime("+ $expiresIn seconds")));
-            $record->set('status', 'valid');
+            $adsAccountRecord->set('access_token', $accessToken);
+            $adsAccountRecord->set('token_expired_date', date('Y-m-d H:i:s', strtotime("+ $expiresIn seconds")));
+            $adsAccountRecord->set('cpadvertisingaccount_token_status', 'valid');
         }
         else {
-            $record->set('status', 'expired');
+            $adsAccountRecord->set('cpadvertisingaccount_token_status', 'expired');
         }
 
-        $record->set('mode', 'edit');
-        $record->save();
+        $adsAccountRecord->set('mode', 'edit');
+        $adsAccountRecord->save();
     }
 
     return $accessToken;
@@ -112,9 +123,9 @@ public function renewAccessToken(Record_Model $record): string {
 **Key rules:**
 
 - Always cast incoming token / expiry values: `(string)`, `(int)`
-- Set `status = 'valid'` on success, `'expired'` on failure
+- Set the token status field to `'valid'` on success, `'expired'` on failure
 - Never log raw access tokens — see `## Logging` below
-- Use `__FUNCTION__` when calling `makePostRequest` so logs identify the caller
+- Pass `__FUNCTION__` to `makeGetRequest`/`makePostRequest` so logs identify the caller
 
 ## Type Casting (Security — REQUIRED)
 

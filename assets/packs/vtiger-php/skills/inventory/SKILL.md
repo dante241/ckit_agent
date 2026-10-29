@@ -1,7 +1,6 @@
 ---
 name: inventory
 description: "VTiger inventory modules — line items, SalesOrder/Invoice/Quote, vtiger_inventoryproductrel, tax/currency. Use when: đơn hàng, hoá đơn, báo giá, line item, sản phẩm trong đơn, thuế, tiền tệ."
-user-invocable: false
 ---
 
 # VTiger Inventory Skill
@@ -20,36 +19,34 @@ Use this skill when:
 
 ## Inheritance Pattern
 
-**Entity inheritance:**
+**Entity:** there is NO `Inventory` entity class. Inventory entities extend `CRMEntity` directly and call the inventory utils from `save_module()`:
 ```php
-modules/{Module}/{Module}.php extends Inventory
+class SalesOrder extends CRMEntity { /* ... */ } // modules/SalesOrder/SalesOrder.php
 ```
 
 **Model inheritance:**
 ```php
-// Module Model
-class Module_Module_Model extends Inventory_Module_Model { }
-
-// Record Model
-class Module_Record_Model extends Inventory_Record_Model { }
+class SalesOrder_Module_Model extends Inventory_Module_Model { }
+class SalesOrder_Record_Model extends Inventory_Record_Model { }
 ```
 
-**View/Action inheritance:**
+**View/Action inheritance** (only the classes that exist in `modules/Inventory/`):
 ```php
-// Views
-class Module_Edit_View extends Inventory_Edit_View { }
-class Module_Detail_View extends Inventory_Detail_View { }
+// Views: Detail, Edit, List, Popup, ProductsPopup, ServicesPopup, SendEmail, ...
+class SalesOrder_Edit_View extends Inventory_Edit_View { }
+class SalesOrder_Detail_View extends Inventory_Detail_View { }
 
-// Actions
-class Module_Save_Action extends Inventory_Save_Action { }
-class Module_Delete_Action extends Inventory_Delete_Action { }
+// Actions: BasicAjax, ExportPDF, GetTaxes, MassSave, Save, SaveAjax
+class SalesOrder_Save_Action extends Inventory_Save_Action { }
 ```
 
-## Module Structure
+There is no `Inventory_Delete_Action` — delete goes through `Vtiger_Delete_Action`.
+
+## Module Structure (real `modules/SalesOrder/`, trimmed)
 
 ```
 modules/SalesOrder/
-├── SalesOrder.php                # Entity extends Inventory
+├── SalesOrder.php                # Entity extends CRMEntity; save_module() saves line items
 ├── models/
 │   ├── Module.php                # extends Inventory_Module_Model
 │   └── Record.php                # extends Inventory_Record_Model
@@ -58,201 +55,94 @@ modules/SalesOrder/
 │   └── Detail.php                # extends Inventory_Detail_View
 └── actions/
     ├── Save.php                  # extends Inventory_Save_Action
-    └── Delete.php                # extends Inventory_Delete_Action
+    └── SaveAjax.php
 ```
 
 ## Line Items Table
 
-**Core table:** `vtiger_inventoryproductrel`
+**Core table:** `vtiger_inventoryproductrel` — shared by all inventory modules.
 
-**Shared by all inventory modules** — columns:
-- `id` — primary key (NOT module-specific crmid)
-- `sequence_no` — line item order
-- `productid` — related product/service crmid
-- `quantity` — item quantity
-- `listprice` — unit price
-- `discount_amount` — discount per item
-- `discount_percent` — discount percentage
-- `comment` — line item notes
-- `tax1` — first tax rate
-- `tax2` — second tax rate
-- `tax3` — third tax rate
+| Column | Meaning |
+|---|---|
+| `lineitem_id` | **primary key** (auto increment) |
+| `id` | parent record crmid (salesorderid, invoiceid, quoteid, …) — indexed, not unique |
+| `productid` | product/service crmid |
+| `sequence_no` | line order |
+| `section_num`, `section_name` | line item section grouping |
+| `quantity`, `listprice` | qty and unit price |
+| `discount_percent`, `discount_amount` | per-line discount |
+| `comment`, `description` | line notes |
+| `incrementondel` | stock flag: `deleteInventoryProductDetails()` queues these lines' quantities so `updateInventoryProductRel()` can put them back to stock on re-save |
+| `purchase_cost`, `margin` | cost / margin per line |
+| `tax1` … `tax7` | per-line tax percentages (one column per `vtiger_inventorytaxinfo.taxname`) |
+| `image` | `varchar(2)`, not written by the core save path |
 
-**Critical:** Use `id` column for foreign key, NOT the module's crmid.
+Read the live schema before writing SQL: `SHOW COLUMNS FROM vtiger_inventoryproductrel`.
 
-## Module Model Methods
+## Core APIs — reuse, don't reimplement
 
-### getInventoryFields(): array
+| Need | API |
+|---|---|
+| Line items of a record (with taxes, totals in `[1]['final_details']`) | `Inventory_Record_Model::getProducts()` (wraps `getAssociatedProducts()` in `include/utils/EditViewUtils.php`) |
+| Product / shipping taxes of a record | `$recordModel->getProductTaxes()`, `getShippingTaxes()` |
+| All tax definitions | `getAllTaxes($available = 'all', $sh = '', $mode = '', $id = '')` in `include/utils/InventoryUtils.php` |
+| Record currency | `$recordModel->getCurrencyInfo()` / `getInventoryCurrencyInfo($module, $id)` |
+| Save line items | Standard record save: `save_module()` → `saveInventoryProductDetails($focus, $module)` reads the `$_REQUEST` line-item keys (`hdnProductId1`, `qty1`, `listPrice1`, …, `totalProductCount`) |
+| Save from code (API, import) | `Inventory_Record_Model::saveWithItems(array $recordData, array $items)` — builds those request keys via `populateItemDataToRequest()` and saves |
 
-```php
-public function getInventoryFields(): array {
-    return [
-        'product' => ['label' => 'Product', 'uitype' => 10],
-        'quantity' => ['label' => 'Quantity', 'uitype' => 7],
-        'listprice' => ['label' => 'List Price', 'uitype' => 71],
-        'discount' => ['label' => 'Discount', 'uitype' => 1],
-        'tax' => ['label' => 'Tax', 'uitype' => 83],
-        'total' => ['label' => 'Total', 'uitype' => 71],
-    ];
-}
-```
+`saveInventoryProductDetails()` also handles stock (`updateInventoryProductRel`, `deleteInventoryProductDetails`) and subproducts — a hand-written `DELETE` + `INSERT` into `vtiger_inventoryproductrel` skips all of that.
 
-### getTaxes(): array
+## Line Items Templates
 
-```php
-public function getTaxes(): array {
-    global $adb;
-    $sql = "SELECT * FROM vtiger_inventorytaxinfo WHERE deleted = 0";
-    $result = $adb->pquery($sql);
+Edit and detail line items are rendered by the Inventory layout partials — extend or override these instead of writing new markup:
 
-    $taxes = [];
-    while ($row = $adb->fetchByAssoc($result)) {
-        $taxes[] = [
-            'taxname' => $row['taxname'],
-            'percentage' => $row['percentage'],
-        ];
-    }
-    return $taxes;
-}
-```
-
-## Record Model Methods
-
-### getLineItems(): array
-
-```php
-public function getLineItems(): array {
-    global $adb;
-    $recordId = $this->getId();
-
-    $sql = "SELECT * FROM vtiger_inventoryproductrel
-            WHERE id = ? ORDER BY sequence_no";
-    $result = $adb->pquery($sql, [$recordId]);
-
-    $lineItems = [];
-    while ($row = $adb->fetchByAssoc($result)) {
-        $lineItems[] = $row;
-    }
-    return $lineItems;
-}
-```
-
-### calculateTotals(): array
-
-```php
-public function calculateTotals(): array {
-    $lineItems = $this->getLineItems();
-    $subtotal = 0;
-    $totalTax = 0;
-
-    foreach ($lineItems as $item) {
-        $itemTotal = $item['quantity'] * $item['listprice'];
-        $itemTotal -= $item['discount_amount'];
-        $subtotal += $itemTotal;
-
-        $taxAmount = $itemTotal * ($item['tax1'] + $item['tax2']) / 100;
-        $totalTax += $taxAmount;
-    }
-
-    return [
-        'subtotal' => $subtotal,
-        'tax' => $totalTax,
-        'total' => $subtotal + $totalTax,
-    ];
-}
-```
-
-## Line Items Template Pattern
-
-**Location:** `layouts/v7/modules/{Module}/EditView.tpl`
+- Edit: `layouts/v7/modules/Inventory/partials/LineItemsEdit.tpl` (included from `partials/EditViewContents.tpl`, rows in `partials/LineItemsContent.tpl`)
+- Detail: `layouts/v7/modules/Inventory/LineItemsDetail.tpl` (included from `DetailViewFullContents.tpl`)
 
 ```smarty
-{include file="InventoryItems.tpl"}
-
-<div class="inventory-items">
-    {foreach from=$LINE_ITEMS item=ITEM}
-        <div class="line-item">
-            <input type="hidden" name="sequence_no[]" value="{$ITEM.sequence_no}">
-            <input type="text" name="productid[]" value="{$ITEM.productid}">
-            <input type="number" name="quantity[]" value="{$ITEM.quantity}">
-            <input type="text" name="listprice[]" value="{$ITEM.listprice}">
-        </div>
-    {/foreach}
-</div>
+{include file="partials/LineItemsEdit.tpl"|@vtemplate_path:'Inventory'}
 ```
 
 ## Tax/Currency/Calculation
 
 **Calculation order:**
-1. Subtotal = quantity × listprice
-2. Discount = subtotal × discount_percent / 100 OR discount_amount
-3. Taxable = subtotal - discount
-4. Tax = taxable × (tax1 + tax2 + tax3) / 100
-5. Shipping (from module field)
-6. Adjustment (from module field)
-7. Grand total = taxable + tax + shipping + adjustment
+1. Line total = quantity × listprice
+2. Line discount = line total × discount_percent / 100 OR discount_amount
+3. Taxable = line total − line discount
+4. Line tax = taxable × (sum of the line's tax columns) / 100 (individual tax mode) — or group tax on the pre-tax total
+5. Shipping (`hdnS_H_Amount` field → `s_h_amount` column)
+6. Adjustment (`txtAdjustment` field → `adjustment` column)
+7. Grand total (`hdnGrandTotal` field → `total` column)
 
 **Currency support:**
-- Store `conversion_rate` in main module table
-- All amounts stored in base currency
-- Convert on display using stored rate
+- `currency_id` + `conversion_rate` are stored on the main module table
+- Amounts are stored in the **record's own currency**; reports convert to base by dividing by the record's `conversion_rate`
+- The base currency row in `vtiger_currency_info` has `defaultid = '-11'` (varchar)
 
 **Tax support:**
-- Reuse `vtiger_inventorytaxinfo` table
-- Multiple tax rates per line item
-- Compound or simple tax calculation
+- Reuse `vtiger_inventorytaxinfo` (product taxes) / `vtiger_shippingtaxinfo` (shipping)
+- Each active tax maps to a `taxN` column on `vtiger_inventoryproductrel`
 
 ## Critical Pitfalls
 
-1. **MUST extend Inventory classes** — no standalone inventory modules
-2. **vtiger_inventoryproductrel shared** — use `id` column, not crmid
-3. **sequence_no for order** — preserve line item sequence
-4. **Store conversion_rate** — currency changes don't affect historical records
-5. **Reuse tax logic** — don't recreate tax calculations
-6. **Batch line items** — save all at once, not one-by-one
-7. **Idempotent delete** — clear old line items before re-saving
+1. **Models extend `Inventory_*`; the entity extends `CRMEntity`** — there is no `Inventory` entity class
+2. **`lineitem_id` is the PK**; `id` is the parent crmid (many rows per record)
+3. **Save line items through `saveInventoryProductDetails()` / `saveWithItems()`** — never raw DELETE + INSERT (skips stock + subproducts)
+4. **`SaveAjax` / mass edit do NOT re-save line items** — `save_module()` skips them for those actions
+5. **sequence_no for order** — preserve line item sequence
+6. **Store conversion_rate** — currency changes don't affect historical records
+7. **Reuse tax logic** — `getAllTaxes()` / `getProductTaxes()`, don't recreate tax calculations
+8. **Custom SQL goes in the module's Data helper**, not in Record/Module models (see `module` skill)
 
 ## Reference Files
 
-- [Inventory Inheritance](references/inventory-inheritance.md) — Complete module structure guide
+- [Inventory Inheritance](references/inventory-inheritance.md) — entity, models, views, save flow with real code
 
-## Quick Example
+## Exemplars
 
-```php
-// Record Model
-class CustomOrder_Record_Model extends Inventory_Record_Model {
+Not authored by the preferred owners — core code, read it to learn the API:
 
-    public function getLineItems(): array {
-        global $adb;
-        $sql = "SELECT * FROM vtiger_inventoryproductrel
-                WHERE id = ? ORDER BY sequence_no";
-        $result = $adb->pquery($sql, [$this->getId()]);
-
-        $items = [];
-        while ($row = $adb->fetchByAssoc($result)) {
-            $items[] = $row;
-        }
-        return $items;
-    }
-
-    public function calculateTotals(): array {
-        $items = $this->getLineItems();
-        $subtotal = 0;
-
-        foreach ($items as $item) {
-            $subtotal += $item['quantity'] * $item['listprice'];
-        }
-
-        return ['subtotal' => $subtotal];
-    }
-}
-```
-
-## Exemplars (PENDING REVIEW by user)
-
-> ⚠️ Chưa tìm được exemplar thuần Tín Bùi/Tùng Nguyễn cho domain này — file dưới là code tác giả khác, dùng tạm đến khi user chỉ định file chuẩn.
-
-- Inventory record model (line items): `modules/Inventory/models/Record.php`
+- Inventory record model (line items, `getProducts()`, `saveWithItems()`): `modules/Inventory/models/Record.php`
 - Ajax inventory: `modules/Inventory/actions/BasicAjax.php`
 
 ## Verify
@@ -260,5 +150,5 @@ class CustomOrder_Record_Model extends Inventory_Record_Model {
 ```bash
 # Tạo SalesOrder/Invoice test qua UI với >=2 line item + tax + discount
 # Check tổng tiền các tầng: line total, subtotal, tax, grand total khớp tay tính
-mysql <db> -e "SELECT * FROM vtiger_inventoryproductrel WHERE id=<crmid>"
+mysql <db> -e "SELECT lineitem_id, sequence_no, productid, quantity, listprice, tax1 FROM vtiger_inventoryproductrel WHERE id=<crmid> ORDER BY sequence_no"
 ```

@@ -16,7 +16,7 @@ Every subagent prompt should include:
 - acceptance criteria
 - constraints
 - work context path
-- reports path, normally `{work_context}/plans/reports/`
+- reports path, normally `.omp/plans/<ticket-id>-<slug>/reports/`
 
 If the shell CWD differs from the primary project, use the primary project paths.
 
@@ -42,5 +42,3 @@ Concerns/Blockers: optional
 ```
 
 Handle `BLOCKED` and `NEEDS_CONTEXT` by changing context, scope, or approach. Do not retry the same failing prompt repeatedly.
-
-For multi-session team work, use `/ck:team` and its skill-local rules.

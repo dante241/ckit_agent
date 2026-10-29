@@ -14,20 +14,22 @@ Common docs:
 
 - `docs/code-standards.md`
 - `docs/system-architecture.md`
-- `docs/project-roadmap.md` or `docs/development-roadmap.md`
-- `docs/project-changelog.md` when present
+- `docs/codebase-summary.md`
+- `docs/project-overview-pdr.md`
+- `CHANGELOG.md` (repo root)
 
 ## Plan Location
 
-Save plans under `plans/<timestamp>-<descriptive-slug>/`.
+Save plans under `.omp/plans/<ticket-id>-<descriptive-slug>/` (same as `primary-workflow.md`).
 
 Use:
 
 ```text
-plans/<slug>/
+.omp/plans/<ticket-id>-<slug>/
   plan.md
-  phase-01-<name>.md
-  reports/
+  todolist.md
+  phase-01-<name>.md   (only when the plan needs phases)
+  reports/             (only when subagents write reports)
 ```
 
 Keep `plan.md` short: status, phases, dependencies, acceptance criteria, and links to phase files.

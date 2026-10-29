@@ -8,7 +8,7 @@ description: "Quản lý feature LỚN nhiều phase, nhiều ngày, xuyên sess
 
 > Chống "đi 1 nẻo": tổng thể + vị trí lưu ở FILE (`agents/planning/<slug>/`), không ở context tạm.
 > Mỗi feature lớn = 1 folder. Loop phase: Discuss → Plan → Execute → Verify → Ship.
-> Execute KHÔNG tự dựng engine riêng — nó FEED engine `engine_*` có sẵn của 8sync (thứ tự phụ thuộc, chặn chồng file, verify-gate, doom-loop guard, commit theo file, worktree đã enforce trong code).
+> Execute KHÔNG tự dựng engine riêng — nó FEED engine `engine_*` có sẵn của 8sync (thứ tự phụ thuộc, chặn chồng file, verify-gate, doom-loop guard, commit theo file, worktree đã enforce trong code). Trong omp các tool này là device `xd://engine_plan`, `xd://engine_ready`, `xd://engine_next`, `xd://engine_verify`, `xd://engine_advance`, `xd://engine_status`, `xd://engine_worktree` (gọi bằng `write` JSON args); skill viết tắt là `engine_*`.
 
 ## Usage
 
@@ -33,7 +33,7 @@ description: "Quản lý feature LỚN nhiều phase, nhiều ngày, xuyên sess
 BẮT BUỘC trước mọi subcommand (trừ `new`) — đọc 3 file vào context NGAY đầu lệnh:
 1. Đọc `agents/planning/ACTIVE.md` dòng đầu (không comment, không blank) → slug active. Trống → báo user chạy `/feature new` hoặc `/feature switch`.
 2. Đọc `agents/planning/<slug>/STATE.md` → frontmatter `active_phase`, `status`, `next_action`, `ticket`, `branch` (ticket/branch có thể trống — không sao).
-3. Đọc `agents/planning/config.json` → giữ trong context cả lệnh: `workflow.*` (parallelization, max_parallel_tasks, review_dimensions, plan_review, code_review, verifier), `paths.*` (planning_root, archive). Thiếu key → dùng default rồi cảnh báo user.
+3. Đọc `agents/planning/config.json` → giữ trong context cả lệnh: `workflow.*` (parallelization, max_parallel_tasks, max_converge_rounds, review_dimensions, plan_review, code_review, verifier), `paths.*` (planning_root, archive). Thiếu key → dùng default rồi cảnh báo user. Key lạ không có trong `templates/config.json` (vd `min_parallel_tasks`) → KHÔNG đọc thay key đúng; cảnh báo user tên key đúng.
 4. **Load `references/feature-rules.md` NGAY** (luật xuyên suốt mọi subcommand: R1 resolve config→literal, R3 2-lớp load skill, R5 AC discipline, R6 guardrail, R7 codebase anchor, R8 commit, R10 code-intelligence FIRST, R12 nguồn yêu cầu/đặc tả ngoài + `scripts/coverage.py`, R13 chèn phase, R14 đặc tả đổi, R15 user chốt ≠ đề xuất, R16 bản đồ kiến thức `docs/knowledge/`). Reference từng subcommand chỉ thêm bước RIÊNG, KHÔNG lặp luật này.
 5. Dispatch theo bảng:
 

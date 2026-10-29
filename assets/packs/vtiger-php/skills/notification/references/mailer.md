@@ -2,224 +2,107 @@
 
 ## Two-Layer Architecture
 
-**Layer 1:** `include/Mailer.php` — Static facade with clean API
-**Layer 2:** `include/utils/Vtiger_Mailer.php` — PHPMailer wrapper with queue
+- **Layer 1:** `include/Mailer.php` — static facade `Mailer::send()` / `Mailer::sendEmail()` (not autoloaded: `require_once('include/Mailer.php');`)
+- **Layer 2:** `vtlib/Vtiger/Mailer.php` — `Vtiger_Mailer` (PHPMailer wrapper): SMTP config from `vtiger_systems` (`server_type = 'email'`), queueing, `dispatchQueue()`
 
 ## Mailer::send() — Template-based Email
 
+Real signature (`include/Mailer.php:21`):
+
 ```php
-Mailer::send(
-    bool $immediately = false,      // false = queue, true = send now
-    array $receivers = [],          // ['email' => 'contactId']
-    int $templateId = 0,            // Email template ID from vtiger_emailtemplates
-    array $variables = [],          // ['customer_name' => 'John'] for %customer_name%
-    string $cc = '',                // 'cc1@ex.com,cc2@ex.com'
-    string $bcc = '',               // 'bcc1@ex.com,bcc2@ex.com'
-    array $attachments = [],        // ['/full/path/file.pdf']
-    array $parentIds = [],          // [123, 456] related record IDs
-    string $sender = ''             // Override sender (from template otherwise)
-): bool
+static function send($immediately, $mainReceivers, $templateId, $variables = [], $ccReceivers = [], $bccReceivers = [], $attachments = [], $parentIds = [], $sender = [])
 ```
 
-**Example:**
-```php
-Mailer::send(
-    false,                                          // Queue for later
-    ['customer@example.com' => 123],               // Send to contact 123
-    5,                                              // Template ID 5
-    ['customer_name' => 'John', 'order_id' => 'SO-001'], // Variables
-    'manager@company.com',                          // CC
-    '',                                             // No BCC
-    ['/var/www/invoices/INV-001.pdf'],             // Attachment
-    [456],                                          // Related to record 456
-    'sales@company.com'                             // Custom sender
-);
-```
+| Param | Shape |
+|---|---|
+| `$immediately` | `true` = send now over SMTP, `false` = queue (`vtiger_mailer_queue` + CPQueue task) |
+| `$mainReceivers` / `$ccReceivers` / `$bccReceivers` | list of `['name' => 'Full Name', 'email' => 'a@b.vn']` — a receiver with empty `name` or invalid `email` is **silently skipped** (`Mailer.php:76`) |
+| `$templateId` | `EmailTemplates` record id; subject/body are `decodeUTF8`-ed from it |
+| `$variables` | `['key' => 'value']` → replaces `%key%` in subject and body |
+| `$attachments` | list of `['name' => 'Report.xls', 'path' => '/abs/or/root-relative/path']` |
+| `$parentIds` | CRM record ids; when non-empty an `Emails` log record is saved and a tracking pixel is appended |
+| `$sender` | `['email' => ..., 'name' => ...]`; empty → `getSystemEmailAddress()` (org name + system from-address) |
+
+Returns `sendEmail()`'s array, or `false` when the template is missing or an exception is thrown.
 
 ## Mailer::sendEmail() — Custom Content
 
-```php
-Mailer::sendEmail(
-    bool $immediately = false,
-    array $receivers = [],
-    string $subject = '',           // Email subject
-    string $body = '',              // HTML body
-    array $variables = [],          // Variable replacement in subject/body
-    string $cc = '',
-    string $bcc = '',
-    array $attachments = [],
-    array $parentIds = [],
-    string $sender = '',
-    string $scheduleSendTime = ''   // 'Y-m-d H:i:s' for scheduled send
-): bool
-```
-
-**Example:**
-```php
-Mailer::sendEmail(
-    true,                                           // Send immediately
-    ['customer@example.com' => 123],
-    'Your order has been shipped',                  // Subject
-    '<p>Hello %customer_name%,</p><p>Order %order_id% shipped.</p>', // HTML body
-    ['customer_name' => 'John', 'order_id' => 'SO-001'],
-    '',
-    '',
-    [],
-    [456],
-    'no-reply@company.com',
-    '2026-02-10 14:30:00'                          // Schedule for later
-);
-```
-
-## Internal Flow
-
-1. **Create Vtiger_Mailer instance**
-2. **Load SMTP configuration** from `vtiger_systems` table
-3. **Set recipients** (TO, CC, BCC)
-4. **Variable replacement** — `%key%` → value in subject/body
-5. **decodeUTF8** — handle Vietnamese characters
-6. **Tracking pixel** — inject if tracking enabled
-7. **Queue or send immediately**
-8. **Log to vtiger_mailer_queue**
-
-## Queue System
-
-**Tables:**
-- `vtiger_mailer_queue` — pending emails
-- `vtiger_mailer_queue_log` — sent/failed log
-
-**Queue processing:**
-```php
-// Cron job calls
-Mailer::dispatchQueue(int $limit = 100): void
-```
-
-**Retry logic:**
-- Max 3 attempts
-- Exponential backoff (5min, 15min, 1hr)
-- Failed after 3 attempts → mark as failed
-
-## Template Variables
-
-**Format:** `%variable_name%`
-
-**Common variables:**
-- `%customer_name%` — Customer name
-- `%order_id%` — Order reference
-- `%invoice_number%` — Invoice number
-- `%company_name%` — Company name
-- `%user_name%` — User name
-- `%current_date%` — Current date
-
-**In template body:**
-```html
-<p>Dear %customer_name%,</p>
-<p>Your order %order_id% has been confirmed.</p>
-<p>Total: %total_amount%</p>
-```
-
-**Pass variables:**
-```php
-Mailer::send(false, $receivers, $templateId, [
-    'customer_name' => 'John Doe',
-    'order_id' => 'SO-001',
-    'total_amount' => '$1,250.00',
-]);
-```
-
-## Real Codebase Examples
-
-### Example 1: Order Confirmation
+Real signature (`include/Mailer.php:58`):
 
 ```php
-// modules/SalesOrder/actions/Confirm.php
-public function sendConfirmationEmail(int $recordId): bool {
-    $record = Vtiger_Record_Model::getInstanceById($recordId, 'SalesOrder');
-    $contactId = (int) $record->get('contact_id');
+static function sendEmail($immediately, $mainReceivers, $subject, $body, $variables = [], $ccReceivers = [], $bccReceivers = [], $attachments = [], $parentIds = [], $sender = [], $scheduleSendTime = null, $inReplyTo = '', $references = '')
+```
 
-    if (empty($contactId)) return false;
+- Same receiver/attachment/sender shapes as `send()`.
+- `$scheduleSendTime` (`'Y-m-d H:i:s'`) is stored on the queue row; only honoured when `$immediately = false` (the `ProcessEmailQueue` job skips rows whose `scheduled_send_time` is in the future).
+- `$inReplyTo` / `$references` set the `In-Reply-To` / `References` headers (threading) and are saved on the email log.
+- Returns `['success' => bool|null, 'email_log_id' => int|null]`. `email_log_id` is only set when `$parentIds` is non-empty; `success` is `null` when no SMTP server is configured (`Vtiger_Mailer::Send()` returns early).
 
-    $contact = Vtiger_Record_Model::getInstanceById($contactId, 'Contacts');
-    $email = (string) $contact->get('email');
+## Examples
 
-    if (empty($email)) return false;
+Template email, sent now (pattern from `forgotPassword.php:65-78`):
 
-    return Mailer::send(
-        false,
-        [$email => $contactId],
-        7,  // Order confirmation template
-        [
-            'customer_name' => $contact->get('firstname') . ' ' . $contact->get('lastname'),
-            'order_number' => $record->get('subject'),
-            'order_date' => $record->get('createdtime'),
-            'total_amount' => $record->get('hdnGrandTotal'),
-        ],
-        '',
-        '',
-        [],
-        [$recordId],
-        ''
-    );
+```php
+require_once('include/Mailer.php');
+
+$mainReceivers = [
+	['name' => $contactName, 'email' => $contactEmail],
+];
+$variables = [
+	'customer_name' => $contactName,
+	'order_no' => $orderNo,
+];
+$result = Mailer::send(true, $mainReceivers, $templateId, $variables);
+
+if (empty($result['success'])) {
+	saveLog('PLATFORM', '[Order] Send confirmation email failed', ['record_id' => $recordId]);
 }
 ```
 
-### Example 2: Workflow Task
+Custom content, queued, with CC, attachment, record log and custom sender:
 
 ```php
-// modules/Workflow/tasks/VTEmailTask.php
-public function doTask(Vtiger_Record_Model $record): void {
-    $emailField = $this->emailfield;
-    $email = (string) $record->get($emailField);
+require_once('include/Mailer.php');
 
-    if (empty($email)) return;
+$mainReceivers = [['name' => $contactName, 'email' => $contactEmail]];
+$ccReceivers = [['name' => $managerName, 'email' => $managerEmail]];
+$attachments = [['name' => 'Invoice.pdf', 'path' => $pdfPath]];
+$sender = ['email' => 'sales@company.vn', 'name' => 'Sales Team'];
 
-    Mailer::send(
-        false,
-        [$email => $record->getId()],
-        (int) $this->template,
-        $this->getVariables($record),
-        '',
-        '',
-        $this->getAttachments($record),
-        [$record->getId()],
-        ''
-    );
-}
-
-protected function getVariables(Vtiger_Record_Model $record): array {
-    $vars = [];
-    foreach ($record->getData() as $field => $value) {
-        $vars[$field] = (string) $value;
-    }
-    return $vars;
-}
+$result = Mailer::sendEmail(false, $mainReceivers, 'Order %order_no% shipped', $body, ['order_no' => $orderNo], $ccReceivers, [], $attachments, [$recordId], $sender);
 ```
 
-## Email Log and Tracking
+Real callers: `forgotPassword.php:76` (`send`, immediate), `modules/CPLeaving/helpers/Logic.php:94,176` (`send`, queued + CC), `modules/CPAutomaticTaskList/helpers/Logic.php:37-53` (`sendEmail` + document attachments + parentIds), `modules/CPEventTicket/helpers/Logic.php:24` (`sendEmail` with cc/bcc/attachments/parentIds/sender).
 
-**vtiger_mailer_queue table:**
-- `id` — queue entry ID
-- `receivers` — JSON array of receivers
-- `subject` — email subject
-- `body` — HTML body
-- `status` — pending/sent/failed
-- `created_at` — queue time
-- `sent_at` — sent time
-- `attempts` — retry count
+## Internal Flow (`sendEmail`)
 
-**Tracking pixel:**
-```html
-<!-- Injected automatically if tracking enabled -->
-<img src="https://crm.example.com/track.php?id=123" width="1" height="1">
-```
+1. `new Vtiger_Mailer()` (loads SMTP from `vtiger_systems`), `IsHTML(true)`
+2. Sender: `$sender` or `getSystemEmailAddress()` → `ConfigSenderInfo($sender['email'], $sender['name'])`
+3. Add TO/CC/BCC (skips entries without `name` or with invalid `email`)
+4. Replace `%key%` in subject (tags stripped) and body
+5. If `$parentIds`: `saveEmailLog()` creates an `Emails` record + `Vtiger_Functions::getTrackImageContent()` pixel
+6. Attachments, inline base64 images → CID, threading headers
+7. `$mail->Send($immediately, false, $emailLogId)`
+
+## Queue
+
+`Vtiger_Mailer::Send(false, ...)` → `__AddToQueue()` (`vtlib/Vtiger/Mailer.php:239`):
+
+- `vtiger_mailer_queue` — id, fromname, fromemail, mailer, content_type, subject, body, relcrmid, failed, failreason, attempt_count, scheduled_send_time, in_reply_to, reference_ids, email_id
+- `vtiger_mailer_queueinfo` — id, name, email, type (`TO`/`CC`/`BCC`/`RPLYTO`)
+- `vtiger_mailer_queueattachments` — id, path, name, encoding, type
+- Adds a CPQueue task `ProcessEmailQueue` with `$emailQueueConfig['max_attempts']` (`config_override.php`, default 5)
+
+Dispatch: `modules/CPQueue/Jobs/ProcessEmailQueue.php` sends one queued row (driven by `cron/modules/Vtiger/ProcessEmailQueue.service` → `EmailQueue` process). On success the row is removed (`Vtiger_Mailer::removeQueue()`); on failure `failed=1`, `failreason`, `attempt_count+1` until `attempt_count + 1 >= max_attempts`, then the row is removed. There is no backoff schedule — retries happen on the next queue run.
+
+`Vtiger_Mailer::dispatchQueue(Vtiger_Mailer_Listener $listener = null)` (`vtlib/Vtiger/Mailer.php:314`) is the legacy batch sender (`batch_limit` rows, same `max_attempts` rule); still called by Import (`modules/Import/actions/Data.php:1334`).
 
 ## Critical Pitfalls
 
-1. **send(false) queues / send(true) immediate** — check server load
-2. **%key% format** — not $key$ or {key}
-3. **decodeUTF8 template** — Vietnamese/UTF-8 encoding
-4. **SMTP from vtiger_systems** — never hardcode SMTP config
-5. **parentIds for tracking** — link emails to records
-6. **Attachments full path** — relative paths fail
-7. **Queue processing** — ensure cron job running
-8. **receivers format** — `['email' => customerId]` for logging
+1. **Receiver shape** — `[['name' => ..., 'email' => ...]]`; `['email' => id]` or a missing `name` sends to nobody without error
+2. **Sender shape** — array `['email', 'name']`, never a string
+3. **Return is an array** — check `$result['success']`, not `$result === true`
+4. **`%key%` format** — not `$key$` or `{key}`
+5. **Queued mail needs the CPQueue worker / cron** running
+6. **Attachments** — each item needs `path` (readable from the web root) and `name`
+7. **SMTP comes from `vtiger_systems`** — never hardcode SMTP config

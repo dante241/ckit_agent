@@ -21,11 +21,11 @@ Activate this skill when:
 
 ## Golden Rules
 
-1. **Global DB Instance**: Always use `global $adb;` (NOT `PearDatabase::getInstance()`)
+1. **DB Instance**: `global $adb;` hoặc `PearDatabase::getInstance()` — cả hai cùng trả singleton; theo pattern file đang sửa
 2. **Parameterized Queries**: ALWAYS use `pquery()` with params array (prevents SQL injection)
 3. **UTF-8 Decoding**: ALWAYS call `decodeUTF8()` on `fetchByAssoc()` results
-4. **Soft Delete**: ALWAYS filter `deleted = 0` when joining vtiger_crmentity
-5. **Transactions**: Use `startTransaction()`, `completeTransaction()`, `rollbackTransaction()`
+4. **Soft Delete / N+1 / index**: theo `rule://security-rules` + `rule://performance-rules` (JOIN `vtiger_crmentity` luôn kèm `deleted = 0`)
+5. **Transactions**: `startTransaction()` … `completeTransaction()`; KHÔNG có `rollbackTransaction()` — muốn rollback thì `$adb->database->FailTrans()` trước `completeTransaction()` (lỗi SQL trong transaction cũng tự đánh dấu fail)
 6. **Deprecated — KHÔNG dùng** (nguồn DevKit): `query()` (SQL injection), `limitQuery()` (dùng pquery + LIMIT x,y). INSERT vào bảng dùng crmid-style id KHÔNG tự tăng → lấy id bằng `$adb->getUniqueID('<table>')` trước khi INSERT (bảng AUTO_INCREMENT thường thì `getLastInsertID()`).
 7. **DB access qua layer**: KHÔNG query trực tiếp trong Action/View/EntryPoint — đi qua Data helper / Model / Utils (xem skill `action` mục Controller Mỏng).
 
@@ -45,16 +45,17 @@ $row = decodeUTF8($row);
 // Get row count
 $numRows = $adb->num_rows($result);
 
-// Helper for INSERT data preparation
-$data = $adb->sql_insert_data($tableName, $dataArray);
+// Build a literal INSERT (values already quoted, NO placeholders) — run with pquery($sql) without params
+$sql = $adb->sql_insert_data($tableName, $dataArray);
 
 // Get affected rows (UPDATE/DELETE)
 $affected = $adb->getAffectedRowCount($result);
 
-// Transactions
+// Transactions (no rollbackTransaction(); FailTrans() forces rollback on complete)
 $adb->startTransaction();
+$adb->database->FailTrans();
+$failed = $adb->hasFailedTransaction(); // only meaningful before completeTransaction()
 $adb->completeTransaction();
-$adb->rollbackTransaction();
 
 // Get last inserted ID
 $id = $adb->getLastInsertID();
@@ -84,7 +85,7 @@ $marks = generateQuestionMarks($values);
 
 - Helper Data (SQL/pquery chuẩn, tung.nguyen 7/7): `modules/CPMasterPlan/helpers/Data.php`
 - Helper Logic (tung.nguyen 5/5): `modules/CPMasterPlan/helpers/Logic.php`
-- List không N+1 (getRecordFromArray): xem memory `reference_vtiger_listview_record_from_row`
+- List không N+1: dựng record model từ row đã query bằng `$moduleModel->getRecordFromArray($row)` (`modules/Vtiger/models/Module.php:399`, dùng ở `modules/Vtiger/models/ListView.php:315`) thay vì `getInstanceById()` trong vòng lặp
 
 ## Verify
 

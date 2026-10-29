@@ -42,25 +42,19 @@ WHERE e.deleted = 0 AND a.accountname LIKE 'Test%';
 
 ### When to Add Indexes
 
+Core tables already carry most useful indexes (e.g. `vtiger_contactdetails.contactdetails_accountid_idx`, `vtiger_crmentity.crmentity_setype_deleted_createdtime_idx`, `vtiger_crmentity_modifiedtimeidx`). ALWAYS check before adding, and add from a migration (`addIndexIfMissing`), never ad hoc:
+
 ```sql
--- Always index foreign keys
-ALTER TABLE vtiger_contactdetails ADD INDEX idx_accountid (accountid);
+SHOW INDEX FROM vtiger_campaign;
 
--- Index WHERE clause columns
-ALTER TABLE vtiger_crmentity ADD INDEX idx_setype_deleted (setype, deleted);
-
--- Index ORDER BY columns
-ALTER TABLE vtiger_crmentity ADD INDEX idx_modifiedtime (modifiedtime);
-
--- Index JOIN conditions
+-- Index a JOIN/WHERE column only when SHOW INDEX has nothing covering it
 ALTER TABLE vtiger_campaign ADD INDEX idx_social_campaign_id (social_campaign_id);
 ```
 
 ### Composite Index Leftmost Prefix Rule
 
 ```sql
--- Create composite index
-ALTER TABLE vtiger_crmentity ADD INDEX idx_setype_deleted_created (setype, deleted, createdtime);
+-- Existing composite index: crmentity_setype_deleted_createdtime_idx (setype, deleted, createdtime)
 
 -- These queries use the index:
 WHERE setype = 'Accounts'
@@ -102,15 +96,7 @@ $sql = "SELECT a.accountid, a.accountname, a.website
 
 ### Always JOIN with deleted = 0
 
-```php
-// BAD - returns deleted records
-$sql = "SELECT * FROM vtiger_account WHERE accountid = ?";
-
-// GOOD - filters soft-deleted
-$sql = "SELECT a.* FROM vtiger_account a
-        INNER JOIN vtiger_crmentity e ON e.crmid = a.accountid
-        WHERE e.deleted = 0 AND a.accountid = ?";
-```
+See `rule://security-rules` / `rule://performance-rules` (soft delete, N+1, LIMIT): every JOIN to `vtiger_crmentity` filters `deleted = 0`.
 
 ### Use LIMIT for Pagination
 
@@ -246,13 +232,14 @@ try {
         $id = generateRecordId();
         $adb->pquery($sql, [$id, $record['name'], $record['website']]);
     }
-
-    $adb->completeTransaction();
 }
-catch (Exception $e) {
-    $adb->rollbackTransaction();
+catch (Throwable $e) {
+    // PearDatabase has no rollbackTransaction(); FailTrans() makes completeTransaction() roll back
+    $adb->database->FailTrans();
     error_log('Batch insert failed: ' . $e->getMessage());
 }
+
+$adb->completeTransaction();
 ```
 
 ## Caching Strategies
@@ -260,25 +247,24 @@ catch (Exception $e) {
 ### Redis Caching
 
 ```php
-// Use RedisUtils for caching
+// RedisUtils is a singleton; get/set/delete are instance methods (no setex/del)
 require_once 'include/utils/RedisUtils.php';
 
+$redis = RedisUtils::getInstance();
 $cacheKey = 'accounts:count:' . $userId;
 $ttl = 3600; // 1 hour
 
-// Try cache first
-$count = RedisUtils::get($cacheKey);
+// Try cache first; get() returns null on miss or when Redis is down
+$count = $redis->get($cacheKey);
 
-if ($count === false) {
-    // Cache miss - query database
+if ($count === null) {
     global $adb;
     $sql = "SELECT COUNT(*) FROM vtiger_account a
             INNER JOIN vtiger_crmentity e ON e.crmid = a.accountid
             WHERE e.deleted = 0 AND e.smownerid = ?";
     $count = $adb->getOne($sql, [$userId]);
 
-    // Store in cache
-    RedisUtils::setex($cacheKey, $ttl, $count);
+    $redis->set($cacheKey, $count, $ttl);
 }
 
 return $count;
@@ -313,7 +299,7 @@ public function save() {
 
     // Invalidate cache
     $cacheKey = 'accounts:count:' . $this->get('assigned_user_id');
-    RedisUtils::del($cacheKey);
+    RedisUtils::getInstance()->delete($cacheKey);
 }
 ```
 
@@ -322,11 +308,14 @@ public function save() {
 ### Enable SQL Logging
 
 ```php
-// In config file or debug mode
-$GLOBALS['sql_logging'] = true;
+// config.inc.php — ADOdb LogSQL (statements + timing into the adodb_logsql table)
+$dbconfig['log_sql'] = true;
 
-// All queries logged to logs/sqltime.log
+// config.performance.php — per-query timing + caller into vtiger_sqltimelog
+'SQL_LOG_INCLUDE_CALLER' => true,
 ```
+
+Turn both back off after debugging: they add a write per query.
 
 ### MySQL Slow Query Log
 
@@ -384,7 +373,7 @@ $sql = "SELECT COUNT(*) FROM vtiger_campaign
 ```php
 $sql = "SELECT COUNT(*) FROM vtiger_campaign
         WHERE campaignname LIKE 'promo%'"; // Prefix search uses index
-// Add: ALTER TABLE vtiger_campaign ADD INDEX idx_campaignname (campaignname(50));
+// Index already exists: campaign_campaignname_idx (campaignname) — check SHOW INDEX first
 // EXPLAIN: type=range, rows=50
 ```
 

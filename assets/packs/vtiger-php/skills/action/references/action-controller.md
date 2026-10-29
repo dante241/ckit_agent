@@ -81,8 +81,8 @@ class {Module}_{ActionName}_Action extends Vtiger_Action_Controller {
                 'data' => $result,
                 'record_id' => $recordId
             ]);
-
-        } catch (Exception $e) {
+        }
+        catch (Throwable $e) {
             // Error response
             $response->setError($e->getMessage());
         }
@@ -144,8 +144,8 @@ public function process(Vtiger_Request $request) {
             'success' => true,
             'data' => $result
         ]);
-
-    } catch (Exception $e) {
+    }
+    catch (Throwable $e) {
         $response->setError($e->getMessage());
     }
 
@@ -169,10 +169,10 @@ $response->setResult([
 // Set error
 $response->setError('Error message');
 
-// Set error with code
-$response->setError('Error message', 'ERROR_CODE');
+// Set error with code: signature is setError($code, $message = null, $title = null)
+$response->setError('ERROR_CODE', 'Error message');
 
-// Emit (send JSON and exit)
+// Emit (send JSON) — does NOT exit, so `return;` right after it
 $response->emit();
 ```
 
@@ -201,9 +201,9 @@ if (!$currentUser->isAdminUser()) {
 }
 
 // Check user ID
-$userId = $currentUser->getId();
+$userId = (int) $currentUser->getId();
 
-// Check if user owns record
+// Check if user owns record (getId() returns the stored value, cast both sides)
 $assignedUserId = (int) $record->get('assigned_user_id');
 if ($assignedUserId !== $userId && !$currentUser->isAdminUser()) {
     throw new AppException('You can only modify your own records');
@@ -223,8 +223,8 @@ try {
         'success' => true,
         'data' => $result
     ]);
-
-} catch (Exception $e) {
+}
+catch (Throwable $e) {
     // Log error
     error_log('CPGoal Action Error: ' . $e->getMessage());
 
@@ -260,7 +260,8 @@ public function process(Vtiger_Request $request) {
             try {
                 $result = $this->processRecord((int) $recordId);
                 $results[] = $result;
-            } catch (Exception $e) {
+            }
+            catch (Exception $e) {
                 $errors[$recordId] = $e->getMessage();
             }
         }
@@ -272,8 +273,8 @@ public function process(Vtiger_Request $request) {
             'results' => $results,
             'errors' => $errors
         ]);
-
-    } catch (Exception $e) {
+    }
+    catch (Throwable $e) {
         $response->setError($e->getMessage());
     }
 
@@ -315,8 +316,8 @@ public function process(Vtiger_Request $request) {
             'file_path' => $uploadPath . $fileName,
             'file_name' => $fileName
         ]);
-
-    } catch (Exception $e) {
+    }
+    catch (Throwable $e) {
         $response->setError($e->getMessage());
     }
 
@@ -326,10 +327,4 @@ public function process(Vtiger_Request $request) {
 
 ## Critical Rules
 
-1. **Always try-catch** in process method
-2. **Type cast all input** from $request
-3. **checkPermission throws AppException** (not setError)
-4. **$response->emit() calls exit** — add return; after for clarity
-5. **Use Logic helper** for business logic, not direct DB in Action
-6. **Early return** for validation failures
-7. **vtranslate** for user-facing messages
+See SKILL.md → Critical Pitfalls (emit() does not exit, `catch (Throwable)` at the entry point, AppException in checkPermission, thin controller).

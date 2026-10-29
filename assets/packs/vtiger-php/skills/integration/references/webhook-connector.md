@@ -7,8 +7,8 @@
 Webhook connectors receive callbacks from external services (callcenter, social, IoT).
 
 - **Base class:** extends `Vtiger_EntryPoint`
-- **URL:** `entrypoint.php?name=<ConnectorName>`
-- **File:** `include/Webhooks/<Provider>Connector.php`
+- **URL:** `webhook.php?name=<ConnectorName>&secret_key=<$secretKey>` — `webhook.php` rejects requests without the matching system `secret_key` (except connectors in its `$specialConnectors`, currently `VCSConnector`)
+- **File:** `include/Webhooks/<Provider>Connector.php` (`entrypoint.php` does NOT load this dir)
 
 ## Connector Pattern
 
@@ -25,7 +25,7 @@ require_once('include/utils/CallCenterUtils.php');
 
 class StringeeConnector extends Vtiger_EntryPoint {
 
-    public function process(Vtiger_Request $request): void {
+    public function process(Vtiger_Request $request) {
         CallCenterUtils::checkConfig();
 
         $request = CallCenterUtils::getRequest();
@@ -45,22 +45,26 @@ class StringeeConnector extends Vtiger_EntryPoint {
 }
 ```
 
-## 38 Connectors in `include/Webhooks/`
+## Connectors in `include/Webhooks/`
 
-**Call Center (16):**
+Run `ls include/Webhooks/` for the current set. Grouped (not exhaustive):
+
+**Call Center:**
 StringeeConnector, CloudFoneConnector, CloudCALLConnector, OmiCallConnector, VoIP24HConnector, Tel4VNConnector, SouthTelecomConnector, FPTTelecomConnector, CMCTelecomConnector, FreePBXConnector, GrandStreamConnector, VoiceCloudConnector, XorcomConnector, YeaStarConnector, VCSConnector, MiTekConnector
 
-**Social/Chat (5):**
+**Social/Chat:**
 FacebookConnector, ZaloConnector, IndividualZaloConnector, TelegramConnector, TawkConnector
 
-**Other (7):**
-AbenlaConnector, BBHConnector, BankHubConnector, ChatBotAIConnector, HanaConnector, MauticConnector, SunOceanConnector
+**Other:**
+AbenlaConnector, BBHConnector, BankHubConnector, ChatBotAIConnector, EcommerceConnector, HanaConnector, MailboxConnector, MauticConnector, SunOceanConnector, SMSCallback
 
-**IoT/Camera (3):**
+**IoT/Camera:**
 CMCCloudCameraConnector, HanetAICameraConnector, IoTDeviceConnector
 
-**Infrastructure (4):**
+**Infrastructure:**
 BaseBSConnector, DataWarehouseConnector, WebsiteWidgetConnector, OTTCallback
+
+`SocialTestData.php` / `WebhookTestData.php` are test fixtures loaded by `webhook.php` when `test=true`, not connectors.
 
 ## Common Patterns
 

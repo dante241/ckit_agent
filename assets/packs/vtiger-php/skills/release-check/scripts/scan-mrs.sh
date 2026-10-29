@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-OUTPUT_DIR="${1:-agents/release-queue}"
+OUTPUT_DIR="agents/release-queue"
 SINCE=""
 LIMIT=""
 
@@ -34,9 +34,23 @@ RAW_PEND="$OUTPUT_DIR/merged-mrs-chorelease-$TODAY.json"
 RAW="$OUTPUT_DIR/merged-mrs-$TODAY.json"
 SLIM="$OUTPUT_DIR/mrs-slim-$TODAY.json"
 
+# glab returns one page per call: loop pages so >100 merged MRs per label are not dropped
+fetch_label() {
+    local label="$1" out="$2" page=1 chunk count
+    echo '[]' > "$out"
+    while :; do
+        chunk=$(glab mr list --merged --label "$label" --target-branch master --per-page 100 --page "$page" --output json)
+        [[ -z "$chunk" ]] && chunk='[]'
+        count=$(jq 'length' <<< "$chunk")
+        jq -s '.[0] + .[1]' "$out" <(echo "$chunk") > "$out.tmp" && mv "$out.tmp" "$out"
+        [[ "$count" -lt 100 ]] && break
+        page=$((page + 1))
+    done
+}
+
 echo "Scanning merged MRs (target=master) with label 'Dev done' or 'Chờ release'..." >&2
-glab mr list --merged --label "Dev done" --target-branch master --per-page 100 --output json > "$RAW_DEV"
-glab mr list --merged --label "Chờ release" --target-branch master --per-page 100 --output json > "$RAW_PEND"
+fetch_label "Dev done" "$RAW_DEV"
+fetch_label "Chờ release" "$RAW_PEND"
 
 # Merge + dedupe by iid (keep first occurrence)
 jq -s '(.[0] + .[1]) | unique_by(.iid)' "$RAW_DEV" "$RAW_PEND" > "$RAW"

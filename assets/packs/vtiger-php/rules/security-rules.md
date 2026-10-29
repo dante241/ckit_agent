@@ -26,7 +26,7 @@ condition: ".*"
 - [ ] Write Actions call `$request->validateWriteAccess()` (CSRF token `__vtrftk`).
 - [ ] State-changing API routes (POST/PATCH/DELETE) are not reachable without auth (deny-by-default router).
 
-### Authorization (the v1 acceptance bar — permission fidelity)
+### Authorization (permission fidelity)
 - [ ] Module-level: `isPermitted(module, action)` / `checkPermission()` before any read or write.
 - [ ] Record-level (IDOR): `isPermitted(module, 'EditView'|'Delete', $recordId)` **before** `getInstanceById()` mutation.
 - [ ] Field-level: strip/reject fields the profile cannot edit; never write a field the user lacks edit permission for.
@@ -39,10 +39,10 @@ condition: ".*"
 - [ ] Pre-save validation gate returns structured errors (422) **before** touching the model on bad input.
 
 ### Secrets
-- [ ] No secrets (`.env`, API keys, JWT secrets, passwords) in committed code. Secrets live in `config_override.cus.php` (tracked, value NOT committed). Enforced by `pretooluse-protect-secrets.sh`.
+- [ ] No secrets (`.env`, API keys, JWT secrets, passwords) in committed code. Secrets live in `config_override.cus.php` (tracked, value NOT committed). No hook enforces this — check the staged diff.
 - [ ] HMAC/signature code **fails closed** on empty/placeholder secret — never sign with an empty key.
 
-## Cautionary examples (real bugs caught in V1 Phase 3 review)
+## Cautionary examples (real bugs caught reviewing the `/api/v1` router on branch `feature/cloudgo-crm-api-v1`)
 
 - **CR-02 — ACL bypass via duplicate route registration.** A `foreach ($modules as $m)` loop registered the SAME dynamic pattern `POST /{module}` once per module with a per-module permission gate. Router is first-match-wins → only the FIRST module's gate ever fired; users were wrongly 403'd / wrongly allowed. **Rule:** register a dynamic catch-all route ONCE with a baseline gate; do the real per-module/record ACL inside the handler from the resolved request module.
 - **CR-04 — forgeable cursor on empty secret.** `hash_hmac('sha256', $json, $secret)` with `$secret = ''` produces a deterministic signature with a known empty key → attacker forges cursors. **Rule:** fail closed (`throw`) when the signing secret is empty/placeholder; on the decode side, treat empty secret as "reset to page 1", never verify against an empty key.

@@ -1,304 +1,118 @@
-# Zalo ZNS Reference
+# Zalo ZNS / OTT Reference
 
-## Zalo ZNS (Zalo Notification Service)
+Module `CPOTTIntegration` sends OTT messages (Zalo ZNS, Viber, Telegram) from `CPSMSTemplate` templates.
 
-**Use case:** Vietnam market, rich content notifications via Zalo OTT platform
+## Channels and Config
+
+- `CPOTTIntegration_Config_Helper::getChannels()` (`helpers/Config.php:25`) → `Zalo` (Zalo ZNS), `Viber`, `Telegram`; each removed when its license feature is forbidden (`ZaloZNSIntegration`, `ViberOTTIntegration`, `TelegramOTTIntegration`).
+- Per-channel config: `CPOTTIntegration_Config_Helper::getConfig($channel)` → `Settings_Vtiger_Config_Model` category `<channel>_ott_config` (`active_gateway`, `service_url`, `zalo_oa_id`, …).
 
 ## Check Availability
 
-### canSendZaloZNSMsg()
+```php
+if (!CPOTTIntegration_Logic_Helper::canSendZaloZNSMsg()) {
+	// Not licensed (SendMessageViaZaloZNS) or no active Zalo gateway
+}
+```
+
+Siblings: `canSendViberSMsg()` (`SendMessageViaViber`), `canSendTelegramSMsg()` (`SendMessageTelegram`).
+
+## Gateways
+
+`CPOTTIntegration_Gateway_Model` (`models/Gateway.php`) has exactly:
+
+- `getGatewayList($channel)` — every gateway in `modules/CPOTTIntegration/gateways/*.php` supporting the channel
+- `getActiveGateway($channel)` — gateway named by `active_gateway` in the channel config; `null` when none
+- `getGateway($gatewayName, $channel, array $config = [])`
+
+Gateway classes: `CPOTTIntegration_<Name>_Gateway extends CPOTTIntegration_Base_Gateway` (`BaseGateway.php`, itself extends `SMSNotifier_Base_Provider`). Files: `ZaloZNS.php`, `ESMS.php`, `Mitek.php`, `SouthTelecom.php`. `$channelMethodsMapping`: `Zalo` → `sendZaloMsg`, `Viber` → `sendViberMsg`, `Telegram` → `sendTelegramMsg`.
+
+## sendZaloMsg()
+
+Real signature (`gateways/ZaloZNS.php:60`; ESMS/Mitek/SouthTelecom have the same params without `$sendTo`):
+
+```php
+public function sendZaloMsg($message, array $toNumbers, $templateId, array $variablesMapping, $recordId = null, $sender = '', $sendTo = 'phone')
+```
+
+| Param | Meaning |
+|---|---|
+| `$message` | ignored for sending; per recipient it is rebuilt from the template for the log |
+| `$toNumbers` | `['0901234567' => $customerId]` (or `[$zaloUid => $customerId]` when `$sendTo = 'uid'`) |
+| `$templateId` | `CPSMSTemplate` record id; mapped to the Zalo template id by `CPOTTIntegration_Data_Model::getOTTTemplateId()` |
+| `$variablesMapping` | `['$var$' => 'fieldname', ...]` — template var → CRM field, NOT literal values |
+| `$recordId` | when set and different from the customer id, variables are filled from this record instead |
+| `$sender` | Zalo OA id; `ZaloUtils::retrieveAccessToken($sender)` gets the OA token. Valid OAs: `CPOTTIntegration_Data_Model::getZNSSenders()` |
+| `$sendTo` | `'phone'` (business ZNS API) or `'uid'` (OA `message/template` by Zalo user id) |
+
+**Return:** list of `['to', 'id' => tracking id, 'message', 'status' => 'success'|'failed', 'statusmessage', 'customer_id', 'error' => bool]`. It does NOT write `CPSMSOTTMessageLog` — the caller must (or use `SMSNotifier::sendMessage('Zalo', ...)`, which logs).
+
+## Template Data (`CPOTTIntegration_Data_Model`, `models/Data.php`)
+
+- Template content uses `$var$` placeholders (`parseVariables()`).
+- `fillDataForVariables(array $variableMapping, $recordId)` (static) — input `['$var1$' => 'field1']`, output `['$var1$' => 'field1 value']` via `populateTemplateWithRecordData()`; `record_id` is replaced by the record id.
+- `getTemplateContent($templateId, array $variablesData = [])`, `getPreviewContent()`, `getAllTemplates($channel)`, `getZNSTemplatesByOAId($oaId)`, `getOTTTemplateId($templateId)`.
+
+## Example — ZNS with SMS fallback
+
+```php
+require_once('modules/SMSNotifier/SMSNotifier.php');
+
+$variablesMapping = ['$customer_name$' => 'lastname', '$order_no$' => 'salesorder_no'];
+$responses = [];
+
+if (CPOTTIntegration_Logic_Helper::canSendZaloZNSMsg()) {
+	// Logs to CPSMSOTTMessageLog; variables are filled from the customer record
+	$responses = SMSNotifier::sendMessage('Zalo', '', [$phone => $customerId], $znsTemplateId, $variablesMapping, $oaId, $ownerId, [$recordId]);
+}
+
+if ((empty($responses) || !empty($responses[0]['error'])) && SMSNotifier_Logic_Helper::canSendSMSMsg()) {
+	SMSNotifier::sendMessage('SMS', $smsText, [$phone => $customerId], '', [], '', $ownerId, [$recordId]);
+}
+```
+
+Direct gateway call (caller logs itself), as in `modules/CPAutomaticTaskList/helpers/Logic.php:102-117`:
+
+```php
+$ottGateway = CPOTTIntegration_Gateway_Model::getActiveGateway('Zalo');
+
+if ($ottGateway) {
+	$result = $ottGateway->sendZaloMsg('', [$phone => $targetRecord], $templateId, $variablesMapping, $targetRecord, $oaId);
+}
+```
+
+Real callers: `modules/CPAutomaticTaskList/helpers/Logic.php:116`, `modules/CPEventPRMessageLog/helpers/Logic.php:214`, `modules/CPOTTIntegration/workflow/VTZaloOTTMessageTask.php:140`, `modules/SMSNotifier/actions/MassSaveAjax.php:99` (via `sendMessage`).
+
+## Workflow Task — `VTZaloOTTMessageTask`
+
+`modules/CPOTTIntegration/workflow/VTZaloOTTMessageTask.php`, fields: `sender`, `template_id`, `send_to`, `phone_fields`, `uid_fallback_to_phone`, `variables_mapping`, `send_sms_when_workflow_zns_failed`, `sms_template_id`, `sms_variables_mapping`. Core of `doTask($entity)` (`:38`):
 
 ```php
 if (!CPOTTIntegration_Logic_Helper::canSendZaloZNSMsg()) {
-    // Fallback to SMS
-    SMSNotifier::sendMessage(...);
-    return;
+	VTTask::saveLog('[VTZaloOTTMessageTask::doTask] No active gateway for Zalo ZNS or sending Zalo ZNS is not supported in this package!');
+	return;
+}
+
+$activeGateway = CPOTTIntegration_Gateway_Model::getActiveGateway('Zalo');
+// ... build $toNumbers from phone_fields (or Zalo UID with phone fallback) ...
+$result = $activeGateway->sendZaloMsg('', $toNumbers, $this->template_id, $this->variables_mapping, $recordId, $this->sender, $sendToForGateway);
+
+foreach ($result as $item) {
+	CPSMSOTTMessageLog_Record_Model::addNew($logData);
+
+	if ($sendToForGateway == 'phone' && $this->send_sms_when_workflow_zns_failed && $item['status'] == $activeGateway::MSG_STATUS_FAILED) {
+		$this->sendSMSFallback($item['to'], $item['customer_id'], $this->sms_template_id, $this->sms_variables_mapping, $recordId, $recordModule);
+	}
 }
 ```
 
-**Checks:**
-1. Zalo OTT feature enabled in license
-2. Active Zalo gateway configured
-3. Server configuration valid
-
-## Get Active Gateway
-
-```php
-$gateway = CPOTTIntegration_Gateway_Model::getActiveGateway('Zalo');
-
-if (empty($gateway)) {
-    // No gateway configured, fallback to SMS
-    return false;
-}
-```
-
-**Gateway model methods:**
-- `getActiveGateway(string $channel)` — Get active gateway for channel
-- `sendZaloMsg(...)` — Send ZNS message
-- `getTemplates()` — Get available ZNS templates
-- `isConfigured()` — Check if gateway configured
-
-## Send ZNS Message
-
-```php
-$gateway->sendZaloMsg(
-    string $msg,                    // Message content (fallback if template fails)
-    array $toNumbers,               // ['0901234567' => 'contactId']
-    string $templateId,             // ZNS template ID from Zalo
-    array $variablesMapping,        // Template variables
-    int $recordId,                  // Related record ID
-    string $sender = ''             // Sender name (optional)
-): bool
-```
-
-**Example:**
-```php
-$gateway = CPOTTIntegration_Gateway_Model::getActiveGateway('Zalo');
-
-$result = $gateway->sendZaloMsg(
-    'Fallback SMS message',                         // Fallback
-    ['0901234567' => 123],                         // Recipients
-    '123456',                                       // ZNS template ID
-    [
-        'customer_name' => 'John Doe',
-        'order_number' => 'SO-001',
-        'order_date' => '2026-02-10',
-        'total_amount' => '1,250,000đ',
-    ],
-    456,                                            // Related to SO-456
-    'Company Store'                                 // Sender
-);
-```
-
-## Template Variables
-
-### fillDataForVariables()
-
-```php
-$template = CPOTTIntegration_Template_Model::getInstanceById($templateId);
-$content = $template->getTemplateContent();
-
-// Fill variables
-$filledContent = $template->fillDataForVariables($content, [
-    'customer_name' => 'John Doe',
-    'order_number' => 'SO-001',
-]);
-```
-
-### getTemplateContent()
-
-```php
-public function getTemplateContent(): string {
-    return (string) $this->get('template_content');
-}
-```
-
-**Template format (Zalo approved):**
-```
-Xin chào {{customer_name}},
-
-Đơn hàng {{order_number}} của bạn đã được xác nhận.
-Ngày đặt: {{order_date}}
-Tổng tiền: {{total_amount}}
-
-Cảm ơn bạn đã mua hàng!
-```
-
-## ZNS → SMS Fallback Pattern
-
-```php
-public function sendOrderNotification(int $recordId): bool {
-    $record = Vtiger_Record_Model::getInstanceById($recordId, 'SalesOrder');
-    $contactId = (int) $record->get('contact_id');
-
-    if (empty($contactId)) return false;
-
-    $contact = Vtiger_Record_Model::getInstanceById($contactId, 'Contacts');
-    $phone = (string) $contact->get('mobile');
-
-    if (empty($phone)) return false;
-
-    $variables = [
-        'customer_name' => $contact->getName(),
-        'order_number' => $record->get('subject'),
-        'order_date' => date('d/m/Y'),
-        'total_amount' => number_format($record->get('hdnGrandTotal')) . 'đ',
-    ];
-
-    // Try ZNS first
-    if (CPOTTIntegration_Logic_Helper::canSendZaloZNSMsg()) {
-        $gateway = CPOTTIntegration_Gateway_Model::getActiveGateway('Zalo');
-
-        if (!empty($gateway)) {
-            $result = $gateway->sendZaloMsg(
-                '',  // Empty, will use fallback SMS if ZNS fails
-                [$phone => $contactId],
-                '123456',  // ZNS template ID
-                $variables,
-                $recordId,
-                'Company'
-            );
-
-            if ($result) return true;
-        }
-    }
-
-    // Fallback to SMS
-    $message = "Xin chào {$variables['customer_name']}, đơn hàng {$variables['order_number']} đã xác nhận. Tổng: {$variables['total_amount']}";
-
-    return SMSNotifier::sendMessage(
-        'Stringee',
-        $message,
-        [$phone => $contactId],
-        0,
-        [],
-        'Company',
-        Users_Record_Model::getCurrentUserModel()->getId(),
-        [$recordId]
-    );
-}
-```
-
-## OTT Channel Routing
-
-**CPOTTIntegration channels:**
-- `Zalo` — Zalo ZNS
-- `Viber` — Viber messaging
-- `WhatsApp` — WhatsApp Business
-- `Telegram` — Telegram Bot API
-
-**Channel selection logic:**
-```php
-public function selectBestChannel(string $phone): string {
-    // Check user preference
-    $preference = $this->getUserChannelPreference($phone);
-    if (!empty($preference)) return $preference;
-
-    // Default priority: Zalo > SMS
-    if (CPOTTIntegration_Logic_Helper::canSendZaloZNSMsg()) {
-        return 'Zalo';
-    }
-
-    return 'SMS';
-}
-```
-
-## Workflow Task Pattern
-
-**VTZaloOTTMessageTask extends VTTask:**
-
-```php
-class VTZaloOTTMessageTask extends VTTask {
-
-    public function doTask(Vtiger_Record_Model $record): void {
-        $phoneField = $this->phoneField;
-        $phone = (string) $record->get($phoneField);
-
-        if (empty($phone)) return;
-
-        $gateway = CPOTTIntegration_Gateway_Model::getActiveGateway('Zalo');
-        if (empty($gateway)) return;
-
-        $variables = $this->getVariables($record);
-
-        $gateway->sendZaloMsg(
-            $this->fallbackMessage,
-            [$phone => $record->getId()],
-            $this->templateId,
-            $variables,
-            $record->getId(),
-            $this->sender
-        );
-    }
-
-    protected function getVariables(Vtiger_Record_Model $record): array {
-        $vars = [];
-
-        foreach ($this->variableMapping as $templateVar => $fieldName) {
-            $vars[$templateVar] = (string) $record->get($fieldName);
-        }
-
-        return $vars;
-    }
-}
-```
-
-## Real Codebase Example
-
-### Order Confirmation with ZNS
-
-```php
-// modules/SalesOrder/actions/Confirm.php
-public function sendZNSConfirmation(int $recordId): bool {
-    // Check ZNS available
-    if (!CPOTTIntegration_Logic_Helper::canSendZaloZNSMsg()) {
-        return $this->sendSMSConfirmation($recordId);
-    }
-
-    $record = Vtiger_Record_Model::getInstanceById($recordId, 'SalesOrder');
-    $contactId = (int) $record->get('contact_id');
-
-    if (empty($contactId)) return false;
-
-    $contact = Vtiger_Record_Model::getInstanceById($contactId, 'Contacts');
-    $phone = (string) $contact->get('mobile');
-
-    if (empty($phone)) return false;
-
-    // Phone format for Vietnam: 0xxx
-    $phone = $this->normalizePhone($phone);
-
-    $gateway = CPOTTIntegration_Gateway_Model::getActiveGateway('Zalo');
-    if (empty($gateway)) {
-        return $this->sendSMSConfirmation($recordId);
-    }
-
-    // Prepare variables
-    $variables = [
-        'customer_name' => $contact->getName(),
-        'order_number' => $record->get('subject'),
-        'order_date' => date('d/m/Y', strtotime($record->get('createdtime'))),
-        'total_amount' => number_format($record->get('hdnGrandTotal'), 0, ',', '.') . 'đ',
-        'delivery_date' => date('d/m/Y', strtotime($record->get('delivery_date'))),
-    ];
-
-    // Send ZNS
-    $result = $gateway->sendZaloMsg(
-        '',  // Fallback handled internally
-        [$phone => $contactId],
-        '234567',  // ZNS template "Order Confirmation"
-        $variables,
-        $recordId,
-        'Company Store'
-    );
-
-    // Fallback to SMS if ZNS fails
-    if (!$result) {
-        return $this->sendSMSConfirmation($recordId);
-    }
-
-    return true;
-}
-
-protected function normalizePhone(string $phone): string {
-    $phone = preg_replace('/[^0-9]/', '', $phone);
-
-    // Convert 84xxx to 0xxx for Zalo
-    if (substr($phone, 0, 2) === '84') {
-        return '0' . substr($phone, 2);
-    }
-
-    return $phone;
-}
-```
+`sendSMSFallback()` checks `isForbiddenFeature('SMSWorkflows')`, `SMSNotifier_Logic_Helper::hasActiveGateway()`, `SMSNotifier::checkServer()`, fills the SMS template via `fillDataForVariables()` + `getTemplateContent()`, then calls `SMSNotifier::sendMessage('SMS', $message, [$phoneNumber => $customerId], $templateId, $variablesMapping, '', $current_user->id, [$customerId])` (`:198`).
 
 ## Critical Pitfalls
 
-1. **Requires active gateway** — check before sending
-2. **Template ID required** — ZNS uses pre-approved templates from Zalo
-3. **Variable mapping strict** — must match template placeholders exactly
-4. **ZNS→SMS fallback** — always implement fallback
-5. **Phone format** — 0xx format for Vietnam (different from SMS 84xx)
-6. **Template approval** — templates must be approved by Zalo before use
-7. **Rich content** — ZNS supports buttons, images (unlike SMS)
-8. **Cost tracking** — ZNS cheaper than SMS but still costs money
+1. **`$templateId` is the CRM `CPSMSTemplate` id**, not the Zalo template id
+2. **`$variablesMapping` maps `'$var$'` → field name** — values come from the record
+3. **`$sender` is the OA id** — wrong/empty OA → no access token → every recipient fails
+4. **Return is a result list** — check `status`/`error` per item; direct gateway calls must log themselves
+5. **Phone format** — pass `0xx`; the gateway converts to `84xx`
+6. **Channels are only `Zalo`/`Viber`/`Telegram`**

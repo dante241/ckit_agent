@@ -729,7 +729,7 @@ import { Button, Input, Card } from '@/components/ui';
 React escapes content by default, which prevents most XSS attacks. When you need to render HTML content:
 
 1. **Avoid rendering raw HTML** when possible
-2. **Sanitize with DOMPurify** for trusted content sources
+2. **Sanitize with DOMPurify** any HTML that comes from users or other untrusted sources
 3. **Use allow-lists** for permitted tags and attributes
 
 ```tsx
@@ -757,7 +757,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 const schema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.email('Invalid email address'), // Zod 4 top-level format; z.string().email() is deprecated
   password: z.string()
     .min(8, 'Password must be at least 8 characters')
     .regex(/[A-Z]/, 'Password must contain uppercase letter')

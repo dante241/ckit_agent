@@ -1,6 +1,6 @@
 ---
 name: integration
-description: "VTiger API integration — inbound IntegrationApiHandler, outbound CPAPIIntegration, entry points, webhook connector, CloudbotApi. Use when: tích hợp API ngoài, webhook, kết nối hệ thống thứ 3; keywords: integration, webhook, connector, API."
+description: "VTiger API integration — inbound IntegrationApiHandler, outbound CPAPIIntegration, entry points, webhook connector, CloudBotApi. Use when: tích hợp API ngoài, webhook, kết nối hệ thống thứ 3; keywords: integration, webhook, connector, API."
 user-invocable: false
 ---
 
@@ -27,29 +27,35 @@ user-invocable: false
 
 ## Inbound API Routing
 
-URL: `api/IntegrationAPI/{Platform}/{action}`
+URL: `api/IntegrationAPI/{Platform}/{action}` (rewritten by `api/IntegrationAPI/.htaccess` to `Endpoint.php?platform=…&action=…`)
 
-Example: `api/IntegrationAPI/Zalo/create_customer`
+Example: `api/IntegrationAPI/CloudBot/saveTicket`
 
-**Auto-discovery:**
-1. Request: `POST /api/IntegrationAPI/Zalo/create_customer`
-2. System loads: `include/Webservice/CloudBotApi/ZaloApiHandler.php`
-3. Calls: `ZaloApiHandler->create_customer($request, $user)`
+**Dispatch (`api/IntegrationAPI/Endpoint.php`):**
+1. Loads `include/Webservice/{Platform}ApiHandler.php` (top level, not a subdir) and instantiates `{Platform}ApiHandler`; it must be an `IntegrationApiHandler`.
+2. `saveLog()` → `handleDuplicateRequest()` → `isEnabled()` (503 if false) → `auth` action handled by the trait → otherwise `checkSession()` with the `token` header (skipped for actions in `$skipCheckToken`).
+3. Lowercases the first letter of the action and calls `$instance->$method($request)` with ONE argument (`Vtiger_Request`); if the handler defines `processActionBySubHandler($method, $request)`, that is called instead.
 
 ## Outbound Channel Pattern
 
 Extend `CPAPIIntegration_Channel` for consistent outbound integrations:
 
 ```php
-class Facebook_Channel extends CPAPIIntegration_Channel {
-    protected function isEnabled(): bool { }
-    protected function getAccessToken(Record_Model $record): string { }
-    protected function getModuleSyncToExternalSystems(): array { }
+require_once('modules/CPAPIIntegration/Channel.php');
 
-    // Auto-logging HTTP methods
-    public function getCampaigns(array $params): array {
-        return $this->makeGetRequest($url, __FUNCTION__, $params);
-    }
+class CPAPIIntegration_Facebook_Channel extends CPAPIIntegration_Channel {
+
+	protected $logger = 'Facebook';	// non-empty => requests are logged via CPLogAPI_Logger_Helper
+
+	public function isEnabled(): bool { }
+	public function isEnabledButtonSyncToExternalSystems($recordModel): bool { }
+	public function getModuleSyncToExternalSystems(): array { }
+	protected function getStatusKey(): string { }
+	protected function getAccessToken(): string { }
+
+	public function getCampaigns(string $url, array $params): array {
+		return $this->makeGetRequest($url, __FUNCTION__, $params);
+	}
 }
 ```
 
@@ -67,21 +73,23 @@ class Facebook_Channel extends CPAPIIntegration_Channel {
 
 ## References
 
-- [Inbound API](references/inbound-api.md) - IntegrationApiHandler, JWT, subhandlers, SAVE_UNSUPPORTED_FIELDS
-- [Outbound API](references/outbound-api.md) - CPAPIIntegration_Channel, HTTP methods, auto-logging
-- [Entry Point](references/entry-point.md) - Vtiger_EntryPoint, 22 existing entry points, bypass auth
-- [Webhook Connector](references/webhook-connector.md) - Call center, social, IoT, 38 connectors
+- [Inbound API](references/inbound-api.md) - IntegrationApiHandler, token auth, CloudBot sub-handlers, SAVE_UNSUPPORTED_FIELDS
+- [Outbound API](references/outbound-api.md) - CPAPIIntegration_Channel, HTTP methods, `$logger` logging
+- [Entry Point](references/entry-point.md) - Vtiger_EntryPoint, `include/EntryPoints/`, bypass auth
+- [Webhook Connector](references/webhook-connector.md) - Call center, social, IoT connectors in `include/Webhooks/`
 
-## Exemplars (ưu tiên code Tín Bùi / Tùng Nguyễn — PENDING REVIEW by user)
+## Exemplars (ưu tiên code Tín Bùi / Tùng Nguyễn)
 
-- API connector base ĐỌC TRƯỚC: `include/Webservice/CloudbotApi/AbstractCloudBotApi.php`
-- Handler mẫu: `include/Webservice/CloudbotApi/CustomerServiceApiHandler.php`
+- API connector base ĐỌC TRƯỚC: `include/Webservice/CloudBotApi/AbstractCloudBotApi.php`
+- Handler mẫu: `include/Webservice/CloudBotApi/CustomerServiceApiHandler.php`
+- Router mẫu (sub-handler): `include/Webservice/CloudBotApiHandler.php`
+- Channel mẫu: `modules/CPAPIIntegration/channels/TMS.php`
 
 ## Verify
 
 ```bash
 php -l <file>
 # Smoke API với payload thật (xem api-connector-rules.md cho auth):
-curl -s -X POST 'http://localhost/vtiger/<endpoint>' -H 'Content-Type: application/json' --data '<payload>' | head -c 500
+curl -s -X POST 'http://localhost/vtiger/api/IntegrationAPI/<Platform>/<action>' -H 'token: <access_token>' -H 'Content-Type: application/json' --data '<payload>' | head -c 500
 # Kỳ vọng: JSON đúng shape, error case trả structured error không phải 500 HTML
 ```

@@ -19,104 +19,65 @@ Complete page with header, navigation, and footer.
 
 class Contacts_CustomView_View extends Vtiger_Index_View {
 
-    /**
-     * Security check - runs first
-     */
-    public function checkPermission(Vtiger_Request $request): void {
+    // Overrides keep the parent signature exactly (no added param/return types)
+    function checkPermission(Vtiger_Request $request) {
+        parent::checkPermission($request);   // forbidden-feature gate
         $moduleName = (string) $request->getModule();
+        $recordId = (int) $request->get('record');
 
-        // Check module access
-        if (!Users_Privileges_Model::isPermitted($moduleName, 'DetailView')) {
+        // Module access, plus record access when a record is given
+        if (!Users_Privileges_Model::isPermitted($moduleName, 'DetailView', $recordId ?: false)) {
             throw new AppException(vtranslate('LBL_PERMISSION_DENIED'));
         }
-
-        // Check record access
-        $recordId = (int) $request->get('record');
-        if ($recordId > 0) {
-            $recordModel = Vtiger_Record_Model::getInstanceById($recordId, $moduleName);
-            if (!$recordModel->isViewable()) {
-                throw new AppException(vtranslate('LBL_PERMISSION_DENIED'));
-            }
-        }
     }
 
-    /**
-     * Render header and navigation - MUST call parent
-     */
-    public function preProcess(Vtiger_Request $request, $display = true): void {
-        parent::preProcess($request, $display);
-
-        // Optional: Add breadcrumbs or custom header elements
+    // Render header and navigation - MUST call parent
+    function preProcess(Vtiger_Request $request, $display = true) {
         $viewer = $this->getViewer($request);
         $viewer->assign('PAGE_TITLE', vtranslate('LBL_CUSTOM_VIEW', $request->getModule()));
+
+        parent::preProcess($request, $display);
     }
 
-    /**
-     * Main content rendering
-     */
-    public function process(Vtiger_Request $request): void {
+    function process(Vtiger_Request $request) {
         $moduleName = (string) $request->getModule();
         $recordId = (int) $request->get('record');
 
-        // Prepare data
         $recordModel = Vtiger_Record_Model::getInstanceById($recordId, $moduleName);
         $customData = $this->getCustomData($recordModel);
 
-        // Assign to template
         $viewer = $this->getViewer($request);
         $viewer->assign('MODULE', $moduleName);
         $viewer->assign('RECORD_ID', $recordId);
         $viewer->assign('RECORD', $recordModel);
         $viewer->assign('CUSTOM_DATA', $customData);
 
-        // Render template
         $viewer->view('CustomView.tpl', $moduleName);
     }
 
-    /**
-     * Render footer - MUST call parent
-     */
-    public function postProcess(Vtiger_Request $request): void {
-        $viewer = $this->getViewer($request);
-        $viewer->assign('FOOTER_DATA', $this->getFooterData());
-
+    // Render footer - MUST call parent
+    function postProcess(Vtiger_Request $request) {
         parent::postProcess($request);
     }
 
-    /**
-     * Include JavaScript files - MUST call parent
-     */
-    public function getHeaderScripts(Vtiger_Request $request): array {
-        $scripts = parent::getHeaderScripts($request);
+    // Header lists hold Vtiger_JsScript_Model objects — convert names, never append raw arrays
+    function getHeaderScripts(Vtiger_Request $request) {
+        $headerScriptInstances = parent::getHeaderScripts($request);
+        $jsScriptInstances = $this->checkAndConvertJsScripts(['modules.Contacts.resources.CustomView']);
 
-        // Add module-specific JS (dot notation)
-        $scripts[] = ['src' => 'modules.Contacts.resources.CustomView'];
-
-        return $scripts;
+        return array_merge($headerScriptInstances, $jsScriptInstances);
     }
 
-    /**
-     * Include CSS files - MUST call parent
-     */
-    public function getHeaderCss(Vtiger_Request $request): array {
-        $css = parent::getHeaderCss($request);
+    function getHeaderCss(Vtiger_Request $request) {
+        $headerCssInstances = parent::getHeaderCss($request);
+        $cssInstances = $this->checkAndConvertCssStyles(['~modules/Contacts/resources/CustomView.css']);
 
-        // Add module-specific CSS (dot notation)
-        $css[] = ['href' => 'modules.Contacts.resources.CustomView'];
-
-        return $css;
+        return array_merge($headerCssInstances, $cssInstances);
     }
 
-    /**
-     * Helper methods
-     */
+    // New helper methods may be typed
     protected function getCustomData(Vtiger_Record_Model $recordModel): array {
-        // Business logic here
         return [];
-    }
-
-    protected function getFooterData(): array {
-        return ['timestamp' => date('Y-m-d H:i:s')];
     }
 }
 ```
@@ -138,10 +99,9 @@ HTML fragment without header/footer - for modals and AJAX content.
 
 class Contacts_CustomModal_View extends Vtiger_BasicAjax_View {
 
-    /**
-     * Security check - runs first
-     */
-    public function checkPermission(Vtiger_Request $request): void {
+    // Parent is `function checkPermission() { }` (no parameter) — keep that exact signature
+    function checkPermission() {
+        $request = new Vtiger_Request($_REQUEST, $_REQUEST);
         $moduleName = (string) $request->getModule();
 
         if (!Users_Privileges_Model::isPermitted($moduleName, 'EditView')) {
@@ -149,29 +109,24 @@ class Contacts_CustomModal_View extends Vtiger_BasicAjax_View {
         }
     }
 
-    /**
-     * Render content - NO preProcess or postProcess
-     */
-    public function process(Vtiger_Request $request): void {
+    // Render content - NO preProcess or postProcess
+    function process(Vtiger_Request $request) {
         $moduleName = (string) $request->getModule();
         $recordId = (int) $request->get('record');
 
-        // Prepare data
         $recordModel = Vtiger_Record_Model::getInstanceById($recordId, $moduleName);
 
-        // Assign to template
         $viewer = $this->getViewer($request);
         $viewer->assign('MODULE', $moduleName);
         $viewer->assign('RECORD_ID', $recordId);
         $viewer->assign('RECORD', $recordModel);
 
-        // Render modal template
         $viewer->view('CustomModal.tpl', $moduleName);
     }
 }
 ```
 
-## 13 VTiger Screen Types
+## Common VTiger View Base Classes
 
 | View Type | Base Class | Use Case |
 |-----------|-----------|----------|
@@ -184,10 +139,8 @@ class Contacts_CustomModal_View extends Vtiger_BasicAjax_View {
 | QuickCreateAjax | `Vtiger_QuickCreateAjax_View` | Quick create modal |
 | MassActionAjax | `Vtiger_MassActionAjax_View` | Bulk action modal |
 | IndexAjax | `Vtiger_IndexAjax_View` | Ajax page content |
-| DashBoard | `Vtiger_DashBoard_View` | Dashboard widgets |
-| Unrelated | `Vtiger_Unrelated_View` | Related list picker |
-| Calendar | `Vtiger_Calendar_View` | Calendar interface |
-| PDF | `Vtiger_PDF_View` | PDF export |
+| Dashboard | `Vtiger_Dashboard_View` (file `modules/Vtiger/views/DashBoard.php`) | Dashboard widgets |
+| Calendar | `Calendar_Calendar_View` | Calendar interface |
 | CustomView | `CustomView_Base_View` | Module config, reports, custom pages |
 
 ## Template Rendering Pattern
@@ -212,4 +165,4 @@ $viewer->view('TemplateName.tpl', $moduleName);
 3. **Type Cast Request Data**: `(string)`, `(int)` for all `$request->get()` values.
 4. **Module Name Required**: Always pass as 2nd arg to `$viewer->view()`.
 5. **BasicAjax NO pre/postProcess**: Don't extend these methods in Ajax views.
-6. **Dot Notation for Assets**: `modules.Contacts.resources.CustomView` not file paths.
+6. **Assets via `checkAndConvertJsScripts()` / `checkAndConvertCssStyles()`**: dot names (`modules.Contacts.resources.CustomView`) or `~modules/...` paths; never raw arrays.

@@ -30,20 +30,22 @@ Response (JSON or HTML via Smarty)
 
 ### View Controller (HTML Response)
 - **Purpose**: Render HTML pages
-- **Extends**: `Vtiger_Index_View` or `Vtiger_BasicAjax_View`
+- **Extends** (per `cloudgo-development-rules` "View Base Classes"):
+  - core List / Edit / Detail views → `Vtiger_Index_View` (or `Vtiger_List_View` / `Vtiger_Edit_View` / `Vtiger_Detail_View`); AJAX fragments → `Vtiger_BasicAjax_View`
+  - custom pages (config, dashboard, report, landing…) → `CustomView_Base_View`
+  - Settings pages → `Settings_Vtiger_Index_View`
 - **Location**: `modules/{Module}/views/{ViewName}.php`
 - **URL**: `index.php?module=X&view=Detail`
 - **Class**: `{Module}_{ViewName}_View`
-- **Response**: Smarty template via `$viewer->view()`
+- **Response**: Smarty template via `$viewer->view()` (core) or `$viewer->display('modules/{Module}/tpls/{ViewName}.tpl')` (custom)
 
 ## Model Layer
 
 ### Record Model (Instance-Level)
 ```php
-class CPGoal_Record_Model extends Vtiger_Record_Model {
-    // CRUD operations on single record
-    public function getGoalProgress(): float { }
-    public function calculateMetrics(): array { }
+class CPDemo_Record_Model extends Vtiger_Record_Model {
+	// CRUD operations on single record
+	public function getProgress(): float { }
 }
 ```
 
@@ -65,10 +67,9 @@ $record->save();
 
 ### Module Model (Module-Level)
 ```php
-class CPGoal_Module_Model extends Vtiger_Module_Model {
-    // Module-wide operations
-    public function getAllActiveGoals(): array { }
-    public function getModuleStatistics(): array { }
+class CPDemo_Module_Model extends Vtiger_Module_Model {
+	// Module-wide operations
+	public function getActiveItems(): array { }
 }
 ```
 
@@ -80,7 +81,8 @@ $moduleModel = Vtiger_Module_Model::getInstance($moduleName);
 ## Template Layer (Smarty)
 
 ### Template Location
-`layouts/v7/modules/{Module}/{ViewName}.tpl`
+- Core views: `layouts/v7/modules/{Module}/{ViewName}.tpl`
+- Custom views (`CustomView_Base_View`): `modules/{Module}/tpls/{ViewName}.tpl`
 
 ### Template Syntax
 ```smarty
@@ -127,10 +129,9 @@ class Products_Save_Action extends Vtiger_Action_Controller {
 **✅ CORRECT:**
 ```php
 class Products_Save_Action extends Vtiger_Action_Controller {
-    public function process(Vtiger_Request $request) {
-        $logic = Products_Logic_Helper::getInstance();
-        $result = $logic->processData($request->get('data'));
-    }
+	public function process(Vtiger_Request $request) {
+		$result = Products_Logic_Helper::processData($request->get('data'));
+	}
 }
 ```
 
@@ -158,13 +159,11 @@ $result = $adb->pquery($sql, []);
 **✅ CORRECT:**
 ```php
 // In Action
-$logic = Products_Logic_Helper::getInstance();
-$products = $logic->getActiveProducts();
+$products = Products_Logic_Helper::getActiveProducts();
 
-// In Logic Helper
-public function getActiveProducts(): array {
-    $data = Products_Data_Helper::getInstance();
-    return $data->fetchActiveProducts();
+// In Logic Helper (static methods, no singleton)
+public static function getActiveProducts(): array {
+	return Products_Data_Helper::fetchActiveProducts();
 }
 ```
 
@@ -194,6 +193,6 @@ $result = $adb->pquery($sql, [$id]);
 | **Action/View** | Request/Response, Permission | DB queries, Business logic |
 | **Record Model** | CRUD single record | Module-wide operations |
 | **Module Model** | Module-level operations | Single record CRUD |
-| **Logic Helper** | Business logic, Orchestration | Direct DB access |
+| **Logic Helper** | Business logic, Orchestration | New SQL (prefer the Data helper) |
 | **Data Helper** | Database queries only | Business logic |
 | **Template** | HTML presentation | Business logic, DB queries |

@@ -29,7 +29,7 @@ eval "$(bash .omp/skills/release-check/scripts/source-pms-env.sh)"
 
 ## Architecture
 
-AI orchestrates, scripts do the heavy lifting. **Không còn dùng `mcp__pms__pms_ticket_detail` 40+ lần** — 1 script Node.js batch-fetch qua PMS CloudWorkApi.
+AI orchestrates, scripts do the heavy lifting. **Không còn dùng `xd://mcp__pms_ticket_detail` 40+ lần** — 1 script Node.js batch-fetch qua PMS CloudWorkApi.
 
 ```
 scripts/
@@ -103,7 +103,7 @@ AI: truyền y nguyên terminal summary + gợi ý next step (`/release-bundle`)
 |------|--------|
 | Scope | CHỈ xử lý MR có `target_branch = master`. Filter ở scan-mrs.sh qua `--target-branch master`. MR vào develop/release-*/hotfix/* bị skip. |
 | Scan labels | Quét **cả** `Dev done` và `Chờ release` — dedupe by iid. Mục đích: re-verify MR đã promote trước đó, bắt trường hợp ticket bị reopen. |
-| AI role | Chỉ orchestrate + read report — KHÔNG gọi `mcp__pms__pms_ticket_detail` |
+| AI role | Chỉ orchestrate + read report — KHÔNG gọi `xd://mcp__pms_ticket_detail` |
 | Script role | Batch fetch, classify, transition label (cả promote + rollback) |
 | Credentials | KHÔNG bao giờ hardcode. Reuse PMS MCP env vars qua `source-pms-env.sh` |
 | Ready statuses | `Wait Close` và `Closed` (title case, exact) |
@@ -116,7 +116,7 @@ AI: truyền y nguyên terminal summary + gợi ý next step (`/release-bundle`)
 
 | Error | Hành động |
 |-------|-----------|
-| `glab` không auth | Script exit, báo user chạy `glab auth status` |
+| `glab` không auth / lỗi network | `scan-mrs.sh` (`set -euo pipefail`) dừng với lỗi của glab — không có bước check riêng; user tự chạy `glab auth status` |
 | Missing env vars | Script exit với hint source từ MCP |
 | PMS login fail | Script báo error, exit 1 |
 | PMS ticket NOT_FOUND | TSV row `ticket_no<TAB>NOT_FOUND<TAB><TAB>` → classified thành `ticket_not_found` |
@@ -141,6 +141,6 @@ python3 .omp/skills/release-check/scripts/classify.py \
 
 ## References
 
-- `references/classify-logic.md` — Status classification rules, JSON schema (legacy context)
+- `references/classify-logic.md` — glab fields, classify rules, JSON schema, label transitions (khớp classify.py + run.sh)
 - `scripts/run.sh` — Main entry point
 - `scripts/pms-status-batch.js` — PMS API client (Node.js, no deps beyond built-ins)

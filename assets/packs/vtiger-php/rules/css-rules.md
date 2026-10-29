@@ -6,7 +6,7 @@ condition: ".*"
 
 # CSS Conventions
 
-> Loads only when editing CSS or TPL files.
+> Auto-loads when editing CSS/TPL files; also the review checklist for every CSS/TPL change.
 
 ## File Location
 

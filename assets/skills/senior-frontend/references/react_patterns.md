@@ -53,33 +53,47 @@ function SelectTrigger({ children }: { children: React.ReactNode }) {
   );
 }
 
+function SelectList({ children }: { children: React.ReactNode }) {
+  return <div role="listbox">{children}</div>;
+}
+
 function SelectOption({ value, children }: { value: string; children: React.ReactNode }) {
   const context = useContext(SelectContext);
   if (!context) throw new Error('SelectOption must be used within Select');
+  const selected = context.value === value;
 
+  // Real <button>: focusable, Enter/Space activate it without extra key handlers
   return (
-    <div
+    <button
+      type="button"
+      role="option"
+      aria-selected={selected}
       onClick={() => context.onChange(value)}
-      className={`px-4 py-2 cursor-pointer hover:bg-gray-100 ${
-        context.value === value ? 'bg-blue-50' : ''
+      className={`block w-full text-left px-4 py-2 hover:bg-gray-100 focus-visible:ring-2 ${
+        selected ? 'bg-blue-50' : ''
       }`}
     >
       {children}
-    </div>
+    </button>
   );
 }
 
 // Attach sub-components
 Select.Trigger = SelectTrigger;
+Select.List = SelectList;
 Select.Option = SelectOption;
 
 // Usage
 <Select value={selected} onChange={setSelected}>
   <Select.Trigger>Choose option</Select.Trigger>
-  <Select.Option value="a">Option A</Select.Option>
-  <Select.Option value="b">Option B</Select.Option>
+  <Select.List>
+    <Select.Option value="a">Option A</Select.Option>
+    <Select.Option value="b">Option B</Select.Option>
+  </Select.List>
 </Select>
 ```
+
+A production listbox also needs arrow-key navigation and open/close state on the trigger; prefer native `<select>` or Radix `@radix-ui/react-select` unless you need the custom markup.
 
 ### Render Props
 

@@ -1,6 +1,106 @@
 # Call Center Connector Pattern
 
-## Full Connector Skeleton
+A provider needs two files. Skeleton below follows the real CloudFone pair (`include/Webhooks/CloudFoneConnector.php` + `modules/PBXManager/connectors/CloudFone.php`); replace `Acme` and the payload keys with the provider's.
+
+## 1. Provider connector — `modules/PBXManager/connectors/Acme.php`
+
+```php
+<?php
+
+/**
+ * @author Your Name
+ * @email your.email@company.vn
+ * @create date YYYY.MM.DD
+ */
+
+require_once('modules/PBXManager/BaseConnector.php');
+require_once('include/utils/CallCenterUtils.php');
+
+class PBXManager_Acme_Connector extends PBXManager_Base_Connector {
+
+	protected static $SETTINGS_REQUIRED_PARAMETERS = [
+		'webservice_url' => 'text',
+		'api_key' => 'password',
+	];
+	protected $webserviceUrl;
+	protected $apiKey;
+
+	// Gateway name must equal the webhook name minus "Connector" (checked by CallCenterUtils::checkConfig)
+	public function getGatewayName() {
+		return 'Acme';
+	}
+
+	public function setServerParameters($serverModel) {
+		$this->webserviceUrl = $serverModel->get('webservice_url');
+		$this->apiKey = $serverModel->get('api_key');
+	}
+
+	// Ignore provider retries of an event already stored
+	static function isExists($callId, $status) {
+		$statusMapping = [
+			'Ringing' => 'ringing',
+			'Up' => 'answered',
+			'Down' => 'hangup',
+		];
+
+		return PBXManager_Data_Model::isExists($callId, $statusMapping[$status] ?? '');
+	}
+
+	// Persist the call log for every webhook event
+	static function handleCallEvent($data) {
+		$callId = $data['KeyRinging'];
+
+		if ($data['Status'] == 'Ringing') {
+			$customerPhoneNumber = CallCenterUtils::getCustomerPhoneNumber($data['CallNumber'], $data['ReceiptNumber'], $data['Direction']);
+			$agent = $GLOBALS['agent'];
+			$customer = $GLOBALS['customer'];
+
+			PBXManager_Data_Model::handleStartupCall([
+				'direction' => strtolower($data['Direction']),
+				'callstatus' => 'ringing',
+				'starttime' => date('Y-m-d H:i:s'),
+				'sourceuuid' => $callId,
+				'gateway' => 'Acme',
+				'user' => $agent['id'],
+				'customer' => $customer['id'],
+				'customernumber' => $customerPhoneNumber,
+				'customertype' => $customer['type'],
+				'hotline' => '',
+				'assigned_user_id' => $agent['id'],
+			]);
+
+			return;
+		}
+
+		if ($data['Status'] == 'Up') {
+			PBXManager_Data_Model::updateCallStatus($callId, ['callstatus' => 'answered']);
+
+			return;
+		}
+
+		if ($data['Status'] == 'Down') {
+			$params = [
+				'callstatus' => 'completed',
+				'endtime' => date('Y-m-d H:i:s'),
+			];
+
+			if (!empty($data['Data'])) {
+				$params['totalduration'] = (int) $data['Data']['TotalTimeCall'];
+				$params['billduration'] = (int) $data['Data']['RealTimeCall'];
+				$params['recordingurl'] = (string) $data['Data']['LinkFile'];
+			}
+
+			PBXManager_Data_Model::handleHangupCall($callId, $params);
+		}
+	}
+}
+```
+
+Optional overrides (see `CloudFone.php`, `Stringee.php`): `makeCall($receiverNumber, $parentId)`, `getHistoryReport($headers, $params)`, `getRecordingData($callRecordModel)`; REST calls via `$this->getRestClient()` + `$this->callRestApi()`.
+
+## 2. Webhook entry — `include/Webhooks/AcmeConnector.php`
+
+URL: `webhook.php?name=AcmeConnector&secret_key=<key>`.
 
 ```php
 <?php
@@ -13,274 +113,103 @@
 
 require_once('include/utils/CallCenterUtils.php');
 
-class StringeeConnector extends Vtiger_EntryPoint {
+class AcmeConnector extends Vtiger_EntryPoint {
 
-    /**
-     * Process webhook from Stringee
-     */
-    public function process(Vtiger_Request $request): void {
-        // 1. Check configuration
-        CallCenterUtils::checkConfig();
+	function process(Vtiger_Request $request) {
+		CallCenterUtils::checkConfig();
 
-        // 2. Get sanitized request
-        $request = CallCenterUtils::getRequest();
-        $data = $request->getAllPurified();
+		$request = CallCenterUtils::getRequest();
+		$data = $request->getAllPurified();
+		CallCenterUtils::saveLog('[Acme] Webhook data', null, $data);
 
-        // 3. Validate required fields
-        if (empty($data['call_id'])) {
-            $this->sendResponse(['success' => 0, 'message' => 'Missing call_id']);
-            return;
-        }
+		// Provider health check / empty signal
+		if (empty($data['CallNumber']) || empty($data['ReceiptNumber'])) {
+			echo 'Listening!';
+			exit;
+		}
 
-        try {
-            // 4. Normalize phone numbers
-            $caller = $this->normalizePhone((string) $data['from']);
-            $callee = $this->normalizePhone((string) $data['to']);
-            $callId = (string) $data['call_id'];
-            $status = (string) ($data['status'] ?? '');
-            $duration = (int) ($data['duration'] ?? 0);
-            $recordingUrl = (string) ($data['recording_url'] ?? '');
+		if (PBXManager_Acme_Connector::isExists($data['KeyRinging'], $data['Status'])) {
+			exit;
+		}
 
-            // 5. Find Contact by phone
-            $contactId = CallCenterUtils::findContactByPhone($caller);
+		$callId = $data['KeyRinging'];
+		$receiverId = '';
+		$agentExtNumber = '';
 
-            // 6. Create or update call log
-            $pbxRecord = $this->findOrCreateCallLog($callId);
-            $pbxRecord->set('caller', $caller);
-            $pbxRecord->set('callee', $callee);
-            $pbxRecord->set('call_status', $this->mapStatus($status));
-            $pbxRecord->set('duration', $duration);
-            $pbxRecord->set('recording_url', $recordingUrl);
+		if ($data['Status'] == 'Ringing') {
+			$agentExtNumber = CallCenterUtils::getAgentExtNumber($data['CallNumber'], $data['ReceiptNumber'], $data['Direction']);
+			$agent = PBXManager_Data_Model::findAgentByExtNumber($agentExtNumber);
 
-            if (!empty($contactId)) {
-                $pbxRecord->set('related_to', $contactId);
-            }
+			if (!empty($agent)) {
+				$receiverId = $agent['id'];
+			}
+		}
+		else {
+			$receiverId = PBXManager_Data_Model::getAgentUserIdFromCall($callId);
+		}
 
-            $pbxRecord->save();
+		if (!empty($receiverId)) {
+			$stateMapping = [
+				'Ringing' => 'RINGING',
+				'Up' => 'ANSWERED',
+				'Down' => 'HANGUP',
+			];
 
-            // 7. Send success response
-            $this->sendResponse(['success' => 1, 'call_id' => $callId]);
+			$msg = [
+				'call_id' => $callId,
+				'receiver_id' => $receiverId,
+				'state' => $stateMapping[$data['Status']],
+			];
 
-        } catch (\Throwable $th) {
-            CallCenterUtils::saveLog('error', $th->getMessage());
-            $this->sendResponse(['success' => 0, 'message' => 'Internal error']);
-        }
-    }
+			if ($data['Status'] == 'Ringing') {
+				$msg['direction'] = strtoupper($data['Direction']);
+				$customerPhoneNumber = CallCenterUtils::getCustomerPhoneNumber($data['CallNumber'], $data['ReceiptNumber'], $data['Direction']);
+				$customer = PBXManager_Data_Model::findCustomerByPhoneNumber($customerPhoneNumber, $msg['direction'] == 'OUTBOUND', $agentExtNumber, true);
+				CallCenterUtils::fillMsgDataForRingingEvent($msg, $customerPhoneNumber, $customer);
 
-    /**
-     * Normalize phone number (Vietnam format)
-     */
-    protected function normalizePhone(string $phone): string {
-        // Remove non-numeric characters except +
-        $phone = preg_replace('/[^0-9+]/', '', $phone);
+				// Reused by handleCallEvent() in the same request
+				$GLOBALS['agent'] = $agent;
+				$GLOBALS['customer'] = $customer;
 
-        // Convert 0xxx to 84xxx
-        if (substr($phone, 0, 1) === '0') {
-            $phone = '84' . substr($phone, 1);
-        }
+				if (!empty($customer['call_log_id'])) {
+					$msg['call_log_id'] = $customer['call_log_id'];
+				}
+			}
 
-        // Remove + prefix
-        $phone = str_replace('+84', '84', $phone);
+			PBXManager_Acme_Connector::forwardToCallCenterBridge($msg);
+			CallCenterUtils::saveDebugLog('[Acme] Data sent to call popup for ' . $agentExtNumber, null, $msg);
+		}
 
-        return $phone;
-    }
-
-    /**
-     * Find existing call log or create new one
-     */
-    protected function findOrCreateCallLog(string $callId): Vtiger_Record_Model {
-        $db = PearDatabase::getInstance();
-        $sql = 'SELECT crmid FROM vtiger_pbxmanager WHERE call_id = ?';
-        $result = $db->pquery($sql, [$callId]);
-
-        if ($db->num_rows($result) > 0) {
-            $recordId = (int) $db->query_result($result, 0, 'crmid');
-            $record = Vtiger_Record_Model::getInstanceById($recordId, 'PBXManager');
-            $record->set('mode', 'edit');
-            return $record;
-        }
-
-        return Vtiger_Record_Model::getCleanInstance('PBXManager');
-    }
-
-    /**
-     * Map provider status to CRM status
-     */
-    protected function mapStatus(string $status): string {
-        $statusMapping = [
-            'ringing' => 'Ringing',
-            'answered' => 'In Progress',
-            'ended' => 'Completed',
-            'busy' => 'Busy',
-            'no-answer' => 'No Answer',
-            'failed' => 'Failed',
-            'missed' => 'Missed',
-        ];
-
-        return $statusMapping[strtolower($status)] ?? 'Unknown';
-    }
-
-    /**
-     * Send JSON response and exit
-     */
-    protected function sendResponse(array $data): void {
-        header('Content-Type: application/json');
-        echo json_encode($data);
-        exit;
-    }
+		// Skip ringing events that no CRM agent can receive
+		if ($data['Status'] != 'Ringing' || !empty($receiverId)) {
+			PBXManager_Acme_Connector::handleCallEvent($data);
+		}
+	}
 }
 ```
 
-## Key Patterns Explained
+Outbound calls also mask the customer number for agents without permission: see the `[PhoneNumberMasked]` block in `CloudFoneConnector.php` (`canCurrentUserSeePhoneNumber`, `maskedPhoneNumber`).
 
-### 1. Webhook Validation
+## Key Patterns
 
-**Always validate required fields early:**
-```php
-if (empty($data['call_id'])) {
-    $this->sendResponse(['success' => 0, 'message' => 'Missing call_id']);
-    return;
-}
-
-if (empty($data['from']) || empty($data['to'])) {
-    $this->sendResponse(['success' => 0, 'message' => 'Missing phone numbers']);
-    return;
-}
-```
-
-### 2. Type Casting (Security)
-
-**Cast all external data:**
-```php
-$callId = (string) $data['call_id'];
-$duration = (int) ($data['duration'] ?? 0);
-$recordingUrl = (string) ($data['recording_url'] ?? '');
-```
-
-### 3. Phone Number Normalization
-
-**Vietnam standard: 84xxxxxxxxx (no + or 0 prefix)**
-```php
-protected function normalizePhone(string $phone): string {
-    $phone = preg_replace('/[^0-9+]/', '', $phone);
-    if (substr($phone, 0, 1) === '0') $phone = '84' . substr($phone, 1);
-    $phone = str_replace('+84', '84', $phone);
-    return $phone;
-}
-```
-
-### 4. Find or Create Pattern
-
-**Upsert call log by external call_id:**
-```php
-protected function findOrCreateCallLog(string $callId): Vtiger_Record_Model {
-    $db = PearDatabase::getInstance();
-    $sql = 'SELECT crmid FROM vtiger_pbxmanager WHERE call_id = ?';
-    $result = $db->pquery($sql, [$callId]);
-
-    if ($db->num_rows($result) > 0) {
-        $recordId = (int) $db->query_result($result, 0, 'crmid');
-        $record = Vtiger_Record_Model::getInstanceById($recordId, 'PBXManager');
-        $record->set('mode', 'edit');
-        return $record;
-    }
-
-    return Vtiger_Record_Model::getCleanInstance('PBXManager');
-}
-```
-
-### 5. Status Mapping
-
-**Provider-specific → CRM standard:**
-```php
-protected function mapStatus(string $status): string {
-    $statusMapping = [
-        'ringing' => 'Ringing',
-        'answered' => 'In Progress',
-        'ended' => 'Completed',
-        'missed' => 'Missed',
-    ];
-    return $statusMapping[strtolower($status)] ?? 'Unknown';
-}
-```
-
-### 6. Error Handling
-
-**Catch all exceptions, log, respond gracefully:**
-```php
-try {
-    // Process webhook
-} catch (\Throwable $th) {
-    CallCenterUtils::saveLog('error', $th->getMessage());
-    $this->sendResponse(['success' => 0, 'message' => 'Internal error']);
-}
-```
-
-### 7. Response Pattern
-
-**Always JSON, always exit:**
-```php
-protected function sendResponse(array $data): void {
-    header('Content-Type: application/json');
-    echo json_encode($data);
-    exit;
-}
-```
-
-## Provider-Specific Variations
-
-### CloudFone - Nested Data
-```php
-$caller = (string) ($data['call']['from'] ?? '');
-$callee = (string) ($data['call']['to'] ?? '');
-```
-
-### OmiCall - Event Types
-```php
-$eventType = (string) ($data['event'] ?? '');
-if ($eventType === 'call.ended') {
-    // Handle ended call
-}
-```
-
-### FreePBX - Direction
-```php
-$direction = (string) ($data['direction'] ?? 'inbound');
-if ($direction === 'outbound') {
-    $caller = $callee;
-    $callee = $data['destination'];
-}
-```
+- **Signature**: `process(Vtiger_Request $request)` matches abstract `Vtiger_EntryPoint::process` — no return type.
+- **Errors**: `webhook.php` already wraps `process()` in `try/catch (\Throwable)` and logs via `WebhookUtils::saveLog`. Catch locally only when you must reply to the provider; `catch` goes on its own line:
+  ```php
+  try {
+  	$response = PBXManager_Acme_Connector::getIvrRouting($data['fromNumber']);
+  }
+  catch (Throwable $e) {
+  	CallCenterUtils::saveLog('[Acme] IVR routing error', null, $data, $e->getMessage());
+  	$response = [];
+  }
+  ```
+- **Duplicates**: providers retry on timeout — always guard with `isExists($callId, $status)` (`PBXManager_Data_Model::isExists` checks `sourceuuid` + `callstatus`).
+- **Statuses**: map provider events to `ringing` / `answered` / `hangup` / `completed` only (picklist `vtiger_callstatus`). `direction` is free text (uitype 1); existing connectors store `inbound` / `outbound`.
+- **Phones**: no custom normalizer — use `CallCenterUtils::getCustomerPhoneNumber()` and `PBXManager_Logic_Helper::cleanupPhoneNumber()` / `addLeadingZeroToPhoneNumber()` / `addVnCountryCodeToPhoneNumber()`.
+- **SQL**: go through `PBXManager_Data_Model` (prepared statements keyed by `sourceuuid`); never concatenate payload values.
 
 ## Common Pitfalls
 
-### ❌ Don't concatenate SQL
-```php
-$sql = "SELECT * WHERE call_id = '$callId'"; // VULNERABLE
-```
-
-### ✅ Use prepared statements
-```php
-$sql = 'SELECT * WHERE call_id = ?';
-$result = $db->pquery($sql, [$callId]);
-```
-
-### ❌ Don't skip normalization
-```php
-$phone = $data['from']; // May be +84, 0, or 84 format
-```
-
-### ✅ Always normalize
-```php
-$phone = $this->normalizePhone((string) $data['from']);
-```
-
-### ❌ Don't hardcode status values
-```php
-$pbxRecord->set('call_status', 'ended'); // Won't match picklist
-```
-
-### ✅ Use status mapping
-```php
-$pbxRecord->set('call_status', $this->mapStatus($status));
-```
+- `getGatewayName()` ≠ webhook name minus `Connector` → `checkConfig()` dies with `This provider is not enabled yet!`.
+- Forgetting `secret_key` in the provider's webhook URL → rejected by `checkSecretKey()` (only `VCSConnector` is exempt).
+- Calling `handleStartupCall()` again on a retried RINGING event → duplicate call logs; guard with `isExists()` first.

@@ -1,20 +1,22 @@
 # VTiger Cron Pattern
 
-> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md`
+> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md` + `.omp/rules/php-conventions.md`
 
 ## Architecture Overview
 
 The cron pattern uses **2 files** for separation of concerns:
 
 ```
-cron/modules/<Module>/<Name>.service    → Thin wrapper (3-5 lines)
-modules/<Module>/crons/<name>.php       → Actual logic class
+cron/modules/<Module>/<Name>.service       → Thin wrapper (3-5 lines), required by vtigercron.php
+modules/<Module>/crons/<Component>.php     → Logic class <Module>_<Component>_Cron (autoloaded)
 ```
 
 **Why this separation?**
-- Service file is lightweight, loaded by vtigercron.php
+- Service file is lightweight, `require_once`d by `vtigercron.php` (root) for each due task
 - Logic class contains all business logic, easier to test
 - Prevents memory bloat in cron runner process
+
+Alternative seen in the repo (and in the exemplar `cron/modules/CPSocialIntegration/SyncZaloGroupInfo.service`): the service calls a static method on `<Module>_Service_Model` (`modules/<Module>/models/Service.php`). Both are fine; pick the `crons/` class for new single-purpose jobs.
 
 ## Service File Template
 
@@ -22,6 +24,7 @@ modules/<Module>/crons/<name>.php       → Actual logic class
 
 ```php
 <?php
+
 /**
  * @author Your Name
  * @email your.email@company.vn
@@ -29,7 +32,6 @@ modules/<Module>/crons/<name>.php       → Actual logic class
  */
 
 vimport('includes.runtime.Globals');
-require_once('modules/Project/crons/calculateProjectCost.php');
 
 $cronService = new Project_CalculateProjectCost_Cron();
 $cronService->process();
@@ -38,18 +40,20 @@ $cronService->process();
 **Rules:**
 - Keep to 3-5 lines only
 - Always `vimport('includes.runtime.Globals')` first
-- Single require_once for logic class
+- No `require_once` for the logic class: `vtigercron.php` registers the vtiger autoloader, which maps `Project_CalculateProjectCost_Cron` → `modules/Project/crons/CalculateProjectCost.php`
 - Instantiate and call `process()` method
 - NO business logic here
 
+> The autoloader resolves the file name from the class name, so the file MUST be named `<Component>.php` (PascalCase). The legacy `modules/Project/crons/calculateProjectCost.php` is lowercase and only works because its service `require_once`s it — don't copy that.
+
 ## Logic Class Template
 
-**Location:** `modules/<Module>/crons/<name>.php`
+**Location:** `modules/<Module>/crons/<Component>.php`
 
 ```php
 <?php
+
 /**
- * @name Project_CalculateProjectCost_Cron
  * @author Your Name
  * @email your.email@company.vn
  * @create date YYYY.MM.DD
@@ -57,81 +61,64 @@ $cronService->process();
 
 class Project_CalculateProjectCost_Cron {
 
-    /**
-     * Main entry point for cron execution
-     */
-    public function process(): void {
-        $records = $this->getRecords();
+	// Main entry point for cron execution
+	public function process(): void {
+		$records = $this->getRecords();
 
-        foreach ($records as $recordId) {
-            try {
-                $this->processRecord($recordId);
-            } catch (\Throwable $th) {
-                // Log error but continue processing other records
-                error_log("Failed to process record {$recordId}: " . $th->getMessage());
-            }
-        }
-    }
+		foreach ($records as $recordId) {
+			try {
+				$this->processRecord($recordId);
+			}
+			catch (Throwable $e) {
+				// One failed record must not stop the batch
+				error_log("Failed to process record {$recordId}: " . $e->getMessage());
+			}
+		}
+	}
 
-    /**
-     * Process individual record
-     */
-    protected function processRecord(int $recordId): void {
-        try {
-            $recordModel = Vtiger_Record_Model::getInstanceById($recordId);
+	protected function processRecord(int $recordId): void {
+		$recordModel = Vtiger_Record_Model::getInstanceById($recordId, 'Project');
+		$cost = $this->calculateCost($recordModel);
 
-            // Business logic here
-            $cost = $this->calculateCost($recordModel);
+		$recordModel->set('mode', 'edit');
+		$recordModel->set('actual_cost', $cost);
+		$recordModel->save();
+	}
 
-            $recordModel->set('mode', 'edit');
-            $recordModel->set('total_cost', $cost);
-            $recordModel->save();
+	protected function getRecords(): array {
+		global $adb;
 
-        } catch (\Throwable $th) {
-            throw $th; // Re-throw for outer catch
-        }
-    }
+		$sql = "SELECT projectid
+			FROM vtiger_project
+			INNER JOIN vtiger_crmentity ON (crmid = projectid AND deleted = 0)
+			WHERE projectstatus = ?";
+		$result = $adb->pquery($sql, ['Open']);
 
-    /**
-     * Get records to process
-     */
-    protected function getRecords(): array {
-        global $adb;
+		$ids = [];
 
-        $sql = "SELECT projectid
-                FROM vtiger_project
-                INNER JOIN vtiger_crmentity ON (crmid = projectid AND deleted = 0)
-                WHERE projectstatus = ?";
+		while ($row = $adb->fetchByAssoc($result)) {
+			$row = decodeUTF8($row);
+			$ids[] = (int) $row['projectid'];
+		}
 
-        $result = $adb->pquery($sql, ['Open']);
+		return $ids;
+	}
 
-        $ids = [];
-        while ($row = $adb->fetchByAssoc($result)) {
-            $row = decodeUTF8($row); // CRITICAL: decode UTF-8
-            $ids[] = (int) $row['projectid'];
-        }
-
-        return $ids;
-    }
-
-    /**
-     * Calculate project cost
-     */
-    protected function calculateCost(Vtiger_Record_Model $record): float {
-        // Calculation logic
-        return 0.0;
-    }
+	protected function calculateCost(Vtiger_Record_Model $record): float {
+		// Calculation logic
+		return 0.0;
+	}
 }
 ```
 
 ## Class Naming Convention
 
-Format: `{Module}_{Name}_Cron`
+Format: `{Module}_{Component}_Cron` in file `modules/{Module}/crons/{Component}.php`
 
 **Examples:**
-- `Project_CalculateProjectCost_Cron`
-- `Accounts_SyncExternalData_Cron`
-- `CPNotifications_CleanupOldNotifications_Cron`
+- `Project_CalculateProjectCost_Cron` → `modules/Project/crons/CalculateProjectCost.php`
+- `Accounts_SyncExternalData_Cron` → `modules/Accounts/crons/SyncExternalData.php`
+- `CPNotifications_Cleanup_Cron` → `modules/CPNotifications/crons/Cleanup.php`
 
 ## Critical Patterns
 
@@ -141,16 +128,16 @@ Format: `{Module}_{Name}_Cron`
 
 ```php
 foreach ($records as $recordId) {
-    try {
-        $this->processRecord($recordId);
-    } catch (\Throwable $th) {
-        // Log but continue with next record
-        error_log("Error processing {$recordId}: " . $th->getMessage());
-    }
+	try {
+		$this->processRecord($recordId);
+	}
+	catch (Throwable $e) {
+		error_log("Error processing {$recordId}: " . $e->getMessage());
+	}
 }
 ```
 
-**Why?** One failed record shouldn't stop entire batch.
+**Why?** One failed record shouldn't stop entire batch. `vtigercron.php` itself only catches `Exception` around each task, so an uncaught `Error` aborts the whole cron run.
 
 ### 2. Global $adb for Database
 
@@ -161,8 +148,8 @@ $sql = "SELECT field FROM table WHERE condition = ?";
 $result = $adb->pquery($sql, [$param]);
 
 while ($row = $adb->fetchByAssoc($result)) {
-    $row = decodeUTF8($row); // CRITICAL
-    // Process row
+	$row = decodeUTF8($row);
+	// Process row
 }
 ```
 
@@ -175,10 +162,11 @@ while ($row = $adb->fetchByAssoc($result)) {
 
 ```php
 try {
-    $recordModel = Vtiger_Record_Model::getInstanceById($recordId);
-} catch (\Throwable $th) {
-    // Record may not exist or be deleted
-    return;
+	$recordModel = Vtiger_Record_Model::getInstanceById($recordId);
+}
+catch (Throwable $e) {
+	// Record may not exist or be deleted
+	return;
 }
 
 $recordModel->set('mode', 'edit');
@@ -190,14 +178,14 @@ $recordModel->save();
 
 ```php
 protected function getRecords(): array {
-    global $adb;
+	global $adb;
 
-    // LIMIT batch size to prevent memory issues
-    $sql = "SELECT id FROM table
-            WHERE status = ?
-            LIMIT 1000"; // Batch limit
+	// Limit batch size to prevent memory issues; the next run picks up the rest
+	$sql = "SELECT id FROM table
+		WHERE status = ?
+		LIMIT 1000";
 
-    // Process in chunks
+	// Process in chunks
 }
 ```
 
@@ -207,18 +195,20 @@ protected function getRecords(): array {
 
 ```php
 class Accounts_SyncExternalData_Cron {
-    public function process(): void {
-        $accounts = $this->getAccountsToSync();
 
-        foreach ($accounts as $accountId) {
-            try {
-                $externalData = $this->fetchExternalData($accountId);
-                $this->updateRecord($accountId, $externalData);
-            } catch (\Throwable $th) {
-                error_log("Sync failed for {$accountId}: " . $th->getMessage());
-            }
-        }
-    }
+	public function process(): void {
+		$accounts = $this->getAccountsToSync();
+
+		foreach ($accounts as $accountId) {
+			try {
+				$externalData = $this->fetchExternalData($accountId);
+				$this->updateRecord($accountId, $externalData);
+			}
+			catch (Throwable $e) {
+				error_log("Sync failed for {$accountId}: " . $e->getMessage());
+			}
+		}
+	}
 }
 ```
 
@@ -226,14 +216,14 @@ class Accounts_SyncExternalData_Cron {
 
 ```php
 class CPNotifications_Cleanup_Cron {
-    public function process(): void {
-        global $adb;
 
-        $sql = "DELETE FROM vtiger_cpnotifications
-                WHERE created_date < DATE_SUB(NOW(), INTERVAL 90 DAY)";
+	public function process(): void {
+		global $adb;
 
-        $adb->pquery($sql, []);
-    }
+		$sql = "DELETE FROM vtiger_notifications
+			WHERE created_time < DATE_SUB(NOW(), INTERVAL 90 DAY)";
+		$adb->pquery($sql, []);
+	}
 }
 ```
 
@@ -241,29 +231,37 @@ class CPNotifications_Cleanup_Cron {
 
 ```php
 class Accounts_CalculateMetrics_Cron {
-    public function process(): void {
-        $accounts = $this->getRecords();
 
-        foreach ($accounts as $accountId) {
-            try {
-                $metrics = $this->calculateMetrics($accountId);
-                $this->saveMetrics($accountId, $metrics);
-            } catch (\Throwable $th) {
-                // Continue
-            }
-        }
-    }
+	public function process(): void {
+		$accounts = $this->getRecords();
+
+		foreach ($accounts as $accountId) {
+			try {
+				$metrics = $this->calculateMetrics($accountId);
+				$this->saveMetrics($accountId, $metrics);
+			}
+			catch (Throwable $e) {
+				error_log("Metrics failed for {$accountId}: " . $e->getMessage());
+			}
+		}
+	}
 }
 ```
 
 ## Testing Locally
 
-```bash
-# Run all cron tasks
-php cron/vtigercron.php
+`vtigercron.php` lives at the repo root and ignores CLI arguments; the only task selector is the `service` request param (= `vtiger_cron_task.name`).
 
-# Run specific task by name
-php cron/vtigercron.php -m "CalculateProjectCost"
+```bash
+# Run all due cron tasks (what cron/vtigercron.sh does)
+php vtigercron.php
+
+# Run one task (by vtiger_cron_task.name) through the real runner
+php -r '$_REQUEST["service"] = "CalculateProjectCost"; require "vtigercron.php";'
+
+# The runner still applies isRunnable() (frequency since lastend) and skips run_by='Supervisor' rows;
+# "not ready to run" → reset laststart/lastend of that row in vtiger_cron_task to force it.
+# Over HTTP the same selector is <site_URL>/vtigercron.php?service=<name> (admin session required).
 
 # Check output for errors
 tail -f logs/vtigercrm.log
@@ -282,7 +280,7 @@ tail -f logs/vtigercrm.log
 ## Next Steps
 
 1. Create service wrapper in `cron/modules/<Module>/`
-2. Create logic class in `modules/<Module>/crons/`
+2. Create logic class in `modules/<Module>/crons/<Component>.php`
 3. Register via migration (see `references/registration.md`)
 4. Test locally before deploying
 5. Monitor logs after deployment

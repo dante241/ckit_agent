@@ -33,9 +33,10 @@ Practical cryptographic patterns for securing data at rest, in transit, and in u
 
 | Key Size | Security Level | Equivalent Symmetric |
 |----------|----------------|---------------------|
-| RSA 2048 | 112 bits | AES-128 |
+| RSA 2048 | 112 bits | 3-key 3DES (below AES-128) |
 | RSA 3072 | 128 bits | AES-128 |
-| RSA 4096 | 152 bits | AES-192 |
+| RSA 4096 | ~140 bits (not a NIST SP 800-57 level) | Between AES-128 and AES-192 |
+| RSA 7680 | 192 bits | AES-192 |
 | ECDSA P-256 | 128 bits | AES-128 |
 | ECDSA P-384 | 192 bits | AES-192 |
 | Ed25519 | 128 bits | AES-128 |
@@ -333,7 +334,7 @@ is_valid = signer.verify(message, signature)
 ```python
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 
 class X25519KeyExchange:
     """
@@ -412,7 +413,7 @@ class SecurePasswordHasher:
     """
 
     def __init__(self):
-        # OWASP recommended parameters
+        # RFC 9106 second recommended option; OWASP minimum is m=19 MiB, t=2, p=1
         self.hasher = PasswordHasher(
             time_cost=3,        # Iterations
             memory_cost=65536,  # 64 MB
@@ -531,7 +532,7 @@ def derive_key_pbkdf2(password: str, salt: bytes = None,
     """
     Derive encryption key from password using PBKDF2.
 
-    NIST recommends minimum 600,000 iterations for PBKDF2-SHA256.
+    OWASP Password Storage Cheat Sheet: minimum 600,000 iterations for PBKDF2-HMAC-SHA256.
     """
     if salt is None:
         salt = os.urandom(16)

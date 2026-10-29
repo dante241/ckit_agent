@@ -18,12 +18,11 @@ class Accounts_ExportCSV_Action extends Vtiger_Action_Controller {
         }
 
         // Get records
-        $sql = "SELECT accountname, phone, amount, createdtime
-                FROM vtiger_account
-                INNER JOIN vtiger_crmentity ON crmid = accountid
-                WHERE deleted = 0
-                LIMIT 10000";
-        $result = $GLOBALS['adb']->query($sql);
+        $sql = "SELECT a.accountname, a.phone, a.annualrevenue, e.createdtime
+                FROM vtiger_account AS a
+                INNER JOIN vtiger_crmentity AS e ON (e.crmid = a.accountid AND e.deleted = 0)
+                LIMIT ?";
+        $result = $GLOBALS['adb']->pquery($sql, [10000]);
 
         // Set headers
         $fileName = 'accounts_' . date('YmdHis') . '.csv';
@@ -37,7 +36,7 @@ class Accounts_ExportCSV_Action extends Vtiger_Action_Controller {
         fwrite($output, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
         // Write header row
-        fputcsv($output, ['Account Name', 'Phone', 'Amount', 'Created Date']);
+        fputcsv($output, ['Account Name', 'Phone', 'Annual Revenue', 'Created Time']);
 
         // Write data rows
         while ($row = $GLOBALS['adb']->fetchByAssoc($result)) {
@@ -45,7 +44,7 @@ class Accounts_ExportCSV_Action extends Vtiger_Action_Controller {
             fputcsv($output, [
                 $row['accountname'],
                 $row['phone'],
-                $row['amount'],
+                $row['annualrevenue'],
                 $row['createdtime'],
             ]);
         }
@@ -130,11 +129,12 @@ $offset = 0;
 $limit = 1000;
 
 do {
-    $sql = "SELECT * FROM vtiger_account
-            INNER JOIN vtiger_crmentity ON crmid = accountid
-            WHERE deleted = 0
-            LIMIT $offset, $limit";
-    $result = $GLOBALS['adb']->query($sql);
+    $sql = "SELECT a.accountname, a.phone
+            FROM vtiger_account AS a
+            INNER JOIN vtiger_crmentity AS e ON (e.crmid = a.accountid AND e.deleted = 0)
+            ORDER BY a.accountid
+            LIMIT ?, ?";
+    $result = $GLOBALS['adb']->pquery($sql, [$offset, $limit]);
     $rowCount = $GLOBALS['adb']->num_rows($result);
 
     while ($row = $GLOBALS['adb']->fetchByAssoc($result)) {

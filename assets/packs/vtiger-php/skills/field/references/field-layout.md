@@ -192,20 +192,19 @@ For dynamic show/hide based on user interaction, use JS controller:
 **Location:** `layouts/v7/modules/{Module}/resources/Edit.js`
 
 ```javascript
-registerFieldDependency: function() {
-    var self = this;
-    var form = this.getForm();
+registerFieldDependency: function () {
+	var form = this.getForm();
+	// Edit form cells are td.fieldLabel.<fieldname> + td.fieldValue.<fieldname> (partials/EditViewContents.tpl)
+	var revenueCells = form.find('td.fieldLabel.revenue_target, td.fieldValue.revenue_target');
 
-    form.find('[name="goal_type"]').on('change', function() {
-        var goalType = jQuery(this).val();
-        var revenueField = form.find('[name="revenue_target"]').closest('.fieldRow');
-
-        if (goalType === 'Revenue') {
-            revenueField.show();
-        } else {
-            revenueField.hide();
-        }
-    }).trigger('change');
+	form.find('[name="goal_type"]').on('change', function () {
+		if (jQuery(this).val() === 'revenue') {
+			revenueCells.show();
+		}
+		else {
+			revenueCells.hide();
+		}
+	}).trigger('change');
 }
 ```
 

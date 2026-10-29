@@ -1,12 +1,14 @@
 ---
 name: assp-skill
-description: Brand DNA + ASSP validation framework for 8 Sync Dev (Avatar → Brand Voice → Hero Mechanism → Money Model → Offer Architect). MUST be consulted for any user-facing copy (UI microcopy, landing/pricing pages, emails, error messages): Alex Dev voice (terse, direct, dev-to-dev Vietnamese, EN tech terms kept, banned-phrase list), brand identity + standard footer, offer/pricing structure (4-week billing). Also governs validate-before-build for new product features.
+description: "8 Sync Dev products ONLY (8syncdev / 8 Sync Dev repos and marketing) — NOT CloudGO/vtiger or other client projects, whose UI text follows their own language/label rules. Brand DNA + ASSP validation framework (Avatar → Brand Voice → Hero Mechanism → Money Model → Offer Architect) for 8 Sync Dev user-facing copy (UI microcopy, landing/pricing pages, emails, error messages): Alex Dev voice, brand footer, offer/pricing structure (4-week billing), validate-before-build for new 8 Sync Dev product features."
 ---
 
 # SKILL.md — ASSP cho 8 Sync Dev
 
-> File chỉ dẫn cho mọi AI coding agent (Claude Code, Cursor, GitHub Copilot, Codex, Gemini…).
-> Đọc file này TRƯỚC khi làm bất cứ việc gì trong repo: brand này là ai, tư duy làm sản phẩm ra sao,
+> **Phạm vi:** CHỈ áp dụng cho sản phẩm/repo/kênh của 8 Sync Dev. Repo khách hàng hoặc sản phẩm khác
+> (vd CloudGO/vtiger: label theo `languages/` + skill `language`, giọng trang trọng của CRM) → KHÔNG dùng
+> skill này, không gắn footer brand, không áp 4-week billing.
+> Trong repo 8 Sync Dev: đọc file này TRƯỚC khi làm: brand này là ai, tư duy làm sản phẩm ra sao,
 > và **ASSP** — bộ nguyên tắc "validate-trước-khi-build" mà mọi sản phẩm 8 Sync Dev phải đi qua.
 
 ---
@@ -158,10 +160,10 @@ Sản phẩm có phí → đủ cả 5 bước.
 - Archetype: Maker-Mentor — anh thợ vừa làm vừa dạy.
 - 3 trait cốt lõi: "dev nói chuyện dev" · "brutally honest" · "code + biz cùng lúc".
 - POV: "mình" với cộng đồng; "anh/em" tuỳ avatar; **KHÔNG** "quý khách".
-- Gọi audience: "anh em dev", "fen", "bạn".
+- Gọi audience: "anh em dev", "fen", "bạn" (chỉ kênh marketing/cộng đồng; UI sản phẩm dùng "bạn").
 - Mix EN-VI: cho phép với thuật ngữ kỹ thuật & marketing (deploy, ship, MRR, CAC, ICP).
 - Câu TB 12–18 từ, tối đa 25; đoạn ≤3 câu; lớp 9 đọc hiểu.
-- Emoji ≤1–2/post, ưu tiên ⚡🔥💀🚀; cấm 🌟✨🎉 (sến).
+- Emoji ≤1–2/post, ưu tiên ⚡🔥💀🚀; cấm 🌟✨🎉 (sến). Chỉ trong post marketing/social — KHÔNG emoji trong UI, code, commit, tài liệu kỹ thuật.
 
 **Banned list (tuyệt đối tránh):** "trong thời đại số ngày nay", "hãy cùng khám phá", "điều tuyệt vời là",
 "đột phá", "cách mạng", "giải pháp tối ưu hàng đầu", "Great question!", "delve into", "quý khách",

@@ -50,8 +50,8 @@ $currentUser = Users_Record_Model::getCurrentUserModel();
 
 // Convert DB datetime to user timezone
 $dbDateTime = '2025-02-11 14:30:00';
-$userDateTime = DateTimeField::convertToUserTimeZone($dbDateTime, $currentUser);
-// If user timezone is GMT+7, output: 2025-02-11 21:30:00
+$userDateTime = DateTimeField::convertToUserTimeZone($dbDateTime, $currentUser)->format('Y-m-d H:i:s');
+// Returns a DateTime object; if user timezone is GMT+7, formatted output: 2025-02-11 21:30:00
 ```
 
 ## User Format → Database
@@ -59,10 +59,10 @@ $userDateTime = DateTimeField::convertToUserTimeZone($dbDateTime, $currentUser);
 ### Using DateTimeField
 
 ```php
-// Convert user datetime to DB format
+// Convert user datetime to DB format (user format + timezone → GMT0)
 $userDateTime = '02-11-2025 2:30 PM';
-$dbDateTime = DateTimeField::convertToDBFormat($userDateTime);
-// Output: 2025-02-11 14:30:00
+$dbDateTime = (new DateTimeField($userDateTime))->getDBInsertDateTimeValue();
+// Output: 2025-02-11 07:30:00 for a GMT+7 user (convertToDBFormat() only handles the date part)
 
 // Convert user date to DB format
 $userDate = '02-11-2025';
@@ -77,8 +77,8 @@ $currentUser = Users_Record_Model::getCurrentUserModel();
 
 // Convert user timezone to DB timezone (UTC)
 $userDateTime = '2025-02-11 21:30:00';
-$dbDateTime = DateTimeField::convertToDBTimeZone($userDateTime, $currentUser);
-// If user timezone is GMT+7, output: 2025-02-11 14:30:00
+$dbDateTime = DateTimeField::convertToDBTimeZone($userDateTime, $currentUser)->format('Y-m-d H:i:s');
+// Returns a DateTime object; if user timezone is GMT+7, formatted output: 2025-02-11 14:30:00
 ```
 
 ## Timezone Handling

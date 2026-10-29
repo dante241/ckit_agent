@@ -9,12 +9,12 @@
 ```php
 // Check if record exists in crmentity
 function verifyRecordExists(int $recordId): bool {
-    global $adb;
+	global $adb;
 
-    $sql = "SELECT crmid FROM vtiger_crmentity WHERE crmid = ? AND deleted = 0";
-    $result = $adb->pquery($sql, [$recordId]);
+	$sql = "SELECT crmid FROM vtiger_crmentity WHERE crmid = ? AND deleted = 0";
+	$result = $adb->pquery($sql, [$recordId]);
 
-    return $adb->num_rows($result) > 0;
+	return $adb->num_rows($result) > 0;
 }
 
 // Usage in test
@@ -31,12 +31,12 @@ assertResult('Record should exist in database', verifyRecordExists($recordId));
 ```php
 // Verify specific field value
 function verifyFieldValue(int $recordId, string $module, string $fieldName, $expectedValue): bool {
-    global $adb;
+	global $adb;
 
-    $recordModel = Vtiger_Record_Model::getInstanceById($recordId, $module);
-    $actualValue = $recordModel->get($fieldName);
+	$recordModel = Vtiger_Record_Model::getInstanceById($recordId, $module);
+	$actualValue = $recordModel->get($fieldName);
 
-    return ($actualValue === $expectedValue);
+	return ($actualValue === $expectedValue);
 }
 
 // Usage in test
@@ -45,41 +45,41 @@ $recordModel->set('mode', 'edit');
 $recordModel->save();
 
 assertResult(
-    'Account name should be updated',
-    verifyFieldValue($recordId, 'Accounts', 'accountname', 'Updated Name')
+	'Account name should be updated',
+	verifyFieldValue($recordId, 'Accounts', 'accountname', 'Updated Name')
 );
 ```
 
 ### Verify Relation Created
 
+Reference fields (uitype 10/51/57…) are stored in the field's own table column, not in `vtiger_crmentityrel` (that table only holds N:N related-list links). Contacts `account_id` → `vtiger_contactdetails.accountid`.
+
 ```php
-// Check if two records are related
-function verifyRelationExists(int $sourceRecordId, int $targetRecordId): bool {
-    global $adb;
+// Check that a contact is linked to an account through its reference field
+function verifyContactAccountLink(int $contactId, int $accountId): bool {
+	global $adb;
 
-    $sql = "SELECT crmid FROM vtiger_crmentityrel
-            WHERE (crmid = ? AND relcrmid = ?)
-               OR (crmid = ? AND relcrmid = ?)";
+	$sql = "SELECT contactid
+		FROM vtiger_contactdetails
+		INNER JOIN vtiger_crmentity ON (crmid = contactid AND deleted = 0)
+		WHERE contactid = ? AND accountid = ?";
 
-    $result = $adb->pquery($sql, [
-        $sourceRecordId, $targetRecordId,
-        $targetRecordId, $sourceRecordId
-    ]);
+	$result = $adb->pquery($sql, [$contactId, $accountId]);
 
-    return $adb->num_rows($result) > 0;
+	return $adb->num_rows($result) > 0;
 }
 
 // Usage in test
 $contactId = 123;
 $accountId = 456;
 
-// Create relation
+// Link via the reference field
 $contactModel = Vtiger_Record_Model::getInstanceById($contactId, 'Contacts');
 $contactModel->set('account_id', $accountId);
 $contactModel->set('mode', 'edit');
 $contactModel->save();
 
-assertResult('Relation should exist', verifyRelationExists($contactId, $accountId));
+assertResult('Contact should be linked to account', verifyContactAccountLink($contactId, $accountId));
 ```
 
 ### Verify Record Count
@@ -87,30 +87,30 @@ assertResult('Relation should exist', verifyRelationExists($contactId, $accountI
 ```php
 // Count records matching criteria
 function getRecordCount(string $module, array $conditions = []): int {
-    global $adb;
+	global $adb;
 
-    $moduleModel = Vtiger_Module_Model::getInstance($module);
-    $tableName = $moduleModel->get('basetable');
-    $tableIndex = $moduleModel->get('basetableid');
+	$moduleModel = Vtiger_Module_Model::getInstance($module);
+	$tableName = $moduleModel->get('basetable');
+	$tableIndex = $moduleModel->get('basetableid');
 
-    $sql = "SELECT COUNT(*) as count
-            FROM {$tableName}
-            INNER JOIN vtiger_crmentity ON crmid = {$tableIndex} AND deleted = 0";
+	$sql = "SELECT COUNT(*) as count
+			FROM {$tableName}
+			INNER JOIN vtiger_crmentity ON crmid = {$tableIndex} AND deleted = 0";
 
-    $params = [];
-    if (!empty($conditions)) {
-        $whereClauses = [];
-        foreach ($conditions as $field => $value) {
-            $whereClauses[] = "{$field} = ?";
-            $params[] = $value;
-        }
-        $sql .= " WHERE " . implode(' AND ', $whereClauses);
-    }
+	$params = [];
+	if (!empty($conditions)) {
+		$whereClauses = [];
+		foreach ($conditions as $field => $value) {
+			$whereClauses[] = "{$field} = ?";
+			$params[] = $value;
+		}
+		$sql .= " WHERE " . implode(' AND ', $whereClauses);
+	}
 
-    $result = $adb->pquery($sql, $params);
-    $row = $adb->fetchByAssoc($result);
+	$result = $adb->pquery($sql, $params);
+	$row = $adb->fetchByAssoc($result);
 
-    return (int) $row['count'];
+	return (int) $row['count'];
 }
 
 // Usage in test
@@ -132,28 +132,28 @@ assertEquals('Active campaign count should increase by 1', $countBefore + 1, $co
 ```php
 // Verify foreign key integrity
 function verifyForeignKeyIntegrity(int $recordId, string $relatedModule, string $relatedField): bool {
-    global $adb;
+	global $adb;
 
-    $recordModel = Vtiger_Record_Model::getInstanceById($recordId);
-    $relatedRecordId = (int) $recordModel->get($relatedField);
+	$recordModel = Vtiger_Record_Model::getInstanceById($recordId);
+	$relatedRecordId = (int) $recordModel->get($relatedField);
 
-    if (empty($relatedRecordId)) {
-        return true; // Optional field
-    }
+	if (empty($relatedRecordId)) {
+		return true; // Optional field
+	}
 
-    // Check if related record exists
-    $sql = "SELECT crmid FROM vtiger_crmentity
-            WHERE crmid = ? AND setype = ? AND deleted = 0";
+	// Check if related record exists
+	$sql = "SELECT crmid FROM vtiger_crmentity
+			WHERE crmid = ? AND setype = ? AND deleted = 0";
 
-    $result = $adb->pquery($sql, [$relatedRecordId, $relatedModule]);
+	$result = $adb->pquery($sql, [$relatedRecordId, $relatedModule]);
 
-    return $adb->num_rows($result) > 0;
+	return $adb->num_rows($result) > 0;
 }
 
 // Usage in test
 assertResult(
-    'Related account should exist',
-    verifyForeignKeyIntegrity($contactId, 'Accounts', 'account_id')
+	'Related account should exist',
+	verifyForeignKeyIntegrity($contactId, 'Accounts', 'account_id')
 );
 ```
 
@@ -164,44 +164,40 @@ assertResult(
 ```php
 // Make API call and verify response
 function testApiCall(string $url, string $method, array $data = [], array $headers = []): array {
-    $ch = curl_init();
+	$ch = curl_init();
 
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+	curl_setopt($ch, CURLOPT_URL, $url);
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+	curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
 
-    if (!empty($headers)) {
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    }
+	if (!empty($headers)) {
+		curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+	}
 
-    if (!empty($data) && in_array($method, ['POST', 'PUT', 'PATCH'])) {
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    }
+	if (!empty($data) && in_array($method, ['POST', 'PUT', 'PATCH'])) {
+		curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+	}
 
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+	$response = curl_exec($ch);
+	$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+	curl_close($ch);
 
-    return [
-        'http_code' => $httpCode,
-        'body' => json_decode($response, true),
-        'raw_body' => $response,
-    ];
+	return [
+		'http_code' => $httpCode,
+		'body' => json_decode($response, true),
+		'raw_body' => $response,
+	];
 }
 
-// Usage in test
-$apiUrl = 'https://localhost/api/IntegrationAPI/Zalo/CreateOrder';
-$headers = ['Authorization: Bearer test_token_123'];
-$payload = [
-    'order_id' => 'ORDER_123',
-    'customer_name' => 'Nguyễn Văn A',
-];
+// Usage in test - Integration API entry point is api/IntegrationAPI/Endpoint.php?platform=<X>&action=<method>
+global $site_URL;
+$apiUrl = rtrim($site_URL, '/') . '/api/IntegrationAPI/Endpoint.php?platform=CloudBot&action=getTicketList';
 
-$response = testApiCall($apiUrl, 'POST', $payload, $headers);
+// No `token` header -> the handler's checkSession() answers 401
+$response = testApiCall($apiUrl, 'POST', ['keyword' => 'Nguyễn Văn A']);
 
-assertEquals('HTTP status should be 200', 200, $response['http_code']);
-assertEquals('Response should be success', true, $response['body']['success'] ?? false);
-assertNotEmpty('Order ID should be returned', $response['body']['result']['id'] ?? '');
+assertEquals('Missing token should return 401', 401, $response['http_code']);
+assertEquals('Body should flag failure', 0, $response['body']['success'] ?? null);
 ```
 
 ### Verify JSON Structure
@@ -209,26 +205,26 @@ assertNotEmpty('Order ID should be returned', $response['body']['result']['id'] 
 ```php
 // Check if JSON response has required fields
 function verifyJsonStructure(array $json, array $requiredFields): bool {
-    foreach ($requiredFields as $field) {
-        if (!isset($json[$field])) {
-            echo "    Missing field: {$field}\n";
-            return false;
-        }
-    }
-    return true;
+	foreach ($requiredFields as $field) {
+		if (!isset($json[$field])) {
+			echo "    Missing field: {$field}\n";
+			return false;
+		}
+	}
+	return true;
 }
 
 // Usage in test
 $response = ['success' => true, 'result' => ['id' => 123, 'name' => 'Test']];
 
 assertResult(
-    'Response should have required fields',
-    verifyJsonStructure($response, ['success', 'result'])
+	'Response should have required fields',
+	verifyJsonStructure($response, ['success', 'result'])
 );
 
 assertResult(
-    'Result should have required fields',
-    verifyJsonStructure($response['result'], ['id', 'name'])
+	'Result should have required fields',
+	verifyJsonStructure($response['result'], ['id', 'name'])
 );
 ```
 
@@ -239,38 +235,39 @@ assertResult(
 ```php
 // Read last N lines from log file
 function readLastLogLines(string $logFile, int $lines = 10): array {
-    if (!file_exists($logFile)) {
-        return [];
-    }
+	if (!file_exists($logFile)) {
+		return [];
+	}
 
-    $file = new SplFileObject($logFile, 'r');
-    $file->seek(PHP_INT_MAX);
-    $lastLine = $file->key();
-    $startLine = max(0, $lastLine - $lines);
+	$file = new SplFileObject($logFile, 'r');
+	$file->seek(PHP_INT_MAX);
+	$lastLine = $file->key();
+	$startLine = max(0, $lastLine - $lines);
 
-    $result = [];
-    $file->seek($startLine);
-    while (!$file->eof()) {
-        $result[] = $file->current();
-        $file->next();
-    }
+	$result = [];
+	$file->seek($startLine);
+	while (!$file->eof()) {
+		$result[] = $file->current();
+		$file->next();
+	}
 
-    return $result;
+	return $result;
 }
 
-// Usage in test
-$logFile = 'logs/vtigercrm.log';
+// Usage in test - pick the log file of the logger your code writes to (see log4php.properties, e.g. logs/platform.log)
+$logFile = 'logs/platform.log';
 $logLines = readLastLogLines($logFile, 20);
+$expectedMessage = '{message logged by the code under test}';
 
 $found = false;
 foreach ($logLines as $line) {
-    if (strpos($line, 'Goal progress calculated') !== false) {
-        $found = true;
-        break;
-    }
+	if (strpos($line, $expectedMessage) !== false) {
+		$found = true;
+		break;
+	}
 }
 
-assertResult('Log should contain progress calculation message', $found);
+assertResult('Log should contain the expected message', $found);
 ```
 
 ### Check for Error in Logs
@@ -278,25 +275,25 @@ assertResult('Log should contain progress calculation message', $found);
 ```php
 // Check if log contains error message
 function logContainsError(string $logFile, string $errorPattern): bool {
-    if (!file_exists($logFile)) {
-        return false;
-    }
+	if (!file_exists($logFile)) {
+		return false;
+	}
 
-    $lines = readLastLogLines($logFile, 50);
+	$lines = readLastLogLines($logFile, 50);
 
-    foreach ($lines as $line) {
-        if (preg_match("/{$errorPattern}/i", $line)) {
-            return true;
-        }
-    }
+	foreach ($lines as $line) {
+		if (preg_match("/{$errorPattern}/i", $line)) {
+			return true;
+		}
+	}
 
-    return false;
+	return false;
 }
 
 // Usage in test
 assertResult(
-    'Log should not contain SQL errors',
-    !logContainsError('logs/vtigercrm.log', 'SQL.*error|mysql.*error')
+	'Log should not contain SQL errors',
+	!logContainsError('logs/sql_errors.log', 'Query Failed')
 );
 ```
 
@@ -307,21 +304,22 @@ assertResult(
 ```php
 // Clean up test records at end of test
 function cleanupTestRecords(array $recordIds): void {
-    if (empty($recordIds)) {
-        return;
-    }
+	if (empty($recordIds)) {
+		return;
+	}
 
-    echo "Cleaning up test records...\n";
+	echo "Cleaning up test records...\n";
 
-    foreach ($recordIds as $id) {
-        try {
-            $recordModel = Vtiger_Record_Model::getInstanceById((int) $id);
-            $recordModel->delete();
-            echo "  ✓ Deleted record ID: {$id}\n";
-        } catch (Exception $e) {
-            echo "  ✗ Failed to delete record ID: {$id} - {$e->getMessage()}\n";
-        }
-    }
+	foreach ($recordIds as $id) {
+		try {
+			$recordModel = Vtiger_Record_Model::getInstanceById((int) $id);
+			$recordModel->delete();
+			echo "  ✓ Deleted record ID: {$id}\n";
+		}
+		catch (Throwable $e) {
+			echo "  ✗ Failed to delete record ID: {$id} - {$e->getMessage()}\n";
+		}
+	}
 }
 
 // Track records during test
@@ -344,42 +342,36 @@ $testRecordIds[] = $record2->getId();
 cleanupTestRecords($testRecordIds);
 ```
 
-### Clean Up by Module and Criteria
+### Clean Up by Module and Name Prefix
 
 ```php
-// Delete records matching criteria
-function cleanupRecordsByCriteria(string $module, array $conditions): void {
-    global $adb;
+// Delete records whose column starts with a prefix (e.g. all "Test Account%" rows)
+function cleanupRecordsByPrefix(string $module, string $column, string $prefix): void {
+	global $adb;
 
-    $moduleModel = Vtiger_Module_Model::getInstance($module);
-    $tableName = $moduleModel->get('basetable');
-    $tableIndex = $moduleModel->get('basetableid');
+	$moduleModel = Vtiger_Module_Model::getInstance($module);
+	$tableName = $moduleModel->get('basetable');
+	$tableIndex = $moduleModel->get('basetableid');
 
-    $whereClauses = [];
-    $params = [];
-    foreach ($conditions as $field => $value) {
-        $whereClauses[] = "{$field} = ?";
-        $params[] = $value;
-    }
+	// $column comes from test code, never from user input
+	$sql = "SELECT {$tableIndex}
+		FROM {$tableName}
+		INNER JOIN vtiger_crmentity ON (crmid = {$tableIndex} AND deleted = 0)
+		WHERE {$column} LIKE ?
+		LIMIT 500";
 
-    $sql = "SELECT {$tableIndex} FROM {$tableName}
-            INNER JOIN vtiger_crmentity ON crmid = {$tableIndex} AND deleted = 0
-            WHERE " . implode(' AND ', $whereClauses);
+	$result = $adb->pquery($sql, [addcslashes($prefix, '%_\\') . '%']);
+	$recordIds = [];
 
-    $result = $adb->pquery($sql, $params);
-    $recordIds = [];
+	while ($row = $adb->fetchByAssoc($result)) {
+		$recordIds[] = (int) $row[$tableIndex];
+	}
 
-    while ($row = $adb->fetchByAssoc($result)) {
-        $recordIds[] = $row[$tableIndex];
-    }
-
-    cleanupTestRecords($recordIds);
+	cleanupTestRecords($recordIds);
 }
 
-// Usage in test - cleanup all test accounts created today
-cleanupRecordsByCriteria('Accounts', [
-    'accountname' => 'Test Account%'
-]);
+// Usage in test - cleanup all test accounts
+cleanupRecordsByPrefix('Accounts', 'accountname', 'Test Account ');
 ```
 
 ## File System Verification
@@ -389,31 +381,30 @@ cleanupRecordsByCriteria('Accounts', [
 ```php
 // Check if file exists and has content
 function verifyFileCreated(string $filePath, int $minSize = 0): bool {
-    if (!file_exists($filePath)) {
-        echo "    File does not exist: {$filePath}\n";
-        return false;
-    }
+	if (!file_exists($filePath)) {
+		echo "    File does not exist: {$filePath}\n";
+		return false;
+	}
 
-    $fileSize = filesize($filePath);
-    if ($fileSize < $minSize) {
-        echo "    File too small: {$fileSize} bytes (min: {$minSize})\n";
-        return false;
-    }
+	$fileSize = filesize($filePath);
+	if ($fileSize < $minSize) {
+		echo "    File too small: {$fileSize} bytes (min: {$minSize})\n";
+		return false;
+	}
 
-    return true;
+	return true;
 }
 
 // Usage in test - verify export file created
-$exportFile = 'test/storage/export_' . time() . '.xlsx';
+$exportFile = sys_get_temp_dir() . '/export_' . time() . '.xlsx';
 
-// Run export
-$exporter->exportToExcel($exportFile);
+// Run the export code under test so it writes $exportFile
 
 assertResult('Export file should be created', verifyFileCreated($exportFile, 100));
 
 // Cleanup
 if (file_exists($exportFile)) {
-    unlink($exportFile);
+	unlink($exportFile);
 }
 ```
 
@@ -422,28 +413,28 @@ if (file_exists($exportFile)) {
 ```php
 // Check CSV file structure
 function verifyCsvContent(string $csvFile, array $expectedHeaders): bool {
-    if (!file_exists($csvFile)) {
-        return false;
-    }
+	if (!file_exists($csvFile)) {
+		return false;
+	}
 
-    $handle = fopen($csvFile, 'r');
-    $headers = fgetcsv($handle);
-    fclose($handle);
+	$handle = fopen($csvFile, 'r');
+	$headers = fgetcsv($handle);
+	fclose($handle);
 
-    foreach ($expectedHeaders as $header) {
-        if (!in_array($header, $headers)) {
-            echo "    Missing header: {$header}\n";
-            return false;
-        }
-    }
+	foreach ($expectedHeaders as $header) {
+		if (!in_array($header, $headers)) {
+			echo "    Missing header: {$header}\n";
+			return false;
+		}
+	}
 
-    return true;
+	return true;
 }
 
 // Usage in test
 assertResult(
-    'CSV should have correct headers',
-    verifyCsvContent('export.csv', ['ID', 'Name', 'Status'])
+	'CSV should have correct headers',
+	verifyCsvContent('export.csv', ['ID', 'Name', 'Status'])
 );
 ```
 
@@ -454,17 +445,17 @@ assertResult(
 ```php
 // Measure function execution time
 function measureExecutionTime(callable $callable): float {
-    $start = microtime(true);
-    $callable();
-    $end = microtime(true);
+	$start = microtime(true);
+	$callable();
+	$end = microtime(true);
 
-    return round(($end - $start) * 1000, 2); // milliseconds
+	return round(($end - $start) * 1000, 2); // milliseconds
 }
 
 // Usage in test
 $executionTime = measureExecutionTime(function() {
-    // Code to measure
-    $helper->processLargeDataset();
+	// Code to measure
+	CPGoal_Data_Helper::getImplementTimePickList();	// replace with the code under test
 });
 
 echo "Execution time: {$executionTime}ms\n";

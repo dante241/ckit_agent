@@ -4,18 +4,20 @@
 
 ## Architecture Overview
 
-The queue pattern uses **2 files** for continuous processing:
+A queue is identified by ONE name used in three places: the job class name, `queue_tasks.task_name`, and `vtiger_cron_task.name` of its consumer (e.g. `SendNotification`).
 
 ```
-cron/modules/<Module>/<Name>.service          → Thin wrapper (3-5 lines)
-modules/<Module>/services/<ProcessName>.php   → Extends BaseProcess
+modules/CPQueue/Jobs/<JobName>.php            → Job class: static run(Task $task) = the real work per task
+cron/modules/<Module>/<Name>.service          → Thin consumer wrapper (3-5 lines), run by Supervisor
+modules/<Module>/services/<ProcessName>.php   → Consumer class extends BaseProcess (optional hooks)
 ```
+
+Producers enqueue with `CPQueue_Server_Model::addTask('<JobName>', $data)`; the consumer pulls one batch of `<JobName>` tasks, runs `<JobName>::run()` for each, exits; Supervisor restarts it.
 
 **Why this pattern?**
-- Real-time processing of queued tasks
-- Runs continuously via supervisord (not periodic cron)
-- Built-in batch limiting, error handling, sleep intervals
-- Uses CPQueue module for task management
+- Near-real-time processing of queued tasks
+- Runs under Supervisor (not the periodic `vtigercron.php`, which skips `run_by='Supervisor'` rows)
+- Batch limiting and per-task status tracking come from CPQueue (php-queue library)
 
 ## When to Use Queue Pattern
 
@@ -30,344 +32,176 @@ modules/<Module>/services/<ProcessName>.php   → Extends BaseProcess
 
 **Rule of thumb:** If it needs to happen "now" (within seconds), use queue pattern.
 
-## Service File Template
+## 1. Job Class (the work)
+
+**Location:** `modules/CPQueue/Jobs/<JobName>.php` — the class name MUST equal the queue/task name. `CPQueue_Server_Model`'s constructor registers `modules/CPQueue/Jobs` with the php-queue autoloader, so no require is needed by the consumer.
+
+Real example: `modules/CPQueue/Jobs/SendNotification.php`, `modules/CPQueue/Jobs/ProcessEmailQueue.php`.
+
+```php
+<?php
+
+/*
+	SendWebhookEvent
+	Author: Your Name
+	Date: YYYY-MM-DD
+*/
+
+use PhpQueue\Task;
+
+require_once 'modules/CPQueue/include.php';
+
+class SendWebhookEvent extends Vtiger_Base_Model implements PhpQueue\Interfaces\IJob {
+
+	public static function run(Task $task) {
+		$data = $task->get_request_data();
+
+		if (empty($data)) {
+			return;
+		}
+
+		// Business logic for ONE task, e.g. call a helper of the owning module
+		CPWebhook_Logic_Helper::send($data);
+	}
+}
+```
+
+`CPWebhook_Logic_Helper` is a placeholder for your module's helper.
+
+## 2. Enqueue Tasks (producer)
+
+```php
+// $data is stored as queue_tasks.request_data
+$queue = CPQueue_Server_Model::getCleanInstance();
+$queue->addTask('SendWebhookEvent', ['record_id' => $recordId, 'event' => 'updated'], 3);	// 3 = max retries
+```
+
+Signature: `addTask($job = "", $data = [], $maxRetries = 0, $callBack = false, $priority = 0, $group_id = 0, $subTask = [], $date = null)` (`modules/CPQueue/models/Server.php`). Returns the task id or `false` (failure is logged via `saveLog('QUEUE', …)`). On a hot path that enqueues many tasks per request, `CPQueue_Server_Model::getInstance()` reuses one instance/PDO connection (only for queues not listed in `$queueConfig['session_manager_queue']`).
+
+## 3. Consumer Service File
 
 **Location:** `cron/modules/<Module>/<Name>.service`
 
 ```php
 <?php
-/**
- * @author Your Name
- * @email your.email@company.vn
- * @create date YYYY.MM.DD
- */
 
 require_once('modules/CPNotifications/services/ProcessSendNotification.php');
-
 $process = new ProcessSendNotification('SendNotification', 200);
 $process->processQueue();
 ```
 
-**Parameters:**
-- First param: Queue name (must match CPQueue record)
-- Second param: Batch limit (default 200, max 500)
+(Verbatim: `cron/modules/CPNotifications/processNotificationQueue.service`, registered as `vtiger_cron_task.name = 'SendNotification'`.)
 
-## Process Class Template
+**Parameters:**
+- First param: queue name — must equal the job class name AND the `vtiger_cron_task.name` row
+- Second param: batch limit (default 200; keep it moderate, 500 is a sensible upper bound — nothing enforces a cap)
+
+## 4. Consumer Process Class
 
 **Location:** `modules/<Module>/services/<ProcessName>.php`
 
 ```php
 <?php
-/**
- * @name ProcessSendNotification
- * @author Your Name
- * @email your.email@company.vn
- * @create date YYYY.MM.DD
- */
+
+/*
+	ProcessSendNotification Service
+	Author: Your Name
+	Date: YYYY-MM-DD
+*/
 
 include_once('modules/CPQueue/models/BaseProcess.php');
 
 class ProcessSendNotification extends BaseProcess {
 
-    /**
-     * Execute before processing tasks
-     * Use for initialization, config loading
-     */
-    protected function beforeExecuteTasks(): void {
-        // Optional: load config, initialize services
-        $this->initializeNotificationService();
-    }
+	protected function beforeExecuteTasks() {
+		// Optional: load config once per batch
+	}
 
-    /**
-     * Execute after processing tasks
-     * Use for cleanup, logging
-     */
-    protected function afterExecuteTasks(): void {
-        // Optional: cleanup resources, log stats
-        $this->logProcessingStats();
-    }
-
-    /**
-     * Initialize notification service
-     */
-    private function initializeNotificationService(): void {
-        // Service initialization
-    }
-
-    /**
-     * Log processing statistics
-     */
-    private function logProcessingStats(): void {
-        // Logging logic
-    }
+	protected function afterExecuteTasks() {
+		// Optional: cleanup, batch stats
+	}
 }
 ```
 
-## BaseProcess Framework
+Both hooks are optional (the base class has empty implementations); the task logic does NOT go here — it lives in the job's `run()`.
 
-The parent class `CPQueue/models/BaseProcess.php` provides:
+## BaseProcess Framework (real code)
+
+`modules/CPQueue/models/BaseProcess.php` (abstract):
 
 ```php
-class BaseProcess {
-    protected $queueName;           // Queue identifier
-    protected $batchLimit = 200;    // Tasks per batch
-    protected $sleepTime = 2;       // Seconds between batches
+abstract class BaseProcess {
+	protected $service;					// CPQueue_Server_Model::getCleanInstance()
+	protected $queueName;
+	protected $queueProcessBatchLimit;
 
-    public function __construct(string $queueName, int $batchLimit = 200) {
-        $this->queueName = $queueName;
-        $this->batchLimit = $batchLimit;
-    }
-
-    public function processQueue(): void {
-        while (true) {
-            $this->beforeExecuteTasks();
-
-            $tasks = $this->getTasksFromQueue();
-
-            foreach ($tasks as $task) {
-                try {
-                    $this->executeTask($task);
-                    $this->markTaskComplete($task);
-                } catch (\Throwable $th) {
-                    $this->markTaskFailed($task, $th->getMessage());
-                }
-            }
-
-            $this->afterExecuteTasks();
-
-            // Prevent CPU spike
-            sleep($this->sleepTime);
-        }
-    }
+	public function __construct($queueName, $queueProcessBatchLimit = 200) { … }
+	protected function beforeExecuteTasks() { }
+	protected function afterExecuteTasks() { }
+	protected function preProcess($cronTask) { … }		// setBulkMode + markRunning
+	protected function endProcess($queueName) { sleep(2); }
+	public function processQueue() { … }
 }
 ```
 
-**Framework handles:**
-- Infinite loop for continuous processing
-- Batch limiting (prevents memory exhaustion)
-- Error isolation per task
-- Sleep intervals (prevents CPU spike)
-- Task status tracking
+`processQueue()` runs **one batch** and returns:
+1. `Vtiger_Cron::getInstance($queueName)`; missing row or disabled Supervisor row → `endProcess()` and return
+2. Supervisor row → `markRunning()`
+3. `beforeExecuteTasks()`
+4. `$this->service->executeTasks($batchLimit, $queueName)` — claims up to the limit of `task_name = $queueName` tasks; each runs through php-queue's `TaskPerformer` (→ `<JobName>::run()`), exceptions are caught and echoed per task
+5. `resetSkipThisTimeType()` + `completeProcessingTask()` (closes this run's claimed IN_PROCESS tasks and ones started > 1 hour ago)
+6. `afterExecuteTasks()`, `markFinished()`, then `endProcess()` sleeps 2 s
 
-## CPQueue Integration
+There is no `while (true)` loop: the process exits after each batch and Supervisor (autorestart) starts it again.
 
-Queue tasks are stored in `vtiger_cpqueue` table:
+## Queue Table: `queue_tasks`
 
-```sql
-CREATE TABLE vtiger_cpqueue (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    queue_name VARCHAR(100),
-    task_data TEXT,           -- JSON payload
-    status VARCHAR(20),        -- pending|processing|completed|failed
-    priority INT DEFAULT 0,
-    created_at DATETIME,
-    processed_at DATETIME,
-    error_message TEXT
-);
-```
+Key columns (live DDL, `SHOW CREATE TABLE queue_tasks`):
 
-### Adding Tasks to Queue
+| Column | Meaning |
+|--------|---------|
+| `id`, `uniqid` | Task identity |
+| `task_name` | Queue / job class name |
+| `type` | 1 = TASK, 0 = SKIP_IN_THIS_TIME (`PhpQueue\TaskConst`) |
+| `status` | 1 NEW, 2 IN_PROCESS, 3 DONE, 4 ERROR, 5 CANCEL, 6 CALLBACK_ERROR, 7 DONE_WITH_ERROR (`PhpQueue\Task::STATUS_*`) |
+| `request_data` / `response_data` | Payload / result (serialized by php-queue) |
+| `priority`, `task_group_id`, `execution_date` | Ordering / scheduling |
+| `create_date`, `start_date`, `done_date` | Timing |
+| `session_id`, `user_id`, `target_record`, `target_module` | Set only for queues in `$queueConfig['session_manager_queue']` |
 
-```php
-// Create queue task
-$queueModel = new CPQueue_Queue_Model();
-$queueModel->addTask('SendNotification', [
-    'user_id' => 123,
-    'message' => 'Hello world',
-    'type' => 'push'
-]);
-```
+Index `idx_queue_claim_order (task_name, type, status, priority DESC, id)` backs the claim query.
 
-## Real-World Example: Notification Processing
+## Run By Supervisor
 
-**Service:** `cron/modules/CPNotifications/ProcessNotifications.service`
-
-```php
-<?php
-require_once('modules/CPNotifications/services/ProcessSendNotification.php');
-
-$process = new ProcessSendNotification('SendNotification', 200);
-$process->processQueue();
-```
-
-**Process Class:** `modules/CPNotifications/services/ProcessSendNotification.php`
-
-```php
-<?php
-include_once('modules/CPQueue/models/BaseProcess.php');
-
-class ProcessSendNotification extends BaseProcess {
-
-    private $fcmService;
-    private $smsService;
-
-    protected function beforeExecuteTasks(): void {
-        // Initialize services once per batch
-        $this->fcmService = new FCM_Service();
-        $this->smsService = new SMS_Service();
-    }
-
-    /**
-     * Override parent method to add custom task execution
-     */
-    protected function executeTask($task): void {
-        $data = json_decode($task['task_data'], true);
-
-        switch ($data['type']) {
-            case 'push':
-                $this->sendPushNotification($data);
-                break;
-            case 'sms':
-                $this->sendSMS($data);
-                break;
-            case 'email':
-                $this->sendEmail($data);
-                break;
-        }
-    }
-
-    protected function afterExecuteTasks(): void {
-        // Log batch completion
-        error_log("Processed batch at " . date('Y-m-d H:i:s'));
-    }
-
-    private function sendPushNotification(array $data): void {
-        $this->fcmService->send($data['user_id'], $data['message']);
-    }
-
-    private function sendSMS(array $data): void {
-        $this->smsService->send($data['phone'], $data['message']);
-    }
-
-    private function sendEmail(array $data): void {
-        // Email logic
-    }
-}
-```
-
-## Supervisord Configuration
-
-Queue processes run continuously via supervisord.
-
-**Config file:** `/etc/supervisor/conf.d/vtiger-notifications.conf`
-
-```ini
-[program:vtiger-notifications]
-command=php /path/to/vtiger/cron/modules/CPNotifications/ProcessNotifications.service
-directory=/path/to/vtiger
-user=www-data
-autostart=true
-autorestart=true
-redirect_stderr=true
-stdout_logfile=/var/log/supervisor/vtiger-notifications.log
-```
-
-**Supervisor commands:**
-
-```bash
-# Reload config
-sudo supervisorctl reread
-sudo supervisorctl update
-
-# Start process
-sudo supervisorctl start vtiger-notifications
-
-# Check status
-sudo supervisorctl status vtiger-notifications
-
-# View logs
-tail -f /var/log/supervisor/vtiger-notifications.log
-
-# Restart process
-sudo supervisorctl restart vtiger-notifications
-```
-
-## Critical Configuration
-
-### 1. Batch Limit
-
-```php
-// Low traffic: 50-100 tasks per batch
-$process = new ProcessName('QueueName', 50);
-
-// Medium traffic: 200 tasks per batch (default)
-$process = new ProcessName('QueueName', 200);
-
-// High traffic: 500 tasks per batch (max recommended)
-$process = new ProcessName('QueueName', 500);
-```
-
-**Why limit?** Prevents memory exhaustion from processing too many tasks at once.
-
-### 2. Sleep Interval
-
-```php
-protected $sleepTime = 2; // seconds
-
-// Override in constructor if needed
-public function __construct(string $queueName, int $batchLimit = 200) {
-    parent::__construct($queueName, $batchLimit);
-    $this->sleepTime = 5; // Custom sleep time
-}
-```
-
-**Why sleep?** Prevents CPU spike at 100% usage.
-
-### 3. Run By Supervisor
-
-In cron registration (see `references/registration.md`):
+Register the consumer row with `run_by = 'Supervisor'` (see `references/registration.md`):
 
 ```php
 $this->createCronjob(
-    'ProcessNotifications',
-    0,                          // Frequency: 0 for continuous
-    'CPNotifications',
-    'cron/modules/CPNotifications/ProcessNotifications.service',
-    'Supervisor'                // CRITICAL: Must be 'Supervisor', not 'Cronjob'
+	'SendNotification',
+	60,
+	'CPNotifications',
+	'cron/modules/CPNotifications/processNotificationQueue.service',
+	'Supervisor'
 );
 ```
 
+All existing Supervisor rows use `frequency = 60` (the value is not used to schedule the process).
+
+The Supervisor program itself is NOT a hand-written conf file: `CPQueue_Supervisor_Provider` (`modules/CPQueue/providers/Supervisor.php`) registers/starts/stops a process named `<domain>_<queueName>` through the local supervisor-manager API (`http://127.0.0.1:5000`, `/save_process`, `/control_process`). It is called from Settings > Scheduler (`modules/Settings/CronTasks/…`) and from QuickRepair (`modules/Vtiger/actions/QuickRepair.php`).
+
 ## Common Use Cases
 
-### 1. Webhook Processing
+Every use case is a job class in `modules/CPQueue/Jobs/` + a consumer; look at the existing jobs before writing a new one:
 
-```php
-class ProcessWebhooks extends BaseProcess {
-    protected function executeTask($task): void {
-        $data = json_decode($task['task_data'], true);
-        $response = $this->callExternalAPI($data['url'], $data['payload']);
+| Need | Existing job |
+|------|--------------|
+| Notifications | `SendNotification.php` |
+| Email queue | `ProcessEmailQueue.php` (sets `Vtiger_Mailer` properties, then calls `Send()`) |
+| SMS / OTT messages | `SMSAndOTTMessageQueueProcessing.php` |
+| Export | `ProcessExportQueue.php` |
+| Import | `ScheduleImport.php` |
 
-        // Store response
-        $this->saveWebhookResponse($task['id'], $response);
-    }
-}
-```
-
-### 2. Chat Message Delivery
-
-```php
-class ProcessChatMessages extends BaseProcess {
-    protected function executeTask($task): void {
-        $data = json_decode($task['task_data'], true);
-
-        // Send via WebSocket or external service
-        $this->sendToWebSocket($data['channel'], $data['message']);
-    }
-}
-```
-
-### 3. Email Queue
-
-```php
-class ProcessEmailQueue extends BaseProcess {
-    protected function executeTask($task): void {
-        $data = json_decode($task['task_data'], true);
-
-        $mailer = new Vtiger_Mailer();
-        $mailer->send($data['to'], $data['subject'], $data['body']);
-    }
-}
-```
+Sending mail from a job: `Vtiger_Mailer::Send($sync = false, $linktoid = false, int $emailId = 0)` takes no to/subject/body — set `$mailer->From`, `Subject`, `Body`, `AddAddress(…)` first (see `ProcessEmailQueue::run()`).
 
 ## Monitoring & Debugging
 
@@ -375,53 +209,52 @@ class ProcessEmailQueue extends BaseProcess {
 
 ```sql
 -- Pending tasks
-SELECT COUNT(*) FROM vtiger_cpqueue WHERE status = 'pending' AND queue_name = 'SendNotification';
+SELECT COUNT(*) FROM queue_tasks WHERE task_name = 'SendNotification' AND status = 1;
 
 -- Failed tasks
-SELECT * FROM vtiger_cpqueue WHERE status = 'failed' ORDER BY created_at DESC LIMIT 10;
+SELECT id, task_name, response_data, create_date FROM queue_tasks
+WHERE status IN (4, 6, 7) ORDER BY id DESC LIMIT 10;
 
 -- Processing time
-SELECT AVG(TIMESTAMPDIFF(SECOND, created_at, processed_at)) as avg_seconds
-FROM vtiger_cpqueue
-WHERE status = 'completed' AND queue_name = 'SendNotification';
+SELECT AVG(TIMESTAMPDIFF(SECOND, create_date, done_date)) AS avg_seconds
+FROM queue_tasks
+WHERE task_name = 'SendNotification' AND status = 3;
 ```
 
-### Check Supervisor Status
+### Run One Batch Locally
 
 ```bash
-# Is process running?
-sudo supervisorctl status vtiger-notifications
+# Same as one Supervisor iteration (processes up to the batch limit, then sleeps 2s and exits)
+php -r 'include_once "vtlib/Vtiger/Cron.php"; require_once "config.inc.php"; require_once "includes/Loader.php"; vimport("includes.runtime.EntryPoint"); require "cron/modules/CPNotifications/processNotificationQueue.service";'
+```
 
-# View recent logs
-tail -n 100 /var/log/supervisor/vtiger-notifications.log
+### Check Supervisor Status (server)
 
-# Check CPU usage
-top -u www-data
+```bash
+sudo supervisorctl status | grep <domain>_SendNotification
 ```
 
 ## Common Pitfalls
 
-1. **No Batch Limit**: Memory exhaustion on high traffic
-2. **No Sleep**: CPU at 100%, server slowdown
-3. **Wrong run_by**: Must be 'Supervisor', not 'Cronjob'
-4. **No Supervisord Config**: Process won't auto-restart
-5. **No Error Handling**: Failed tasks block queue
-6. **Synchronous Processing**: Use async for external APIs
-7. **No Monitoring**: Can't detect queue backlog
+1. **Name mismatch**: job class, `addTask()` name and `vtiger_cron_task.name` must be identical
+2. **Logic in the process class**: `BaseProcess` never calls an `executeTask()` hook — put the work in `<JobName>::run()`
+3. **Wrong run_by**: Must be 'Supervisor', not 'Cronjob' (`vtigercron.php` skips Supervisor rows, and vice versa)
+4. **No batch limit**: memory exhaustion on high traffic
+5. **Swallowed errors**: an exception in `run()` is caught per task and only echoed — log what you need
+6. **No monitoring**: watch the pending count per `task_name`
 
 ## Performance Tips
 
-1. **Index queue_name and status** in vtiger_cpqueue
-2. **Archive old tasks** (completed/failed > 30 days)
-3. **Use priority field** for urgent tasks
-4. **Monitor queue depth** (pending count)
-5. **Scale horizontally** (multiple supervisor processes)
+1. **Archive old tasks** (DONE/ERROR > 30 days) — `queue_tasks` grows fast
+2. **Use priority** (`addTask(..., $priority)`) for urgent tasks
+3. **Monitor queue depth** (pending count per `task_name`)
+4. **Reuse the server instance** (`CPQueue_Server_Model::getInstance()`) when enqueuing in a loop
 
 ## Next Steps
 
-1. Create service wrapper in `cron/modules/<Module>/`
-2. Create process class in `modules/<Module>/services/`
-3. Register via migration with `run_by='Supervisor'`
-4. Create supervisord config
-5. Test queue processing
-6. Monitor logs and queue depth
+1. Create the job class in `modules/CPQueue/Jobs/<JobName>.php`
+2. Enqueue with `CPQueue_Server_Model::getCleanInstance()->addTask('<JobName>', $data)`
+3. Create consumer service wrapper in `cron/modules/<Module>/` (+ process class in `modules/<Module>/services/` if hooks are needed)
+4. Register via migration with `run_by='Supervisor'`, frequency 60
+5. Save the task in Settings > Scheduler (or run QuickRepair) so the Supervisor process is created
+6. Monitor `queue_tasks` depth

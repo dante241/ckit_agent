@@ -3,7 +3,7 @@
 ## Inheritance Hierarchy
 
 ```
-CustomReportHandler (base)
+CustomReportHandler (class extending ReportRun)
     ↓
 BaseFixedReportHandler (table reports)
     ↓
@@ -44,7 +44,7 @@ protected $filterFields;  // Processed filter field definitions
 
 ```php
 // Set filter parameters (from request)
-public function setFilterParams(array $params): self;
+public function setFilterParams(array $params);  // returns $this (no declared return type)
 
 // Get filter parameters with defaults merged
 public function getFilterParams(): array;
@@ -129,7 +129,7 @@ public function getRowSize(array $row): int;
 // Define chart configurations
 abstract protected function getReportChartSetting(): array;
 
-// Generate Highcharts/Chart.js options
+// Generate Highcharts options (subclasses may add a 3rd param `array $chartData = []`: renderReportCharts() passes the rows)
 abstract protected function getReportChartOptions(string $chartName, array $chartOptions = []): array;
 
 // Fetch chart data with filters and pagination
@@ -221,7 +221,7 @@ public function getTableDataHeadersNumber(): int;
 [
     'label' => 'LBL_COLUMN',
     'data_column' => 'field_name',    // Required for data cells
-    'type' => DataType::TEXT,
+    'type' => Reports_DataType_Enum::TEXT,
     'bg_color' => '#008ecf',
     'txt_color' => '#ffffff',
     'tooltip' => 'Description',
@@ -301,65 +301,31 @@ protected function getReportStatistics(Vtiger_Request $request, Vtiger_Response 
 ### Handler Loading
 
 ```php
-// Get custom handler instance
-public function getCustomHandler(): ?BaseFixedReportHandler {
-    $handlerClass = $this->get('handler_class');
+// Implemented by Hieu Nguyen on 2018-12-08 (models/Record.php)
+function getCustomHandler() {
+	$customHandlerFile = $this->get('custom_handler_file');
 
-    if (empty($handlerClass)) return null;
+	if(!empty($customHandlerFile) && file_exists($customHandlerFile)) {
+		require_once($customHandlerFile);
+		$customHandlerClass = basename($customHandlerFile, '.php');
+		$customReportHandler = new $customHandlerClass($this->getId());
+		$reportRunInstance = ReportRun::getInstance($this->getId());
 
-    $handlerFile = "modules/Reports/custom/{$handlerClass}.php";
+		// Transfer all data from the default handler into the custom handler
+		foreach($reportRunInstance as $property => $value) {
+			$customReportHandler->$property = $value;
+		}
 
-    if (!file_exists($handlerFile)) return null;
-
-    require_once($handlerFile);
-
-    if (!class_exists($handlerClass)) return null;
-
-    $handler = new $handlerClass();
-    $handler->reportid = $this->getId();
-    $handler->reportname = $this->get('reportname');
-
-    return $handler;
+		return $customReportHandler;
+	}
 }
 ```
+
+The handler class name MUST equal the file basename.
 
 ## Handler Registration
 
-### Option 1: Database Record
-
-```sql
-INSERT INTO vtiger_report (reportid, reportname, handler_class, folderid, reporttype, ...)
-VALUES (
-    123,
-    'Ticket Summary Report',
-    'TicketSummaryReportHandler',
-    1,
-    'tabular',
-    ...
-);
-```
-
-### Option 2: Migration
-
-```php
-public function up(): int {
-    $reportId = $this->getUniqueId('vtiger_report');
-
-    $sql = "INSERT INTO vtiger_report (reportid, reportname, handler_class, folderid, reporttype)
-            VALUES (?, ?, ?, ?, ?)";
-    $params = [
-        $reportId,
-        'Ticket Summary Report',
-        'TicketSummaryReportHandler',
-        1,
-        'tabular'
-    ];
-
-    $this->pquery($sql, $params);
-
-    return self::UP_SUCCESS;
-}
-```
+Only via `vtiger_report.custom_handler_file`, written by the migration helpers `saveCustomizeReportFolder()` + `createCustomizeReport()` on `CPMigration_Base_Model` (modules/CPMigration/models/Base.php). See SKILL.md → Registration for the migration sample.
 
 ## Critical Patterns
 
@@ -379,14 +345,16 @@ public function up(): int {
     'type' => 'picklist',
     'module' => 'HelpDesk',
     'field' => 'ticketstatus',
-    'add_all_option' => true  // Add "All" option
+    'add_all_option' => true  // Add "All" option (PICKLIST only); value 'all' becomes the default
 ]
 ```
 
-**Custom (override method):**
+`getQueryConditions()` turns `'all'` into `col = 'all'` (no rows): drop that column from the mapping when the value is `'all'`.
+
+**Custom options (no module/field → override method):**
 ```php
 'data_source' => [
-    'type' => 'custom'
+    'type' => 'picklist'   // no 'module'/'field' → getCustomFilterPicklistOptions() is called
 ]
 
 protected function getCustomFilterPicklistOptions(string $fieldName): array {
@@ -455,12 +423,12 @@ protected function getReportTableData(string $tableName, Vtiger_Paging_Model $pa
         [
             'label' => 'LBL_Q1',
             'data_column' => 'q1_sales',
-            'type' => DataType::CURRENCY
+            'type' => Reports_DataType_Enum::CURRENCY
         ],
         [
             'label' => 'LBL_Q2',
             'data_column' => 'q2_sales',
-            'type' => DataType::CURRENCY
+            'type' => Reports_DataType_Enum::CURRENCY
         ]
     ]
 ]
@@ -478,7 +446,7 @@ protected function getReportChartSetting(): array {
             'col_size' => 1,         // Chart width (1-12)
             'row_size' => 1,         // Chart height multiplier
             'paging' => false,       // Enable pagination
-            'chart_options' => []    // Highcharts/Chart.js base config
+            'chart_options' => []    // Highcharts base config
         ]
     ];
 }

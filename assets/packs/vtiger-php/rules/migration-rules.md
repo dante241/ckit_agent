@@ -6,7 +6,7 @@ condition: ".*"
 
 # Migration File Conventions
 
-> Loads only when editing migration files.
+> Auto-loads when editing migration files; also the review checklist for every migration change.
 
 ## File Naming
 
@@ -20,6 +20,8 @@ Example: `2025.04.16.10.30.00_AddSocialAds.php`
 <?php
 
 /**
+ * @author Your Name
+ * @email your.email@company.vn
  * @name MigrationName
  * @create date YYYY-MM-DD HH:mm:ss
  */
@@ -42,8 +44,9 @@ return new class extends CPMigration_Base_Model {
 ## Helper Methods
 
 - `$this->pquery($sql, $params)` — prepared SQL
-- `$this->createCronjob(...)` — register cron job
-- `$this->createPicklistValues(...)` — add picklist values
+- `$this->createCronjob($name, $frequencySeconds, $moduleName, $handlerFile)` — register cron job
+- `$this->createPicklistValues($fieldName, $moduleName, $options, $idFieldName = '', $isOverride = false)` — add picklist values; `$isOverride = true` runs `DELETE FROM <picklist table>` first (wipes every existing value)
+- Idempotent helpers: `isTableExists`, `isColumnExists`, `isIndexExists`, `addColumnIfMissing`, `addIndexIfMissing`, `dropIndexIfExists`
 
 ### Examples
 
@@ -51,21 +54,23 @@ return new class extends CPMigration_Base_Model {
 // 1. Schema change
 $this->pquery("ALTER TABLE vtiger_campaign ADD social_campaign_id VARCHAR(255)");
 
-// 2. Register cron job — (Name, frequency_seconds, Module, handler_path)
-$this->createCronjob('SyncSocialCampaigns', 900, 'Campaigns', 'modules/Campaigns/crons/SyncSocialCampaigns.php');
+// 2. Register cron job — (name, frequency_seconds, module, handler .service file under cron/modules/<Module>/)
+$this->createCronjob('SyncSocialCampaigns', 900, 'Campaigns', 'cron/modules/Campaigns/SyncSocialCampaigns.service');
 
-// 3. Add picklist values — (fieldname, Module, [['key'=>..., 'color'=>'#hex'], ...], '', addToRoles)
+// 3. Add picklist values — (fieldname, module, [['key' => ..., 'color' => '#hex'], ...]); keeps existing values (isOverride = false)
 $this->createPicklistValues('campaigntype', 'Campaigns', [
     ['key' => 'Facebook Ads', 'color' => '#1877F2'],
-    ['key' => 'Zalo Ads',     'color' => '#0068FF'],
-], '', true);
+    ['key' => 'Zalo Ads', 'color' => '#0068FF'],
+]);
 ```
 
 ## Return Codes
 
 - `self::UP_SUCCESS` — migration applied
+- `self::UP_FAILED` — migration failed
 - `self::DOWN_NOT_SUPPORTED` — rollback not implemented (default)
 - `self::DOWN_SUCCESS` — rollback applied
+- `self::DOWN_FAILED` — rollback failed
 
 ## Reminder
 

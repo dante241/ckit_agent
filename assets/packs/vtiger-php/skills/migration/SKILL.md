@@ -6,7 +6,7 @@ user-invocable: false
 
 # VTiger Migration Skill
 
-> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md`
+> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md`. Template, helper list and return codes are owned by `rule://migration-rules` — this skill only adds context.
 
 ## When to Use
 
@@ -32,12 +32,18 @@ Use this skill when:
 - Descriptive name in PascalCase
 - Must be unique (timestamp collision = fail)
 
+## Location
+
+Single location: `modules/CPMigration/migrations/*.php` — `CPMigration_Migrator_Model` only globs that directory (applied files tracked in `vtiger_migration_history`).
+
 ## Anonymous Class Pattern
 
 ```php
 <?php
 
 /**
+ * @author Your Name
+ * @email your.email@company.vn
  * @name MigrationDescriptiveName
  * @create date YYYY-MM-DD HH:mm:ss
  */
@@ -58,53 +64,47 @@ return new class extends CPMigration_Base_Model {
 };
 ```
 
-## Required Methods
-
-### up(): int
-- Executes forward migration
-- MUST return constant: `UP_SUCCESS`, `UP_FAILED`, `UP_ALREADY_EXECUTED`
-- Use `$this->pquery($sql, $params)` for queries
-- Check existence before creating (idempotent)
-
-### down(): int
-- Reverses migration (optional but recommended)
-- MUST return constant: `DOWN_SUCCESS`, `DOWN_FAILED`, `DOWN_NOT_SUPPORTED`
-- Reverse all changes from up()
-
-## Return Constants
+## Return Constants (`CPMigration_Base_Model`)
 
 | Constant | Meaning |
 |----------|---------|
-| `UP_SUCCESS` | Migration executed successfully |
+| `UP_SUCCESS` | Migration executed successfully (also return it when idempotent checks find nothing to do) |
 | `UP_FAILED` | Migration failed |
-| `UP_ALREADY_EXECUTED` | Already applied, skip |
 | `DOWN_SUCCESS` | Rollback successful |
 | `DOWN_FAILED` | Rollback failed |
 | `DOWN_NOT_SUPPORTED` | No rollback available |
 
-## Helper Methods
+## Helper Methods (`modules/CPMigration/models/Base.php`)
 
-**Database Operations:**
 ```php
-$this->pquery($sql, $params);  // Prepared statement
-global $adb;  // Direct DB access if needed
+$this->pquery($sql, $params);                 // throws Exception on failure
+$this->multipquery([$sql1, $sql2]);           // param-less statements, wrapped in a transaction
+$this->db;                                    // PearDatabase (getOne, num_rows, fetchByAssoc, getUniqueID)
+
+// Idempotent schema guards
+$this->isTableExists($table);
+$this->isColumnExists($table, $column);
+$this->isIndexExists($table, $indexName);
+$this->addColumnIfMissing($table, $column, $definition);
+$this->addIndexIfMissing($table, $indexName, $columns);
+$this->dropIndexIfExists($table, $indexName);
+
+// Feature helpers
+$this->createCronjob($name, $frequencySeconds, $moduleName, $handlerFile, $runBy = 'Cronjob'); // details: skill://cron references/registration.md
+$this->createPicklistValues($fieldName, $moduleName, $options, $idFieldName = '', $isOverride = false);
 ```
 
-**Built-in Helpers:**
-```php
-$this->createCronjob($name, $frequency, $module, $handlerPath);
-$this->createPicklistValues($fieldName, $module, $values, $color, $isRole);
-```
+`createPicklistValues(..., $isOverride = true)` runs `DELETE FROM <picklist table>` first — it wipes every existing value. It also does not skip existing keys, so guard re-runs yourself.
 
 ## Critical Pitfalls
 
 1. **MUST use anonymous class** — no named classes
 2. **Timestamp dots not underscores** — `2025.04.16` not `2025_04_16`
-3. **@name + @create date required** in docblock
+3. **Header docblock** — `@author`, `@email`, `@name`, `@create date`
 4. **$isRunBeforeQuickRepair = false** — set explicitly
 5. **Return constants** — never return true/false
 6. **down() reverse up()** — undo all changes
-7. **Check exists before create** — idempotent migrations
+7. **Idempotent** — use the `is*Exists` / `*IfMissing` helpers instead of hand-rolled `SHOW COLUMNS`
 8. **Batch large data** — chunked inserts for 1000+ rows
 
 ## Reference Files
@@ -115,23 +115,28 @@ $this->createPicklistValues($fieldName, $module, $values, $color, $isRole);
 
 ```php
 <?php
+
 /**
- * @name AddLastSyncDatetimeToCampaigns
+ * @author Your Name
+ * @email your.email@company.vn
+ * @name AddLastSyncDatetimeToCampaign
  * @create date 2026-02-10 14:30:00
  */
+
 return new class extends CPMigration_Base_Model {
+
     protected $isRunBeforeQuickRepair = false;
 
     public function up(): int {
-        $sql = "ALTER TABLE vtiger_campaigns
-                ADD COLUMN last_sync_datetime DATETIME DEFAULT NULL";
-        $this->pquery($sql);
+        $this->addColumnIfMissing('vtiger_campaign', 'last_sync_datetime', 'DATETIME DEFAULT NULL');
         return self::UP_SUCCESS;
     }
 
     public function down(): int {
-        $sql = "ALTER TABLE vtiger_campaigns DROP COLUMN last_sync_datetime";
-        $this->pquery($sql);
+        if ($this->isColumnExists('vtiger_campaign', 'last_sync_datetime')) {
+            $this->pquery("ALTER TABLE vtiger_campaign DROP COLUMN last_sync_datetime");
+        }
+
         return self::DOWN_SUCCESS;
     }
 };

@@ -1,459 +1,231 @@
 # Report Handler Reference
 
-## Full Handler Template
+Two complete handlers, run against the real base classes and the local DB (PHP 7.4 + 8.3): `getReportApiTableData()`, `renderReportTables()`, `getReportApiChartData()` and `renderReportCharts()` all return data/HTML.
+For a production-size example read `modules/Reports/custom/TicketSummaryByStatusReportHandler.php` (group-by picklist, previous period, M2M temp table).
 
-**Location:** `modules/Reports/custom/TicketSummaryReportHandler.php`
+## Rules the samples follow
 
-```php
-<?php
+- The handler class name MUST equal the file basename: `Reports_Record_Model::getCustomHandler()` does `require_once($file)` then `new basename($file, '.php')($reportId)`.
+- Override signatures exactly as the parent declares them (`getReportTableData(string $tableName, Vtiger_Paging_Model $pagingModel = null): array`). A different signature is a fatal "must be compatible" at load time.
+- Read filters with `$this->getFilterParams()`; turn them into SQL with `$this->getQueryConditions(['filter_name' => 'sql_column'])` (values are escaped via `convert2Sql`).
+- Return `['data' => [...rows], 'total_count' => int]`; the base reads `total_count` for paging.
+- `vtiger_troubletickets` columns are `ticketid`, `ticket_no`, `title`, `status`, `priority`, `severity`, `category`; `createdtime` / `main_owner_id` live on `vtiger_crmentity`.
 
-/**
- * @author CloudGo
- * @email dev@cloudgo.vn
- * @create date 2026.02.10
- */
+## Table report (BaseFixedReportHandler)
 
-class TicketSummaryReportHandler extends BaseFixedReportHandler {
-
-    /**
-     * Configure filter fields
-     */
-    public function getConfiguredFilterFields(): array {
-        return [
-            [
-                'name' => 'status',
-                'label' => 'LBL_STATUS',
-                'type' => FilterType::PICKLIST,
-                'options' => ['Open', 'In Progress', 'Closed', 'Waiting for Customer'],
-                'default' => ''
-            ],
-            [
-                'name' => 'priority',
-                'label' => 'LBL_PRIORITY',
-                'type' => FilterType::MULTIPICKLIST,
-                'options' => ['Low', 'Normal', 'High', 'Urgent']
-            ],
-            [
-                'name' => 'date_range',
-                'label' => 'LBL_REPORT_DATA_DATE_RANGE',
-                'type' => FilterType::DATE_RANGE
-            ],
-            [
-                'name' => 'assigned_user',
-                'label' => 'LBL_ASSIGNED_TO',
-                'type' => FilterType::PICKLIST,
-                'options' => $this->getUsers()
-            ]
-        ];
-    }
-
-    /**
-     * Define table structure
-     */
-    public function getReportTableStructure(): array {
-        return [
-            [
-                'label' => 'LBL_TICKET_ID',
-                'field' => 'ticket_id',
-                'type' => DataType::TEXT,
-                'width' => '10%'
-            ],
-            [
-                'label' => 'LBL_TITLE',
-                'field' => 'title',
-                'type' => DataType::TEXT,
-                'width' => '30%'
-            ],
-            [
-                'label' => 'LBL_STATUS',
-                'field' => 'status',
-                'type' => DataType::PICKLIST,
-                'width' => '15%'
-            ],
-            [
-                'label' => 'LBL_PRIORITY',
-                'field' => 'priority',
-                'type' => DataType::PICKLIST,
-                'width' => '10%'
-            ],
-            [
-                'label' => 'LBL_ASSIGNED_TO',
-                'field' => 'assigned_user_name',
-                'type' => DataType::TEXT,
-                'width' => '15%'
-            ],
-            [
-                'label' => 'LBL_CREATED_TIME',
-                'field' => 'createdtime',
-                'type' => DataType::DATETIME,
-                'width' => '15%'
-            ],
-            [
-                'label' => 'LBL_ACTIONS',
-                'field' => 'actions',
-                'type' => DataType::ACTION,
-                'width' => '5%'
-            ]
-        ];
-    }
-
-    /**
-     * Fetch report data with filters and pagination
-     */
-    public function getReportTableData(array $filters, int $page, int $limit): array {
-        global $adb;
-
-        // Build query
-        $sql = "SELECT t.ticket_id, t.title, t.status, t.priority, t.createdtime,
-                       CONCAT(u.first_name, ' ', u.last_name) as assigned_user_name,
-                       t.ticketid
-                FROM vtiger_troubletickets t
-                INNER JOIN vtiger_crmentity c ON c.crmid = t.ticketid
-                LEFT JOIN vtiger_users u ON u.id = c.smownerid
-                WHERE c.deleted = ?";
-        $params = [0];
-
-        // Apply filters
-        if (!empty($filters['status'])) {
-            $sql .= " AND t.status = ?";
-            $params[] = (string) $filters['status'];
-        }
-
-        if (!empty($filters['priority']) && is_array($filters['priority'])) {
-            $placeholders = implode(',', array_fill(0, count($filters['priority']), '?'));
-            $sql .= " AND t.priority IN ($placeholders)";
-            foreach ($filters['priority'] as $priority) {
-                $params[] = (string) $priority;
-            }
-        }
-
-        if (!empty($filters['date_range'])) {
-            $startDate = (string) $filters['date_range']['start'];
-            $endDate = (string) $filters['date_range']['end'];
-
-            if (!empty($startDate) && !empty($endDate)) {
-                $sql .= " AND c.createdtime BETWEEN ? AND ?";
-                $params[] = $startDate . ' 00:00:00';
-                $params[] = $endDate . ' 23:59:59';
-            }
-        }
-
-        if (!empty($filters['assigned_user'])) {
-            $sql .= " AND c.smownerid = ?";
-            $params[] = (int) $filters['assigned_user'];
-        }
-
-        // Count total records
-        $countSql = "SELECT COUNT(*) as count FROM ($sql) as temp";
-        $countResult = $adb->pquery($countSql, $params);
-        $total = (int) $adb->query_result($countResult, 0, 'count');
-
-        // Add sorting
-        $sql .= " ORDER BY c.createdtime DESC";
-
-        // Add pagination
-        $offset = ($page - 1) * $limit;
-        $sql .= " LIMIT ? OFFSET ?";
-        $params[] = $limit;
-        $params[] = $offset;
-
-        // Execute query
-        $result = $adb->pquery($sql, $params);
-        $data = [];
-
-        while ($row = $adb->fetchByAssoc($result)) {
-            $row = decodeUTF8($row);
-
-            // Add action links
-            $row['actions'] = $this->getActionLinks((int) $row['ticketid']);
-
-            $data[] = $row;
-        }
-
-        return [
-            'data' => $data,
-            'total' => $total
-        ];
-    }
-
-    /**
-     * Define grouping options
-     */
-    public function getGroupByList(): array {
-        return [
-            [
-                'label' => 'LBL_STATUS',
-                'field' => 'status'
-            ],
-            [
-                'label' => 'LBL_PRIORITY',
-                'field' => 'priority'
-            ],
-            [
-                'label' => 'LBL_ASSIGNED_TO',
-                'field' => 'assigned_user_id'
-            ]
-        ];
-    }
-
-    /**
-     * Get list of users for filter
-     */
-    protected function getUsers(): array {
-        global $adb;
-
-        $sql = "SELECT id, CONCAT(first_name, ' ', last_name) as name
-                FROM vtiger_users
-                WHERE status = 'Active'
-                ORDER BY first_name, last_name";
-        $result = $adb->pquery($sql, []);
-
-        $users = [];
-        while ($row = $adb->fetchByAssoc($result)) {
-            $row = decodeUTF8($row);
-            $users[$row['id']] = $row['name'];
-        }
-
-        return $users;
-    }
-
-    /**
-     * Generate action links for each row
-     */
-    protected function getActionLinks(int $recordId): string {
-        $viewUrl = "index.php?module=HelpDesk&view=Detail&record=$recordId";
-        $editUrl = "index.php?module=HelpDesk&view=Edit&record=$recordId";
-
-        return '<a href="' . $viewUrl . '" class="btn btn-xs btn-info" title="View">
-                    <i class="fa fa-eye"></i>
-                </a>
-                <a href="' . $editUrl . '" class="btn btn-xs btn-primary" title="Edit">
-                    <i class="fa fa-edit"></i>
-                </a>';
-    }
-}
-```
-
-## Chart Report Handler
-
-**Extends BaseFixedChartReportHandler for chart support:**
+File `modules/Reports/custom/TicketListByStatusReportHandler.php`:
 
 ```php
 <?php
 
 /**
- * @author CloudGo
- * @email dev@cloudgo.vn
- * @create date 2026.02.10
+ * @author Your Name
+ * @email your.email@company.vn
+ * @create date YYYY.MM.DD
  */
 
-class TicketChartReportHandler extends BaseFixedChartReportHandler {
+require_once('modules/Reports/custom/BaseFixedReportHandler.php');
 
-    public function getConfiguredFilterFields(): array {
-        return [
-            [
-                'name' => 'date_range',
-                'label' => 'LBL_REPORT_DATA_DATE_RANGE',
-                'type' => FilterType::DATE_RANGE
-            ]
-        ];
-    }
+class TicketListByStatusReportHandler extends BaseFixedReportHandler {
 
-    public function getReportTableStructure(): array {
-        return [
-            [
-                'label' => 'LBL_STATUS',
-                'field' => 'status',
-                'type' => DataType::TEXT
-            ],
-            [
-                'label' => 'LBL_COUNT',
-                'field' => 'count',
-                'type' => DataType::NUMBER
-            ],
-            [
-                'label' => 'LBL_PERCENTAGE',
-                'field' => 'percentage',
-                'type' => DataType::PERCENT
-            ]
-        ];
-    }
+	protected function getConfiguredFilterFields(): array {
+		return [
+			'created_date' => [
+				'uitype' => Reports_FilterType_Enum::DATE_RANGE,
+				'label' => 'LBL_REPORT_DATA_DATE_RANGE',
+			],
+			'ticket_status' => [
+				'uitype' => Reports_FilterType_Enum::PICKLIST,
+				'data_source' => ['type' => 'picklist', 'module' => 'HelpDesk', 'field' => 'ticketstatus', 'add_all_option' => true],
+			],
+			'ticket_main_owner_id' => [
+				'uitype' => Reports_FilterType_Enum::MULTIPICKLIST,
+				'data_source' => ['type' => 'reference', 'module' => 'Users'],
+			],
+		];
+	}
 
-    public function getReportTableData(array $filters, int $page, int $limit): array {
-        global $adb;
+	protected function getReportTableStructure(): array {
+		return [
+			'ticket_table' => [
+				'label' => 'LBL_REPORT_TICKET_TABLE',
+				'paging' => true,
+				'headers' => [
+					['label' => 'LBL_TICKET_NO', 'data_column' => 'ticket_no', 'type' => Reports_DataType_Enum::TEXT],
+					['label' => 'LBL_TITLE', 'data_column' => 'title', 'type' => Reports_DataType_Enum::TEXT, 'align' => 'left'],
+					['label' => 'LBL_STATUS', 'data_column' => 'status', 'type' => Reports_DataType_Enum::PICKLIST, 'picklist_module' => 'HelpDesk'],
+					['label' => 'LBL_MAIN_OWNER_ID', 'data_column' => 'main_owner_id', 'type' => Reports_DataType_Enum::REFERENCE, 'reference_module' => 'Users'],
+					['label' => 'LBL_CREATED_TIME', 'data_column' => 'createdtime', 'type' => Reports_DataType_Enum::DATETIME],
+				],
+			],
+		];
+	}
 
-        $sql = "SELECT t.status, COUNT(*) as count
-                FROM vtiger_troubletickets t
-                INNER JOIN vtiger_crmentity c ON c.crmid = t.ticketid
-                WHERE c.deleted = ?";
-        $params = [0];
+	protected function getReportTableData(string $tableName, Vtiger_Paging_Model $pagingModel = null): array {
+		$filterParams = $this->getFilterParams();
+		$columnsMapping = [
+			'created_date' => 'e.createdtime',
+			'ticket_status' => 't.status',
+			'ticket_main_owner_id' => 'e.main_owner_id',
+		];
 
-        if (!empty($filters['date_range'])) {
-            $startDate = (string) $filters['date_range']['start'];
-            $endDate = (string) $filters['date_range']['end'];
+		// The add_all_option value 'all' means no status condition
+		if (($filterParams['ticket_status'] ?? '') === 'all') {
+			unset($columnsMapping['ticket_status']);
+		}
 
-            if (!empty($startDate) && !empty($endDate)) {
-                $sql .= " AND c.createdtime BETWEEN ? AND ?";
-                $params[] = $startDate . ' 00:00:00';
-                $params[] = $endDate . ' 23:59:59';
-            }
-        }
+		$conditions = $this->getQueryConditions($columnsMapping);
+		$sql = "SELECT t.ticket_no, t.title, t.status, e.main_owner_id, e.createdtime
+			FROM vtiger_troubletickets AS t
+			INNER JOIN vtiger_crmentity AS e ON (e.crmid = t.ticketid AND e.deleted = 0)";
 
-        $sql .= " GROUP BY t.status ORDER BY count DESC";
+		if (!empty($conditions)) {
+			$sql .= ' WHERE ' . implode(' AND ', $conditions);
+		}
 
-        $result = $adb->pquery($sql, $params);
-        $data = [];
-        $total = 0;
+		$totalCount = (int) $GLOBALS['adb']->getOne("SELECT COUNT(*) FROM ({$sql}) AS temp");
+		$sql .= ' ORDER BY e.createdtime DESC';
 
-        while ($row = $adb->fetchByAssoc($result)) {
-            $row = decodeUTF8($row);
-            $total += (int) $row['count'];
-            $data[] = $row;
-        }
+		if (!empty($pagingModel)) {
+			$sql .= ' ' . $this->getPagingQueryFromPagingModel($pagingModel);
+		}
 
-        // Calculate percentages
-        foreach ($data as &$row) {
-            $row['percentage'] = $total > 0 ? round(($row['count'] / $total) * 100, 2) : 0;
-        }
+		$data = [];
+		$result = $GLOBALS['adb']->pquery($sql, []);
 
-        return [
-            'data' => $data,
-            'total' => count($data)
-        ];
-    }
+		while ($result && $row = $GLOBALS['adb']->fetchByAssoc($result)) {
+			$data[] = $row;
+		}
 
-    /**
-     * Get chart data
-     */
-    public function getChartData(array $filters): array {
-        $result = $this->getReportTableData($filters, 1, 999);
-
-        $labels = [];
-        $values = [];
-
-        foreach ($result['data'] as $row) {
-            $labels[] = $row['status'];
-            $values[] = (int) $row['count'];
-        }
-
-        return [
-            'type' => 'bar',  // bar, line, pie, donut
-            'labels' => $labels,
-            'datasets' => [
-                [
-                    'label' => 'Tickets by Status',
-                    'data' => $values,
-                    'backgroundColor' => [
-                        '#4CAF50',  // Open - Green
-                        '#2196F3',  // In Progress - Blue
-                        '#FF9800',  // Waiting - Orange
-                        '#9E9E9E'   // Closed - Gray
-                    ]
-                ]
-            ]
-        ];
-    }
+		return [
+			'data' => $data,
+			'total_count' => $totalCount,
+		];
+	}
 }
 ```
 
-## Filter Processing Examples
+## Chart + table report (BaseFixedChartReportHandler)
 
-### Single Picklist Filter
+A chart handler implements the 3 table abstracts plus the 3 chart abstracts: `getReportChartSetting()`, `getReportChartData()`, `getReportChartOptions()`.
+`renderReportCharts()` calls `getReportChartData()` (must return `data` + `total_count`), then `getReportChartOptions($chartName, $setting['chart_options'], $rows)` — the options array is Highcharts config plus `chart_total`.
+
+File `modules/Reports/custom/TicketCountByStatusChartReportHandler.php`:
 
 ```php
-if (!empty($filters['status'])) {
-    $sql .= " AND t.status = ?";
-    $params[] = (string) $filters['status'];
+<?php
+
+/**
+ * @author Your Name
+ * @email your.email@company.vn
+ * @create date YYYY.MM.DD
+ */
+
+require_once('modules/Reports/custom/BaseFixedChartReportHandler.php');
+
+class TicketCountByStatusChartReportHandler extends BaseFixedChartReportHandler {
+
+	protected function getConfiguredFilterFields(): array {
+		return [
+			'created_date' => [
+				'uitype' => Reports_FilterType_Enum::DATE_RANGE,
+				'label' => 'LBL_REPORT_DATA_DATE_RANGE',
+			],
+		];
+	}
+
+	protected function getReportTableStructure(): array {
+		return [
+			'status_table' => [
+				'label' => 'LBL_REPORT_TICKET_BY_STATUS',
+				'headers' => [
+					['label' => 'LBL_STATUS', 'data_column' => 'status', 'type' => Reports_DataType_Enum::PICKLIST, 'picklist_module' => 'HelpDesk'],
+					['label' => 'LBL_REPORT_TICKET_TOTAL_NUMBER', 'data_column' => 'ticket_count', 'type' => Reports_DataType_Enum::NUMBER],
+				],
+			],
+		];
+	}
+
+	protected function getReportTableData(string $tableName, Vtiger_Paging_Model $pagingModel = null): array {
+		$conditions = $this->getQueryConditions(['created_date' => 'e.createdtime']);
+		$sql = "SELECT t.status, COUNT(*) AS ticket_count
+			FROM vtiger_troubletickets AS t
+			INNER JOIN vtiger_crmentity AS e ON (e.crmid = t.ticketid AND e.deleted = 0)";
+
+		if (!empty($conditions)) {
+			$sql .= ' WHERE ' . implode(' AND ', $conditions);
+		}
+
+		$sql .= ' GROUP BY t.status ORDER BY ticket_count DESC';
+
+		$data = [];
+		$result = $GLOBALS['adb']->pquery($sql, []);
+
+		while ($result && $row = $GLOBALS['adb']->fetchByAssoc($result)) {
+			$data[] = $row;
+		}
+
+		return [
+			'data' => $data,
+			'total_count' => count($data),
+		];
+	}
+
+	protected function getReportChartSetting(): array {
+		return [
+			'status_chart' => [
+				'label' => vtranslate('LBL_REPORT_TICKET_BY_STATUS', 'Reports'),
+				'col_size' => 1,
+				'row_size' => 1,
+				'chart_options' => [
+					'chart' => ['type' => 'column'],
+				],
+			],
+		];
+	}
+
+	protected function getReportChartData(string $chartName, Vtiger_Paging_Model $pagingModel = null): array {
+		switch ($chartName) {
+			case 'status_chart': {
+				return $this->getReportTableData('status_table', $pagingModel);
+			}
+		}
+
+		return ['data' => [], 'total_count' => 0];
+	}
+
+	// The base passes the rows of getReportChartData() as an extra 3rd argument
+	protected function getReportChartOptions(string $chartName, array $chartOptions = [], array $chartData = []): array {
+		$categories = $values = [];
+
+		foreach ($chartData as $row) {
+			$categories[] = vtranslate($row['status'], 'HelpDesk');
+			$values[] = (int) $row['ticket_count'];
+		}
+
+		return array_merge($chartOptions, [
+			'chart_total' => array_sum($values),
+			'xAxis' => ['categories' => $categories],
+			'series' => [
+				['name' => vtranslate('LBL_REPORT_TICKET_TOTAL_NUMBER', 'Reports'), 'data' => $values],
+			],
+		]);
+	}
 }
 ```
 
-### Multi-Picklist Filter
+## getQueryConditions() by filter uitype
 
-```php
-if (!empty($filters['priority']) && is_array($filters['priority'])) {
-    $placeholders = implode(',', array_fill(0, count($filters['priority']), '?'));
-    $sql .= " AND t.priority IN ($placeholders)";
-    foreach ($filters['priority'] as $priority) {
-        $params[] = (string) $priority;
-    }
-}
-```
+|uitype|Filter value shape|Generated condition|
+|---|---|---|
+|`DATE_RANGE`|`['from_date' => ..., 'to_date' => ..., 'prev_from_date' => ..., 'prev_to_date' => ...]`|`col BETWEEN from AND to` (`prev_*` when the 3rd arg `$forPrevPeriod` is true); array of columns → OR-ed|
+|`DATE`|`'Y-m-d'` string|`DATE(col) = ?`|
+|`PICKLIST`|scalar|`col = ?` — a value of `'all'` (from `add_all_option`) is NOT special-cased: drop that mapping yourself|
+|`MULTIPICKLIST`|array, or a string joined by `' \|##\| '`|`col IN (...)`|
 
-### Date Range Filter
+Pass `$fetchEmptyCondition = true` (2nd arg) to get `COALESCE(col, '') = ''` for empty values.
 
-```php
-if (!empty($filters['date_range'])) {
-    $startDate = (string) $filters['date_range']['start'];
-    $endDate = (string) $filters['date_range']['end'];
+## Pagination
 
-    if (!empty($startDate) && !empty($endDate)) {
-        $sql .= " AND c.createdtime BETWEEN ? AND ?";
-        $params[] = $startDate . ' 00:00:00';
-        $params[] = $endDate . ' 23:59:59';
-    }
-}
-```
-
-### Single Date Filter
-
-```php
-if (!empty($filters['created_date'])) {
-    $date = (string) $filters['created_date'];
-    $sql .= " AND DATE(c.createdtime) = ?";
-    $params[] = $date;
-}
-```
-
-## Pagination Pattern
-
-```php
-// Count total
-$countSql = "SELECT COUNT(*) as count FROM ($sql) as temp";
-$countResult = $adb->pquery($countSql, $params);
-$total = (int) $adb->query_result($countResult, 0, 'count');
-
-// Add pagination to main query
-$offset = ($page - 1) * $limit;
-$sql .= " LIMIT ? OFFSET ?";
-$params[] = $limit;
-$params[] = $offset;
-
-// Return with total
-return [
-    'data' => $data,
-    'total' => $total
-];
-```
-
-## Summary/Aggregation Report
-
-```php
-public function getReportTableData(array $filters, int $page, int $limit): array {
-    global $adb;
-
-    $sql = "SELECT
-                t.status,
-                COUNT(*) as ticket_count,
-                AVG(TIMESTAMPDIFF(HOUR, c.createdtime, NOW())) as avg_age_hours,
-                SUM(CASE WHEN t.priority = 'High' THEN 1 ELSE 0 END) as high_priority_count
-            FROM vtiger_troubletickets t
-            INNER JOIN vtiger_crmentity c ON c.crmid = t.ticketid
-            WHERE c.deleted = 0
-            GROUP BY t.status
-            ORDER BY ticket_count DESC";
-
-    $result = $adb->pquery($sql, []);
-    $data = [];
-
-    while ($row = $adb->fetchByAssoc($result)) {
-        $row = decodeUTF8($row);
-        $row['avg_age_hours'] = round($row['avg_age_hours'], 2);
-        $data[] = $row;
-    }
-
-    return [
-        'data' => $data,
-        'total' => count($data)
-    ];
-}
-```
+- Set `'paging' => true` on the table (or chart) setting; the base builds the paging model from filter params `<table_name>_page` / `<table_name>_limit` (default 20 rows).
+- Count without the LIMIT, then append `$this->getPagingQueryFromPagingModel($pagingModel)` (returns `LIMIT offset, limit`).

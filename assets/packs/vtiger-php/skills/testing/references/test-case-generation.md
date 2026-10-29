@@ -171,13 +171,13 @@ API handlers process external integration requests. Test areas:
 
 **Example:**
 ```markdown
-## TC-05: Zalo API - No Token
+## TC-05: Integration API - No Token
 - **Type:** Error case
-- **Precondition:** Zalo integration enabled
+- **Precondition:** CloudBot API endpoint enabled
 - **Steps:**
-  1. POST to api/IntegrationAPI/Zalo/CreateOrder
-  2. Do not include Authorization header
-- **Expected:** HTTP 401, JSON error "Missing authentication token"
+  1. POST to `api/IntegrationAPI/Endpoint.php?platform=CloudBot&action=getTicketList`
+  2. Do not send the `token` header
+- **Expected:** HTTP 401, body `{"success":0,...}`, no data returned
 - **Actual:** [ ] Pass / [ ] Fail
 ```
 
@@ -214,9 +214,9 @@ Webhook connectors receive external HTTP requests. Test areas:
 - **Type:** Error case
 - **Precondition:** Webhook endpoint is active
 - **Steps:**
-  1. POST to webhooks/Zalo.php
+  1. POST to `webhook.php?name=ZaloConnector&secret_key=<key>` (dispatches `include/Webhooks/ZaloConnector.php`)
   2. Send invalid JSON (missing closing brace)
-- **Expected:** HTTP 400, log error, no record created
+- **Expected:** request rejected, error logged, no record created
 - **Actual:** [ ] Pass / [ ] Fail
 ```
 

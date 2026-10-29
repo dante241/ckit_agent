@@ -13,6 +13,12 @@ It is **NOT bundled with 8sync** — it ships its own Python engine (`scripts/la
 installed through the host's skill mechanism. This doc tells you when to reach for it and how it is
 invoked; the authoritative runtime contract lives in the upstream `SKILL.md` inside the install dir.
 
+**Check before invoking (as of 2026-10-29 it is NOT installed on this Mac):** look for the engine
+(`glob` for `**/last30days.py` under `~/.omp`, `~/.agents`, `~/.claude`) and its prerequisites
+(`python3.12`+ — the system `python3` is 3.11 — and optionally `yt-dlp`). Missing → tell the user it
+needs installing (§2) and ask before installing; until then answer with `web_search` and say plainly
+that the engine did not run.
+
 ## 1. When to use it
 
 | User intent | Reach for |

@@ -23,7 +23,7 @@ code is the code never written.
 
 ACTIVE EVERY RESPONSE. No drift back to over-building. Still active if
 unsure. Off only: "stop ponytail" / "normal mode". Default: **full**.
-Switch: `/ponytail lite|full|ultra`.
+Switch by saying "ponytail lite", "ponytail full" or "ponytail ultra" (no slash command is installed).
 
 ## The ladder
 
@@ -48,6 +48,7 @@ higher one and move on. The first lazy solution that works is the right one.
 - Complex request? Ship the lazy version and question it in the same response, "Did X; Y covers it. Need full X? Say so." Never stall on an answer you can default.
 - Two stdlib options, same size? Take the one that's correct on edge cases. Lazy means writing less code, not picking the flimsier algorithm.
 - Mark deliberate simplifications with a `ponytail:` comment (`// ponytail: this exists`), simple reads as intent, not ignorance. Shortcut with a known ceiling (global lock, O(n²) scan, naive heuristic)? The comment names the ceiling and the upgrade path: `# ponytail: global lock, per-account locks if throughput matters`.
+  **Exception:** in repos whose comment rules forbid such markers (e.g. vtiger `php-conventions`: attribution format, ≤2 lines, meaning not labels), the repo rule wins — no `ponytail:` tag; state the ceiling and upgrade path in plain English within that format, or leave no comment.
 
 ## Output
 
@@ -86,15 +87,15 @@ just less code, the physical world needs tuning a minimal model can't see.
 
 Lazy code without its check is unfinished. Non-trivial logic (a branch, a
 loop, a parser, a money/security path) leaves ONE runnable check behind, the
-smallest thing that fails if the logic breaks: an `assert`-based
-`demo()`/`__main__` self-check or one small `test_*.py`. No frameworks, no
-fixtures, no per-function suites unless asked. Trivial one-liners need no
-test, YAGNI applies to tests too.
+smallest thing that fails if the logic breaks, in the project's own test
+runner/convention (e.g. one PHPUnit test or standalone check script in vtiger,
+one small `test_*.py` or `assert`-based `__main__` in a Python repo). No new
+frameworks, no fixtures, no per-function suites unless asked. Trivial
+one-liners need no test, YAGNI applies to tests too.
 
 ## Boundaries
 
-Ponytail governs what you build, not how you talk (pair with Caveman for
-terse prose). "stop ponytail" / "normal mode": revert. Level persists until
-changed or session end.
+Ponytail governs what you build, not how you talk. "stop ponytail" /
+"normal mode": revert. Level persists until changed or session end.
 
 The shortest path to done is the right path.

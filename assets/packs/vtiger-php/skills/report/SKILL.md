@@ -22,7 +22,7 @@ Activate this skill when:
 ## Report Framework Hierarchy
 
 ```
-CustomReportHandler (base interface)
+CustomReportHandler (class extending ReportRun)
     ↓
 BaseFixedReportHandler (fixed table reports)
     ↓
@@ -50,12 +50,14 @@ BaseFixedChartReportHandler (charts + tables)
 **Location:** `modules/Reports/custom/BaseFixedChartReportHandler.php`
 
 **Additional Features:**
-- Chart configuration (Highcharts/Chart.js)
+- Chart configuration (Highcharts)
 - Chart data generation
 - Grid layout (columns, row height)
 - Chart + table combined views
 
-## 4 Required Methods Overview
+## 3 Abstract Methods Overview
+
+`BaseFixedReportHandler` declares exactly 3 abstract methods; `BaseFixedChartReportHandler` adds 3 more (`getReportChartSetting`, `getReportChartOptions`, `getReportChartData`). Full working handlers: [report-handler.md](references/report-handler.md).
 
 ### 1. getConfiguredFilterFields(): array
 
@@ -84,6 +86,8 @@ protected function getConfiguredFilterFields(): array {
     ];
 }
 ```
+
+`add_all_option` makes `'all'` the default value, and `getQueryConditions()` then emits `col = 'all'` (no rows): drop that column from the mapping when the value is `'all'`.
 
 ### 2. getReportTableStructure(): array
 
@@ -132,9 +136,15 @@ protected function getReportTableData(string $tableName, Vtiger_Paging_Model $pa
 
     // Apply filters via helper
     $columnsMapping = [
-        'status' => 't.ticketstatus',
+        'status' => 't.status',
         'date_range' => 'c.createdtime'
     ];
+
+    // 'all' (add_all_option) means no status condition
+    if (($filterParams['status'] ?? '') === 'all') {
+        unset($columnsMapping['status']);
+    }
+
     $conditions = $this->getQueryConditions($columnsMapping);
 
     foreach ($conditions as $condition) {
@@ -162,21 +172,7 @@ protected function getReportTableData(string $tableName, Vtiger_Paging_Model $pa
 }
 ```
 
-### 4. getGroupByList(): array (Optional)
-
-**Purpose:** Define available grouping options for chart reports.
-
-**Returns:** Array of grouping field configurations.
-
-**Example:**
-```php
-protected function getGroupByList(): array {
-    return [
-        ['label' => 'LBL_STATUS', 'field' => 'ticketstatus'],
-        ['label' => 'LBL_PRIORITY', 'field' => 'ticketpriorities']
-    ];
-}
-```
+**Grouping:** there is no base `getGroupByList()`. `TicketSummaryByStatusReportHandler` defines its own `getGroupByList()` and feeds it to a picklist filter through `getCustomFilterPicklistOptions()` — copy that pattern if you need a "group by" selector.
 
 ## File Checklist
 
@@ -186,14 +182,14 @@ When creating a custom report, you need:
 
 1. **Handler:** `modules/Reports/custom/YourReportHandler.php`
    - Extend `BaseFixedReportHandler` or `BaseFixedChartReportHandler`
-   - Implement 3-4 required abstract methods
+   - Implement the 3 abstract methods (6 for a chart handler)
 
-2. **Template (optional override):** `modules/Reports/tpls/YourReport/Main.tpl`
+2. **Template (optional override):** set `protected $reportTableTemplate` / `$reportMainTemplate` in the handler
    - Only if customizing default layout
-   - Default: `modules/Reports/tpls/BaseFixedReport/Main.tpl`
+   - Default: `modules/Reports/tpls/BaseFixedReport/Main.tpl` / `Table.tpl`
 
 3. **JavaScript (optional):** `modules/Reports/resources/YourReport.js`
-   - Extend `Reports_BaseFixedReport_Js`
+   - Loaded from your overridden template via `vresource_url()`; `BaseFixedReport.js` is a self-starting `$(() => new class {...})`, not a class to extend
    - Add custom interactions
 
 4. **CSS (optional):** `modules/Reports/resources/YourReport.css`
@@ -387,8 +383,8 @@ return [
 
 ## Reference Files
 
-- **[report-handler.md](references/report-handler.md)** - Complete handler templates with examples
-- **[report-files.md](references/report-files.md)** - File structure, templates, JS/CSS patterns
+- **[report-handler.md](references/report-handler.md)** - Two verified handlers (table, chart+table), getQueryConditions cheatsheet
+- **[report-files.md](references/report-files.md)** - Real file map, load flow, template/JS override points
 - **[report-framework.md](references/report-framework.md)** - Framework classes, enums, models, views
 
 ## See Also
@@ -408,6 +404,6 @@ return [
 
 ```bash
 php -l <handler>
-rm -f test/templates_c/*.php
+rm -f cache/templates_c/v7/*.php
 # Mở report qua browser/curl, check bảng render + filter hoạt động; report có pagination → test trang 2
 ```

@@ -45,10 +45,11 @@ registerModalEvents: function(modal) {
     var self = this;
 
     // Save button handler
-    modal.find('.save-modal').on('click', function() {
-        var form = modal.find('form');
+    var form = modal.find('form');
+    form.vtValidate();   // sets up jQuery Validate; its return value is always truthy
 
-        if (!form.vtValidate()) {
+    modal.find('.save-modal').on('click', function() {
+        if (!form.valid()) {
             return false;
         }
 
@@ -167,7 +168,7 @@ class CPGoal_CustomModal_View extends Vtiger_BasicAjax_View {
                            name="field_name"
                            class="inputElement"
                            value="{$RECORD->get('field_name')}"
-                           data-validation-engine="validate[required]" />
+                           data-rule-required="true" />
                 </div>
 
                 <div class="form-group">
@@ -200,23 +201,26 @@ class CPGoal_CustomModal_View extends Vtiger_BasicAjax_View {
 ## Confirmation Dialog
 
 ### Simple Confirmation
+
+`app.helper.showConfirmationBox()` returns a promise that **resolves on Yes and rejects on No** (`layouts/v7/resources/helper.js`), so the resolve callback takes no `confirmed` flag:
+
 ```javascript
 app.helper.showConfirmationBox({
     message: app.vtranslate('JS_CONFIRM_DELETE')
-}).then(function(confirmed) {
-    if (confirmed) {
-        // User clicked "Yes"
-        self.deleteRecord(recordId);
-    } else {
-        // User clicked "No"
-        return;
-    }
+}).then(function() {
+    // User clicked "Yes"
+    self.deleteRecord(recordId);
+}, function() {
+    // User clicked "No" (optional)
 });
 ```
 
-### Advanced Confirmation
+### Custom Title / Buttons
+
+`title` and `buttons` (bootbox format) are honoured; there is no `callback` option — use the promise.
+
 ```javascript
-Vtiger_Helper_Js.showConfirmationBox({
+app.helper.showConfirmationBox({
     title: app.vtranslate('JS_CONFIRMATION_TITLE'),
     message: app.vtranslate('JS_CONFIRM_MESSAGE'),
     buttons: {
@@ -228,12 +232,9 @@ Vtiger_Helper_Js.showConfirmationBox({
             label: app.vtranslate('JS_NO'),
             className: 'btn-default'
         }
-    },
-    callback: function(result) {
-        if (result) {
-            self.performAction();
-        }
     }
+}).then(function() {
+    self.performAction();
 });
 ```
 
@@ -250,8 +251,8 @@ Vtiger_Helper_Js.showConfirmationBox({
 {* Large modal *}
 <div class="modal-dialog modal-lg">
 
-{* Extra large (custom) *}
-<div class="modal-dialog" style="width: 90%;">
+{* Extra large (custom): width lives in modules/<Module>/resources/<View>.css, e.g. .modal-dialog.modal-xlarge { width: 90%; } *}
+<div class="modal-dialog modal-xlarge">
 ```
 
 ## Clone Modal DOM Pattern
@@ -323,7 +324,7 @@ app.request.post({ data: params }).then(function(error, html) {
 
 1. **Clone modal DOM** if reusing — modals removed on close
 2. **view= for HTML**, action= for JSON
-3. **form.vtValidate()** before submit
+3. **form.vtValidate()** to set up, **form.valid()** to check before submit
 4. **app.helper.showProgress** during AJAX
 5. **Register events in callback** — modal not in DOM until shown
 6. **Prevent form submit** — use button handlers, not form.submit

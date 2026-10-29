@@ -16,17 +16,13 @@ user-invocable: false
 - Understanding translation loading order
 - Working with Settings module translations
 
-## 3-Tier Loading Order
+## Base rules → `rule://language-rules`
 
-```
-languages/<locale>/ModuleName.php          → Core (R&D)
-languages/<locale>/dev/ModuleName.php      → Dev overrides (merged)
-languages/<locale>/cus/ModuleName.php      → Customer overrides (merged)
-```
-
-**Merge rule:** Later files override earlier. Dev overrides Core; Customer overrides both.
+3-tier loading (core → `dev/` → `cus/`), file format with the two arrays, key prefixes (`LBL_`, `JS_`, `SINGLE_`, `LBL_VIEW_*_TITLE`) and the "always write both `en_us` + `vn_vn`" rule live in `rule://language-rules` — read it, don't duplicate here.
 
 **Loader:** `Vtiger_Language_Handler::getModuleStringsFromFile()` in `includes/runtime/LanguageHandler.php`
+
+**MANDATORY:** Check `$developerTeam` in `config.env.php` BEFORE choosing the file path (R&D → `languages/<locale>/X.php`, DEV → `dev/`, Customer → `cus/`). Do NOT assume — read the config value first.
 
 ## Quick Reference
 
@@ -35,86 +31,36 @@ languages/<locale>/cus/ModuleName.php      → Customer overrides (merged)
 ```php
 vtranslate('LBL_ACCOUNT_NAME', 'Accounts')
 vtranslate('LBL_SAVE')  // Falls back to common Vtiger strings
+vtranslate('LBL_GOAL_REMAINING_USER', $moduleName, ['%type' => $typeLabel])  // replaces %type in the string
 ```
+
+Pass placeholders as ONE associative array (`['%key' => $value]`). Positional args are risky: `vtranslate()` treats a non-array 3rd argument as the language code (`LanguageHandler.php` `vtranslate()`).
 
 ### JavaScript Translation
 
 ```javascript
-app.vtranslate('JS_SAVE_SUCCESS')
-app.vtranslate('JS_RECORDS_SELECTED')  // Supports {0} placeholders
+app.vtranslate('JS_SAVE_SUCCESSFULLY')
+app.vtranslate('JS_ITEMS_COUNT', count)            // replaces each %s in order
+app.vtranslate('JS_RANGE', {from: 1, to: 20})      // replaces %from, %to
 ```
 
-### Language File Structure
-
-```php
-<?php
-
-$languageStrings = array(
-    'ModuleName' => 'Display Name',
-    'SINGLE_ModuleName' => 'Single Record Name',
-    'LBL_FIELD_NAME' => 'Field Label',
-);
-
-$jsLanguageStrings = array(
-    'JS_SAVE_SUCCESS' => 'Saved successfully',
-    'JS_DELETE_CONFIRM' => 'Are you sure?',
-);
-```
-
-## Key Prefixes
-
-| Prefix | Scope | Example |
-|--------|-------|---------|
-| `LBL_` | HTML/PHP labels | `LBL_ACCOUNT_NAME` |
-| `JS_` | JavaScript strings | `JS_SAVE_SUCCESS` |
-| `SINGLE_` | Singular module name | `SINGLE_Accounts` |
-| `LBL_VIEW_*_TITLE` | View page titles | `LBL_VIEW_CONFIG_TITLE` |
-
-## Dual-Locale Requirement (MANDATORY)
-
-**Always write language strings in BOTH locales:**
-- `languages/en_us/...` — English
-- `languages/vn_vn/...` — Vietnamese
-
-Both files must have identical keys. English file has English values; Vietnamese file has Vietnamese values.
-
-```php
-// R&D team → languages/en_us/CPGoal.php (root, NOT dev/)
-$languageStrings = array(
-    'LBL_GOAL_NAME' => 'Goal Name',
-);
-
-// R&D team → languages/vn_vn/CPGoal.php (root, NOT dev/)
-$languageStrings = array(
-    'LBL_GOAL_NAME' => 'Tên mục tiêu',
-);
-```
-
-## File Locations
-
-**MANDATORY:** Check `$developerTeam` in `config.env.php` BEFORE choosing file path. Do NOT assume — read the config value first.
-
-| Team | English Path | Vietnamese Path |
-|------|-------------|-----------------|
-| **R&D** | `languages/en_us/ModuleName.php` | `languages/vn_vn/ModuleName.php` |
-| DEV | `languages/en_us/dev/ModuleName.php` | `languages/vn_vn/dev/ModuleName.php` |
-| Customer | `languages/en_us/cus/ModuleName.php` | `languages/vn_vn/cus/ModuleName.php` |
-
-**Current value:** `$developerTeam = 'R&D'` in `config.env.php` → use root path, NOT `dev/`
+`app.vtranslate` (`layouts/v7/resources/application.js`) substitutes `%s` positionally or `%key` from an object; `{0}` is NOT substituted.
 
 ## Settings Module
 
-Settings submodules use dot notation: `Settings.Vtiger`, `Settings.Workflows`
+Settings submodule files live in a subfolder: `languages/en_us/Settings/Vtiger.php`, `Settings/Workflows.php`, `Settings/PBXManager.php` (dev overrides: `languages/en_us/dev/Settings/Vtiger.php`).
 
 ```php
 vtranslate('LBL_CONFIG_TITLE', 'Settings:Vtiger')
-// File: languages/en_us/Settings.Vtiger.php
+// File: languages/en_us/Settings/Vtiger.php
 ```
+
+The loader converts `:` to `.` and `resolveNameToPath()` maps dots to directories, so `Settings:Vtiger` and `Settings.Vtiger` both work; colon is the convention.
 
 ## Fallback Chain
 
 1. Module-specific strings (`languages/en_us/ModuleName.php`)
-2. Base module strings (for submodules like `Settings.Vtiger` → `Settings`)
+2. Base module strings for submodules (`Settings:Workflows` → `Settings:Vtiger`)
 3. Common strings (`languages/en_us/Vtiger.php`)
 4. Default language (if user language differs)
 5. Return key itself (graceful fallback)
@@ -122,11 +68,11 @@ vtranslate('LBL_CONFIG_TITLE', 'Settings:Vtiger')
 ## Critical Pitfalls
 
 1. **Always trailing commas** in array entries — prevents merge conflicts
-2. **Both arrays required** — file must define both `$languageStrings` AND `$jsLanguageStrings`
+2. **Define both arrays by convention** — `$languageStrings` AND `$jsLanguageStrings` (the loader defaults a missing one to `[]`, but keep both so keys land in the right scope)
 3. **Don't edit Core files** if you're DEV team — use `dev/` directory
-4. **Settings colon syntax** — `vtranslate('KEY', 'Settings:Vtiger')` not `Settings.Vtiger`
+4. **Settings module name** — `vtranslate('KEY', 'Settings:Vtiger')` (colon convention; `Settings.Vtiger` also resolves); file is `languages/<locale>/Settings/Vtiger.php`
 5. **JS keys use JS_ prefix** — separates PHP and JS scopes
-6. **Vietnamese locale** — `vn_vn` mirrors `en_us` structure; MUST write both (see Dual-Locale Requirement)
+6. **Vietnamese locale** — `vn_vn` mirrors `en_us` structure; MUST write both (`rule://language-rules` § Locales)
 7. **Cache per-request** — changes require page reload, not Quick Repair
 8. **Insert into correct array** — `LBL_` keys go in `$languageStrings` (read by PHP/TPL `vtranslate()`), `JS_` keys go in `$jsLanguageStrings` (read by `app.vtranslate()`). The two arrays are scope-separated: `vtranslate()` does NOT see `$jsLanguageStrings`, and `app.vtranslate()` does NOT see `$languageStrings`. NEVER blindly append to end of file — the last `);` closes `$jsLanguageStrings`, not `$languageStrings`.
 
@@ -142,7 +88,7 @@ vtranslate('LBL_CONFIG_TITLE', 'Settings:Vtiger')
 
 ## References
 
-- [Language Files](references/language-files.md) — File creation, team routing, migration pattern
+- [Language Files](references/language-files.md) — File creation, team routing
 - [Translation Patterns](references/translation-patterns.md) — PHP/JS/TPL usage, placeholders, common strings
 
 ## Exemplars (ưu tiên code Tín Bùi / Tùng Nguyễn — PENDING REVIEW by user)

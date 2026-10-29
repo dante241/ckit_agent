@@ -336,25 +336,27 @@ class TOTPService:
 ### Input Validation
 
 ```python
-from pydantic import BaseModel, validator, constr
+from pydantic import BaseModel, field_validator, constr
 import re
 
 class UserCreateRequest(BaseModel):
-    """Strict input validation for user creation."""
+    """Strict input validation for user creation (Pydantic v2)."""
 
     email: constr(max_length=255)
-    username: constr(min_length=3, max_length=50, regex=r'^[a-zA-Z0-9_]+$')
+    username: constr(min_length=3, max_length=50, pattern=r'^[a-zA-Z0-9_]+$')
     password: constr(min_length=12, max_length=128)
 
-    @validator('email')
-    def validate_email(cls, v):
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
         email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_regex, v):
             raise ValueError('Invalid email format')
         return v.lower()
 
-    @validator('password')
-    def validate_password_strength(cls, v):
+    @field_validator('password')
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
         if not re.search(r'[A-Z]', v):
             raise ValueError('Password must contain uppercase letter')
         if not re.search(r'[a-z]', v):
@@ -605,11 +607,15 @@ except Exception as e:
 
 ## Security Tools Reference
 
+None of these ship with the workstation; check `command -v <tool>` and install before relying on one.
+
 | Category | Tools |
 |----------|-------|
-| SAST (Static Analysis) | Semgrep, SonarQube, Bandit (Python), ESLint security plugins |
+| SAST (Static Analysis) | Semgrep, CodeQL, SonarQube, Bandit (Python), ESLint security plugins |
 | DAST (Dynamic Analysis) | OWASP ZAP, Burp Suite, Nikto |
 | Dependency Scanning | Snyk, Dependabot, npm audit, pip-audit |
 | Secret Detection | GitLeaks, TruffleHog, detect-secrets |
 | Container Security | Trivy, Clair, Anchore |
-| Infrastructure | Terraform Sentinel, Checkov, tfsec |
+| Infrastructure | Terraform Sentinel, Checkov, tfsec, ScoutSuite |
+| Network | Wireshark, Nmap, Masscan |
+| Penetration | Metasploit, sqlmap, Burp Suite Pro |

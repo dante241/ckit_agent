@@ -11,187 +11,85 @@
 - `category` (varchar) — preference group identifier
 - `value` (text) — JSON-encoded array
 
-### Core Methods
+### Core Methods (real signatures — untyped, static)
 
-#### savePreferences($userId, $category, $preferencesArray)
-
-Upserts user preferences to database.
-
-```php
-/**
- * Save user preferences
- * @param int $userId User record ID
- * @param string $category Preference category/group
- * @param array $preferencesArray Associative array of preference values
- * @return bool Success status
- */
-public static function savePreferences(int $userId, string $category, array $preferencesArray): bool {
-    $db = PearDatabase::getInstance();
-
-    // CRITICAL: Use JSON_UNESCAPED_UNICODE
-    $value = json_encode($preferencesArray, JSON_UNESCAPED_UNICODE);
-
-    // Check if user preference exists
-    $result = $db->pquery(
-        "SELECT 1 FROM vtiger_user_preferences WHERE user_id = ? AND category = ?",
-        [$userId, $category]
-    );
-
-    if ($db->num_rows($result) > 0) {
-        // Update existing
-        $db->pquery(
-            "UPDATE vtiger_user_preferences SET value = ? WHERE user_id = ? AND category = ?",
-            [$value, $userId, $category]
-        );
-    } else {
-        // Insert new
-        $db->pquery(
-            "INSERT INTO vtiger_user_preferences (user_id, category, value) VALUES (?, ?, ?)",
-            [$userId, $category, $value]
-        );
-    }
-
-    return true;
-}
-```
-
-#### loadPreferences($userId, $category, $toArray = false)
-
-Loads user preferences from database.
-
-```php
-/**
- * Load user preferences
- * @param int $userId User record ID
- * @param string $category Preference category
- * @param bool $toArray Return as array (true) or stdClass (false)
- * @return array|stdClass|null Decoded preferences or null if not found
- */
-public static function loadPreferences(int $userId, string $category, bool $toArray = false) {
-    $db = PearDatabase::getInstance();
-
-    $result = $db->pquery(
-        "SELECT value FROM vtiger_user_preferences WHERE user_id = ? AND category = ?",
-        [$userId, $category]
-    );
-
-    if ($db->num_rows($result) === 0) {
-        return null;
-    }
-
-    $row = $db->fetchByAssoc($result);
-    $value = $row['value'];
-
-    return json_decode($value, $toArray);
-}
-```
+- `static function savePreferences($userId, $category, $preferences)` — returns nothing. Existence check via `$adb->getOne("SELECT 1 ...")`, then UPDATE or INSERT `json_encode($preferences, JSON_UNESCAPED_UNICODE)`.
+- `static function loadPreferences($userId, $category, $toArray = false)` — `$adb->getOne(...)` then `json_decode(html_entity_decode($preferences, ENT_COMPAT | ENT_HTML401), $toArray)`. Missing row → `null`, so callers add `?? []`.
 
 **Usage**:
 ```php
-$currentUser = Users_Record_Model::getCurrentUserModel();
-$userId = $currentUser->getId();
+$userId = (int) Users_Record_Model::getCurrentUserModel()->getId();
 
-// Save user preferences
 $prefs = [
-    'notifications_enabled' => true,
-    'theme' => 'dark',
-    'sidebar_collapsed' => false
+	'notifications_enabled' => true,
+	'sidebar_collapsed' => false,
 ];
 Users_Preferences_Model::savePreferences($userId, 'ui_settings', $prefs);
 
-// Load user preferences
-$prefs = Users_Preferences_Model::loadPreferences($userId, 'ui_settings', true);
-// ['notifications_enabled' => true, 'theme' => 'dark', 'sidebar_collapsed' => false]
+$prefs = Users_Preferences_Model::loadPreferences($userId, 'ui_settings', true) ?? [];
 ```
 
 ## Real Example: Call Center User Config
 
-### View Controller
+Per-user Settings page reachable by non-admins. Files: `modules/Settings/Vtiger/views/CallCenterUserConfig.php`, `modules/Settings/Vtiger/actions/SaveCallCenterUserConfig.php`, `modules/Settings/Vtiger/tpls/CallCenterUserConfig.tpl`. Category is `'callcenter_config'` (per-user row in `vtiger_user_preferences`, distinct from the system `callcenter_config` row in `vtiger_config`).
+
+### View Controller (excerpt)
 
 ```php
-class Settings_Vtiger_CallCenterUserConfig_View extends Settings_Vtiger_Index_View {
+class Settings_Vtiger_CallCenterUserConfig_View extends Settings_Vtiger_BaseConfig_View {
 
-    /**
-     * IMPORTANT: User config views allow all users (not just admins)
-     */
-    public function checkPermission(Vtiger_Request $request): bool {
-        return true;
-    }
+	// Per-user page: open to all users (overrides the admin gate of Settings_Vtiger_Index_View)
+	function checkPermission(Vtiger_Request $request) {
+		return true;
+	}
 
-    public function process(Vtiger_Request $request) {
-        $viewer = $this->getViewer($request);
-        $currentUser = Users_Record_Model::getCurrentUserModel();
-        $userId = (int) $currentUser->getId();
+	public function process(Vtiger_Request $request) {
+		checkAccessForbiddenFeature('CallCenterIntegration');
+		global $current_user;
 
-        // Load user's call center config
-        $userConfig = Users_Preferences_Model::loadPreferences(
-            $userId,
-            'callcenter_user_config',
-            true
-        ) ?? [];
+		$moduleName = $request->getModule(false);
+		$callCenterUserConfig = Users_Preferences_Model::loadPreferences($current_user->id, 'callcenter_config', true) ?? [];
 
-        $viewer->assign('USER_CONFIG', $userConfig);
-        $viewer->assign('USER_ID', $userId);
-
-        $viewer->view('CallCenterUserConfig.tpl', 'Settings:Vtiger');
-    }
+		$viewer = $this->getViewer($request);
+		$viewer->assign('VENDOR_CONFIG', $callCenterUserConfig);
+		$viewer->assign('MODULE_NAME', $moduleName);
+		$viewer->display('modules/Settings/Vtiger/tpls/CallCenterUserConfig.tpl');
+	}
 }
 ```
 
-### Action Controller
+### Action Controller (excerpt)
 
 ```php
 class Settings_Vtiger_SaveCallCenterUserConfig_Action extends Settings_Vtiger_Basic_Action {
 
-    /**
-     * User config actions allow all users
-     */
-    public function checkPermission(Vtiger_Request $request): bool {
-        return true;
-    }
+	// Per-user save: any user, but only for their own $current_user->id
+	function checkPermission(Vtiger_Request $request) {
+		return true;
+	}
 
-    public function __construct() {
-        parent::__construct();
-        $this->exposeMethod('save');
-    }
+	function validateRequest(Vtiger_Request $request) {
+		$request->validateWriteAccess();
+	}
 
-    public function save(Vtiger_Request $request) {
-        $currentUser = Users_Record_Model::getCurrentUserModel();
-        $userId = (int) $currentUser->getId();
+	function process(Vtiger_Request $request) {
+		checkAccessForbiddenFeature('CallCenterIntegration');
+		global $current_user;
 
-        // Collect user preferences
-        $userConfig = [
-            'auto_answer' => (bool) $request->get('auto_answer'),
-            'ringtone' => (string) $request->get('ringtone'),
-            'show_customer_info' => (bool) $request->get('show_customer_info'),
-            'default_status' => (string) $request->get('default_status')
-        ];
+		$requestData = $request->getAll();
+		$settings = $requestData['settings'] ?? [];
+		$callCenterUserConfig = $settings['vendor'] ?? [];
 
-        // Save to database
-        Users_Preferences_Model::savePreferences($userId, 'callcenter_user_config', $userConfig);
+		Users_Preferences_Model::savePreferences($current_user->id, 'callcenter_config', $callCenterUserConfig);
 
-        $response = new Vtiger_Response();
-        $response->setResult([
-            'success' => true,
-            'message' => vtranslate('LBL_PREFERENCES_SAVED', 'Settings:Vtiger')
-        ]);
-        $response->emit();
-    }
+		$response = new Vtiger_Response();
+		$response->setResult(true);
+		$response->emit();
+	}
 }
 ```
 
-## System Config vs User Preferences
-
-| Aspect | System Config | User Preferences |
-|---|---|---|
-| **Table** | `vtiger_config` | `vtiger_user_preferences` |
-| **Model** | `Settings_Vtiger_Config_Model` | `Users_Preferences_Model` |
-| **Scope** | Global (all users) | Per-user |
-| **Keys** | `category` | `user_id`, `category` |
-| **Save Method** | `saveConfig($category, $array)` | `savePreferences($userId, $category, $array)` |
-| **Load Method** | `loadConfig($category, $toArray)` | `loadPreferences($userId, $category, $toArray)` |
-| **Permission Check** | `isAdmin()` required | All users allowed (`return true`) |
-| **Use Cases** | Feature flags, API keys, thresholds | UI settings, notifications, user-specific behavior |
+`checkPermission() { return true; }` is acceptable ONLY because the action writes the caller's own preferences; never use it on an action that writes `vtiger_config` (system scope). Comparison of the config layers: see the table in `SKILL.md`.
 
 ## Common Patterns
 

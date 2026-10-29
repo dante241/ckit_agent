@@ -163,13 +163,10 @@ app.helper.showProgress('Processing...');
 handleDelete: function(recordId) {
     var self = this;
 
+    // Resolves with no argument on OK, rejects on Cancel — the then() body only runs when confirmed
     app.helper.showConfirmationBox({
         message: app.vtranslate('JS_CONFIRM_DELETE')
-    }).then(function(confirmed) {
-        if (!confirmed) {
-            return;
-        }
-
+    }).then(function() {
         // User confirmed, proceed with delete
         app.helper.showProgress();
 
@@ -193,7 +190,7 @@ handleDelete: function(recordId) {
                 message: data.message
             });
 
-            self.getListViewRecords();  // Refresh list
+            self.loadListViewRecords();  // Refresh list (Vtiger_List_Js)
         });
     });
 }
@@ -229,7 +226,7 @@ app.request.get({ url: url }).then(function(error, response) {
 | `showErrorNotification()` | Error message | { message: string } |
 | `showModal()` | Display modal | html, { cb: function } |
 | `hideModal()` | Close modal | none |
-| `showConfirmationBox()` | Confirm dialog | { message: string } |
+| `showConfirmationBox()` | Confirm dialog (resolves on OK, rejects on Cancel) | { message: string } |
 
 ### app.request Methods
 
@@ -244,15 +241,15 @@ app.request.get({ url: url }).then(function(error, response) {
 // Get JavaScript translation
 var message = app.vtranslate('JS_SUCCESS_MESSAGE');
 
-// With module context
-var message = app.vtranslate('JS_SUCCESS_MESSAGE', 'CPGoal');
+// Extra args are sprintf params / %key replacements, NOT a module name
+var message = app.vtranslate('JS_SYNCED_COUNT', {count: 5});
 ```
 
 ## Complete AJAX Flow Example
 
 ```javascript
-// JavaScript (in List.js or Detail.js)
-CustomView_BaseController_Js('CPGoal_List_Js', {}, {
+// JavaScript (layouts/v7/modules/CPGoal/resources/List.js)
+Vtiger_List_Js('CPGoal_List_Js', {}, {
 
     registerEvents: function() {
         this._super();
@@ -276,11 +273,7 @@ CustomView_BaseController_Js('CPGoal_List_Js', {}, {
         // Confirm first
         app.helper.showConfirmationBox({
             message: app.vtranslate('JS_CONFIRM_SYNC_GOALS')
-        }).then(function(confirmed) {
-            if (!confirmed) {
-                return;
-            }
-
+        }).then(function() {
             // Show progress
             app.helper.showProgress(app.vtranslate('JS_SYNCING'));
 
@@ -306,7 +299,7 @@ CustomView_BaseController_Js('CPGoal_List_Js', {}, {
                 });
 
                 // Refresh list
-                self.getListViewRecords();
+                self.loadListViewRecords();
             });
         });
     }
@@ -337,8 +330,8 @@ class CPGoal_SyncGoals_Action extends Vtiger_Action_Controller {
                 'message' => vtranslate('LBL_SYNC_SUCCESS', 'CPGoal'),
                 'synced_count' => $result['count']
             ]);
-
-        } catch (Exception $e) {
+        }
+        catch (Throwable $e) {
             $response->setError($e->getMessage());
         }
 

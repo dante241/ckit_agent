@@ -1,8 +1,6 @@
 ---
 name: commit
-disable-model-invocation: true
 description: "Stage, review, commit and push code changes. Requires ticket number. Auto-creates feature branches from slug analysis."
-user-invokable: true
 ---
 
 # Commit Skill
@@ -43,7 +41,7 @@ user-invokable: true
    - Analyze the changes to generate a **feature slug**:
      - Look at modified files, module names, and nature of changes
      - Generate slug: lowercase, kebab-case, max 50 chars
-     - Classify change type: `feature/`, `bug/`, `hotfix/`, `refactor/`
+     - Classify change type: `feature/`, `bug/`, `request/`, `improve/`, `hotfix/`, `refactor/` (remote history mostly uses `feature/`, `bug/`, `request/`, `improve/`)
    - Propose branch name: `<type>/#<ticket>-<slug>`
    - Examples:
      - `feature/#12345-customer-sales-by-product-report`

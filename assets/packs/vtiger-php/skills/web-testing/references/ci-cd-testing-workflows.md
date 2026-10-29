@@ -1,5 +1,7 @@
 # CI/CD Testing Workflows
 
+> Examples use GitHub Actions. The vtiger repo runs GitLab CI (`.gitlab-ci.yml`); translate jobs/stages there.
+
 ## GitHub Actions - Complete Workflow
 
 ```yaml

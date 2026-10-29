@@ -110,42 +110,17 @@ https://crm.domain.com/entrypoint.php?name=PublicFormSubmit&form_id=contact_us
 
 ## File Location
 
-### Standard Location
 ```
 include/EntryPoints/{ClassName}.php
 ```
 
-### Custom Location
-```
-custom/include/EntryPoints/{ClassName}.php
-```
+`entrypoint.php` only loads `include/EntryPoints/<name>.php` (name stripped to `[a-zA-Z0-9]`); class name = file name.
 
-## 22 Existing Entry Points
+## Existing Entry Points
 
-| Entry Point | Purpose |
-|-------------|---------|
-| `Download` | File downloads |
-| `DownloadFile` | Module file downloads |
-| `Export` | Record export |
-| `ExportPDF` | PDF export |
-| `GetPreview` | Document preview |
-| `GetRelatedList` | Related list data |
-| `Image` | Image serving |
-| `ImportFile` | Import processing |
-| `Login` | Custom login |
-| `Logout` | Custom logout |
-| `PublicForm` | Web-to-lead/contact forms |
-| `Qrcode` | QR code generation |
-| `RSS` | RSS feed |
-| `SaveFile` | File upload |
-| `SendEmail` | Email sending |
-| `Site` | Public site pages |
-| `SocialSharing` | Social media sharing |
-| `Star` | Favorite/star records |
-| `UploadFile` | File upload handler |
-| `ValidateEmail` | Email validation |
-| `Webhook` | Generic webhook receiver |
-| `Widgets` | Dashboard widgets |
+List them with `ls include/EntryPoints/` before adding a new one. Current files include: AhaIframe, BBHIframe, BankQRGenerator, CheckInstance, DownloadFile, EmailMarketingTrackAccess, EmbeddedDWReportChart, EmbeddedHomeDashBoard, EmbeddedReportChart, EventCheckin, EventRegistrationForm, EventTicketConfirmation, ExportPDF, FacebookApiTest, GetAvatar, GetCallRecording, HanaIframe, HealthCheck, LeadCapture, License, PushNotificationTest, RandomEventCheckin, RandomEventData, RegistrationDetail, SampleEntryPoint, ZaloApiTest.
+
+Starting template: `include/EntryPoints/SampleEntryPoint.php`.
 
 ## Common Use Cases
 
@@ -224,7 +199,7 @@ class PublicContactForm extends Vtiger_EntryPoint {
         header('Access-Control-Allow-Methods: POST');
         header('Content-Type: application/json');
 
-        if ($request->getRequestMethod() !== 'POST') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             http_response_code(405);
             echo json_encode(['error' => 'Method not allowed']);
             return;
@@ -319,7 +294,7 @@ if (!$this->verifyWebhookSignature($request)) {
 
 2. **IP Whitelist:**
 ```php
-$allowedIPs = ['52.89.214.238', '34.212.75.30'];
+$allowedIPs = ['203.0.113.10', '198.51.100.20'];	// documentation IPs: replace with the partner's published webhook IPs
 if (!in_array($_SERVER['REMOTE_ADDR'], $allowedIPs)) {
     http_response_code(403);
     exit();
@@ -351,4 +326,4 @@ if (!$this->isValidToken($token)) {
 4. **Error handling** - Try-catch and log errors
 5. **CORS headers** - If called from browser
 6. **HTTP methods** - Check request method if needed
-7. **Custom location** - `custom/include/EntryPoints/` for custom code
+7. **Location** - only `include/EntryPoints/` is loaded; there is no custom override dir

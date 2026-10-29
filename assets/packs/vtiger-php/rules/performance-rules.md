@@ -33,5 +33,4 @@ condition: ".*"
 - [ ] For high-frequency, no-event-needed updates (e.g. last-sync timestamps), a direct `pquery` UPDATE is acceptable and preferred over a full `$record->save()` that fires every handler — but this is a deliberate, documented exception, never the default for entity writes (entity writes go through `Vtiger_Record_Model::save()`/`delete()` per CRUD rules).
 
 ## Reference
-- Live findings: `docs/perf-analysis-2026-05-08.md`, `docs/perf-analysis-2026-06-06.md` (notification badge N+1, missing `vtiger_crmentity`/`vtiger_tab` indexes, metadata re-query).
-- V1 Phase 3 WR-02: list rows triggered one `getInstanceById` per row solely for edit/delete flags — defeats the single SQL fetch. Resolve perms without the full model load.
+- Past finding (`/api/v1` branch review): list rows triggered one `getInstanceById` per row solely for edit/delete flags — defeats the single SQL fetch. Resolve perms without the full model load.

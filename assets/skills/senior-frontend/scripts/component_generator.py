@@ -6,9 +6,9 @@ Generates React/Next.js component files with TypeScript, Tailwind CSS,
 and optional test files following best practices.
 
 Usage:
-    python component_generator.py Button --dir src/components/ui
-    python component_generator.py ProductCard --type client --with-test
-    python component_generator.py UserProfile --type server --with-story
+    python3 component_generator.py Button --dir src/components/ui
+    python3 component_generator.py ProductCard --type client --with-test
+    python3 component_generator.py UserProfile --type server --with-story
 """
 
 import argparse
@@ -22,10 +22,11 @@ from datetime import datetime
 TEMPLATES = {
     "client": '''\'use client\';
 
-import {{ useState }} from 'react';
 import {{ cn }} from '@/lib/utils';
 
-interface {name}Props {{
+// Generic wrapper: swap <div> for the semantic element this renders
+// (<button>, <nav>, <section>, <article>...) and add state/handlers as needed.
+export interface {name}Props {{
   className?: string;
   children?: React.ReactNode;
 }}
@@ -41,7 +42,7 @@ export function {name}({{ className, children }}: {name}Props) {{
 
     "server": '''import {{ cn }} from '@/lib/utils';
 
-interface {name}Props {{
+export interface {name}Props {{
   className?: string;
   children?: React.ReactNode;
 }}
@@ -94,7 +95,7 @@ describe('{name}', () => {{
 
   it('applies custom className', () => {{
     render(<{name} className="custom-class">Content</{name}>);
-    expect(screen.getByText('Content').parentElement).toHaveClass('custom-class');
+    expect(screen.getByText('Content')).toHaveClass('custom-class');
   }});
 
   // Add more tests here
@@ -136,14 +137,16 @@ export const WithCustomClass: Story = {{
     "index": '''export {{ {name} }} from './{name}';
 export type {{ {name}Props }} from './{name}';
 ''',
+
+    "hook_index": '''export {{ use{name} }} from './use{name}';
+''',
 }
 
 
 def to_pascal_case(name: str) -> str:
-    """Convert string to PascalCase."""
-    # Handle kebab-case and snake_case
+    """Convert kebab-case/snake_case to PascalCase; keep existing PascalCase humps."""
     words = name.replace('-', '_').split('_')
-    return ''.join(word.capitalize() for word in words)
+    return ''.join(word[:1].upper() + word[1:] for word in words if word)
 
 
 def to_kebab_case(name: str) -> str:
@@ -209,7 +212,8 @@ def generate_component(
     # Generate index file
     if with_index and not flat:
         index_file = component_dir / "index.ts"
-        index_content = TEMPLATES["index"].format(name=pascal_name)
+        index_key = "hook_index" if component_type == "hook" else "index"
+        index_content = TEMPLATES[index_key].format(name=pascal_name)
         index_file.write_text(index_content)
         files_created.append(str(index_file))
 

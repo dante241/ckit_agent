@@ -11,10 +11,10 @@ $response = new Vtiger_Response();
 
 // Success
 $response->setResult($data);        // Sets result payload
-$response->emit();                  // Outputs JSON and exits
+$response->emit();                  // Echoes JSON — does NOT exit
 
 // Error
-$response->setError($code, $message);
+$response->setError($code, $message = null, $title = null);
 $response->emit();
 ```
 
@@ -34,16 +34,19 @@ $response->emit();
   "success": false,
   "error": {
     "code": 500,
-    "message": "Record not found"
+    "message": "Record not found",
+    "title": null
   }
 }
 ```
 
+`setError()` with no message uses `$code` as the message.
+
 ### Important Notes
 
-- `emit()` calls `exit` internally — execution stops
-- Still add `return;` after `emit()` for safety
-- Always emit at end of Action `process()` method
+- `emit()` only sends headers + echoes the body — it does NOT `exit`; execution continues
+- Add `return;` after `emit()` yourself when more code follows
+- Emit once, at the end of the Action `process()` method
 
 ---
 
@@ -90,7 +93,7 @@ try {
     $record->save();
     $response->setResult(['id' => $recordId]);
 }
-catch (Exception $e) {
+catch (Throwable $e) {
     $logger = LoggerManager::getLogger('PLATFORM');
     $logger->error("Record save failed: {$e->getMessage()}");
     $response->setError(500, $e->getMessage());
@@ -112,10 +115,11 @@ try {
 
     $response->setResult(['id' => $recordModel->getId()]);
 }
-catch (Exception $e) {
+catch (Throwable $e) {
     if (strpos($e->getMessage(), 'Duplicate') !== false) {
         $response->setError(409, 'Account already exists');
-    } else {
+    }
+    else {
         $response->setError(500, $e->getMessage());
     }
 }
@@ -127,16 +131,18 @@ catch (Exception $e) {
 
 ### 3. External Service Call
 
+Pseudo-code — `MySocialConnector` stands for any HTTP connector class.
+
 ```php
 try {
-    $connector = new FacebookAdsConnector();
+    $connector = new MySocialConnector();
     $campaigns = $connector->getCampaigns($accountId);
 
     $response->setResult(['campaigns' => $campaigns]);
 }
-catch (Exception $e) {
-    $logger = LoggerManager::getLogger('PLATFORM');
-    $logger->error("Facebook API error: {$e->getMessage()}");
+catch (Throwable $e) {
+    $logger = LoggerManager::getLogger('SOCIAL_INTEGRATION');
+    $logger->error("Social API error: {$e->getMessage()}");
     $response->setError(503, 'External service unavailable');
 }
 ```
@@ -162,7 +168,7 @@ public function process(Vtiger_Request $request) {
         http_response_code(200);
         echo json_encode(['status' => 'success']);
     }
-    catch (Exception $e) {
+    catch (Throwable $e) {
         $logger = LoggerManager::getLogger('PLATFORM');
         $logger->error("Webhook error: {$e->getMessage()}");
 
@@ -185,7 +191,8 @@ protected function saveRecord($module, $data) {
 
         if ($recordId) {
             $record = Vtiger_Record_Model::getInstanceById($recordId, $module);
-        } else {
+        }
+        else {
             $record = Vtiger_Record_Model::getCleanInstance($module);
         }
 
@@ -197,10 +204,10 @@ protected function saveRecord($module, $data) {
 
         return ['success' => true, 'id' => $record->getId()];
     }
-    catch (Exception $e) {
-        $this->saveLog("Save failed for $module", [
+    catch (Throwable $e) {
+        $this->saveLog("saveRecord {$module}", [ // TraitAPILogger::saveLog($action, $data)
             'data' => $data,
-            'error' => $e->getMessage()
+            'error' => $e->getMessage(),
         ]);
 
         return ['success' => false, 'error' => $e->getMessage()];
@@ -241,20 +248,14 @@ public function checkPermission(Vtiger_Request $request) {
 
 ---
 
-## When to Try-Catch Decision Table
+## When to Try-Catch
 
-| Operation | Try-Catch? | Catch What? |
-|-----------|------------|-------------|
-| `getInstanceById()` | **YES** | Exception (record not found) |
-| `$record->save()` | **YES** | Exception (validation, duplicate) |
-| `$record->delete()` | **YES** | Exception (constraints) |
-| External API call | **YES** | Exception, Throwable |
-| Webhook JSON decode | **YES** | Exception (malformed JSON) |
-| `$request->get()` | NO | Returns null if missing |
-| `vtlib_purify()` | NO | Sanitizes silently |
-| `pquery()` simple | NO | Check `getAffectedRowCount()` |
-| `json_decode()` | **YES** | May return null — check with `json_last_error()` |
-| `file_get_contents()` | **YES** | Returns false on failure |
+See the decision table in [SKILL.md](../SKILL.md#when-to-try-catch). Extra rows for raw PHP calls:
+
+| Operation | Try-Catch? | Notes |
+|-----------|------------|-------|
+| `json_decode()` | NO | Returns `null` on bad JSON — check `json_last_error()` |
+| `file_get_contents()` | NO | Returns `false` on failure — check `=== false` |
 
 ---
 
@@ -271,50 +272,36 @@ public function process(Vtiger_Request $request) {
     }
     catch (AppException $e) {
         // User-facing errors
-        $response->setError($e->getCode() ?: 400, $e->getMessage());
+        $response->setError($e->getCode() ?: 400, $e->getMessage(), $e->getTitle());
     }
-    catch (Exception $e) {
-        // System errors
+    catch (Throwable $e) {
+        // System errors, including TypeError/ValueError
         $logger = LoggerManager::getLogger('PLATFORM');
         $logger->error('Unexpected error: ' . $e->getMessage());
         $response->setError(500, 'Internal server error');
     }
-    catch (\Throwable $e) {
-        // Fatal errors (PHP 7+)
-        $logger = LoggerManager::getLogger('PLATFORM');
-        $logger->fatal('Fatal error: ' . $e->getMessage());
-        $response->setError(500, 'System failure');
-    }
 
-    $response->emit();
-    return; // Safety — emit() calls exit
+    $response->emit(); // emit() does not exit
+    return;
 }
 ```
 
 ---
 
-## setResponse() Pattern (Legacy)
+## setResponse() Pattern (API handlers)
 
-Some older Actions use `setResponse()` helper:
+`RestfulApiHandler` / `IntegrationApiHandler` subclasses answer with `setResponse($code, $data = '')` — `$code` is the HTTP status, arrays are `json_encode`d:
 
 ```php
-public function process(Vtiger_Request $request) {
+public function getData() {
     try {
-        $data = $this->getData($request);
-        $this->setResponse('success', $data);
+        $data = $this->loadData(); // pseudo-code
+        $this->setResponse(200, ['success' => 1, 'data' => $data]);
     }
-    catch (Exception $e) {
-        $this->setResponse('error', ['message' => $e->getMessage()]);
+    catch (Throwable $e) {
+        $this->setResponse(500, ['success' => 0, 'message' => $e->getMessage()]);
     }
-    return; // Always add after setResponse
-}
-
-protected function setResponse($status, $data) {
-    $response = ['status' => $status, 'data' => $data];
-    header('Content-Type: application/json');
-    echo json_encode($response);
-    exit;
 }
 ```
 
-**CRITICAL:** `setResponse()` calls `exit` — still add `return;` after for code clarity.
+**CRITICAL:** `RestfulApiHandler::setResponse()` ends with `exit` — nothing after it runs (so unit tests that call it directly die; assert DB effects instead).

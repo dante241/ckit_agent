@@ -44,13 +44,14 @@ Two directions, one rule: **pick the modality that fits the content.**
 | Architecture / diagram / mermaid      | **image** | layout is the information                       |
 | Rendered UI / dashboard review        | **image** | one shot ≪ DOM + styles                        |
 | Long PDF (> 5 pages, figures/scans)   | **image** | `8sync pdf-img <file>`                          |
-| Git diff > 500 lines                  | image     | `8sync diff-img <ref>` (phase 2 stub)          |
+| Git diff > 300 lines                  | **text**  | `git diff --stat`, then per-file slices — `8sync diff-img` is still a no-op stub |
 | Terminal output                       | text      | already text                                   |
 
 ## Tools
 
-- **`8sync shot <url|file>`** — real (bundled/system Chromium → PNG; prints the vision-token
-  estimate). Renders any URL incl. `8sync harness web` pages, or local HTML.
+- **`8sync shot <url|file>`** — bundled/system Chromium → PNG. Renders any URL incl. `8sync harness web`
+  pages, or local HTML. Needs Chromium on PATH (on this macOS box it is absent → use the omp `browser`
+  eval global instead: `tab = await browser.open(url)` → `tab.screenshot(...)`).
 - **`8sync pdf-img <file>`** — PDF pages → PNGs (poppler).
 - **Memory the OCR-Memory way** (arXiv 2604.26622): use an image to LOCATE a segment (the graph /
   an indexed page), then fetch the CONTENT as exact text from codebase-memory-mcp or the file.
@@ -66,4 +67,4 @@ Grok the architecture (vision model): boot `8sync harness web`, then
 (the React-Flow package graph full-viewport, big + legible, ~2k vision tokens). Never full-page-capture
 that page: clusters/hotspots/search are exact text via `/api/codegraph/overview|search|trace`. Then for
 a precise change, read the exact file slice as text. Non-vision model: read node positions from the
-shot with `8sync locate /tmp/cg.png "<node label>"` (automatic — see locate-anything skill).
+shot with `8sync locate /tmp/cg.png "<node label>"` (needs the one-time `8sync locate --setup` — see locate-anything skill).

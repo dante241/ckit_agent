@@ -1,6 +1,6 @@
 ---
 name: testing
-description: "VTiger verify/testing — 3 tier verify-only/verify-sql/must-test, smoke test PHP standalone, chrome-devtools E2E, browser cache quirk. Use when: test, verify, kiểm tra tính năng sau code, viết test script."
+description: "VTiger verify/testing — 3 tier verify-only/verify-sql/must-test, smoke test PHP standalone cho code legacy, PHPUnit cho domains/*/tests, E2E bằng omp browser. Use when: test, verify, kiểm tra tính năng sau code, viết test script."
 user-invocable: false
 ---
 
@@ -18,7 +18,9 @@ user-invocable: false
 
 ## Context: VTiger Testing Environment
 
-**Critical:** VTiger has **NO PHPUnit** framework. All tests are standalone PHP scripts that bootstrap VTiger runtime.
+**Hai loại test:**
+- **PHPUnit** — chỉ cho `domains/*/tests` (`phpunit.xml.dist`, chạy bằng `tools/vendor/bin/phpunit` hoặc `.cache/phpunit.phar`). Quy ước: `rule://domain-tests`, skill `vtiger-phpunit-unit-test`.
+- **Standalone PHP script** — cho code legacy (`modules/`, `include/`, `api/`…): script trong `test/` tự bootstrap VTiger runtime và tự assert.
 
 ## Testing Flow
 
@@ -30,40 +32,13 @@ user-invocable: false
 
 ## Quick Reference
 
-### Test Case Template
-```markdown
-# Test Cases: {Feature Name}
-## Module: {ModuleName}
-### TC-01: {Scenario Name}
-- **Type:** Happy path / Edge case / Error case
-- **Precondition:** {setup}
-- **Steps:** 1. ... 2. ...
-- **Expected:** {outcome}
-- **Actual:** [ ] Pass / [ ] Fail
-```
-
-### Standalone Script Pattern
-```php
-<?php
-chdir(dirname(__FILE__) . '/../');
-require_once('config.php');
-require_once('include/utils/VtlibUtils.php');
-require_once('includes/runtime/EntryPoint.php');
-
-global $adb, $current_user;
-$current_user = CRMEntity::getInstance('Users');
-$current_user->retrieveCurrentUserInfoFromFile(1);
-
-// Test functions here
-```
+- Template test case: `references/test-case-generation.md`
+- Template script standalone (bootstrap, assert, cleanup): `references/standalone-test-script.md`
 
 ### Test File Location
-`test/test-{component}-{module}-{feature}.php`
-
-Examples:
-- `test/test-action-accounts-save.php`
-- `test/test-model-cpgoal-calculation.php`
-- `test/test-api-zalo-webhook.php`
+Script standalone đặt trong `test/`, theo đúng 2 kiểu tên đang có:
+- `test/test-#<ticket>-<feature>.php` — vd `test/test-#10432-save-integration.php`, `test/test-#11814-import-data-flow.php`
+- `test/test-<component>-<module>-<feature>.php` — vd `test/test-model-cpnotifications-muted-modules.php`, `test/test-model-reports-chart-date-formatting.php`
 
 ## Component-Specific Strategies
 
@@ -77,7 +52,7 @@ Examples:
 
 ## Critical Pitfalls
 
-1. **No PHPUnit** — Don't use PHPUnit syntax or annotations
+1. **PHPUnit chỉ ở `domains/*/tests`** — script standalone cho legacy không dùng PHPUnit syntax/annotation
 2. **Bootstrap Required** — Always include VTiger bootstrap in test scripts
 3. **User Context** — Tests run as admin (user ID 1) by default
 4. **Cleanup** — Always clean up test records after execution
@@ -91,11 +66,11 @@ Examples:
 - [Standalone Test Script](references/standalone-test-script.md) — Full test script template and patterns
 - [Verification Patterns](references/verification-patterns.md) — Database, API, and log verification methods
 
-## Verify tiers (chuẩn CloudGo — repo KHÔNG có test suite tự động)
+## Verify tiers (chuẩn CloudGo — PHPUnit chỉ phủ `domains/*/tests`; code legacy verify theo tier dưới)
 
 1. **verify-only** (đổi nhỏ, no logic): `php -l` + mở trang liên quan không fatal.
 2. **verify-sql**: chạy SQL thật trên DB dev, EXPLAIN nếu đụng bảng lớn.
-3. **must-test** (logic/UI): thao tác flow thật qua chrome-devtools MCP (mở trang → thao tác → screenshot + console check). JS đổi → hard-refresh vì cache-buster tĩnh.
+3. **must-test** (logic/UI): thao tác flow thật qua omp `browser` tool (mở trang → thao tác → screenshot + console check). JS/CSS load qua `vresource_url()` tự có `?v=<version>.<mtime>` nên không cần hard-refresh; Smarty compile cache ở `cache/templates_c/v7/`.
 
 Báo xong PHẢI kèm evidence tier đã chạy (output lệnh / screenshot).
 

@@ -25,9 +25,9 @@ modules/{Module}/               # Module root
 ### Custom Module Extensions
 ```
 modules/{Module}/
-├── Extensions.php             # Custom UITypes registration
+├── Extensions.php             # Run-once setup script executed by Quick Repair
 ├── HandlersRegister.php       # Event handler registration
-├── BlocksAndFieldsRegister.php # Field definitions
+├── BlocksAndFieldsRegister.php # Field definitions (synced by Quick Repair)
 └── RelationshipsRegister.php  # Module relationships
 ```
 
@@ -61,38 +61,42 @@ languages/en_us/
 ## Important Core Files
 
 ### 1. CRMEntity (`{Module}.php`)
-Defines module structure:
+Defines module structure (extends `Vtiger_CRMEntity`):
 - `$table_name` — Primary table
 - `$tab_name` — Array of tables (MUST include `vtiger_crmentity`)
 - `$table_index` — Primary key field
-- `$column_fields` — Field definitions
 - `$customFieldTable` — Custom fields table
 - `$list_fields_name` — ListView columns
 
 ### 2. Extensions.php
-Register custom UITypes:
+A plain PHP script, not a config array. `Vtiger_QuickRepair_Action::loadExtensions()` `include_once`s every `modules/*/Extensions.php` on each Quick Repair, so it must be idempotent (create-if-missing). Example `modules/CPLogAPI/Extensions.php`:
 ```php
-return [
-    'vtlib.uitype.handler.extended' => [
-        'MyCustom_UIType_Model' => 'modules/{Module}/uitypes/MyCustom.php',
-    ],
-];
+require_once('modules/CPLogAPI/CPLogAPI.php');
+
+$logAPIEntity = new CPLogAPI();
+$logAPIEntity->initTableLog();
+$logAPIEntity->initCustomModule();
 ```
 
 ### 3. HandlersRegister.php
-Register event handlers:
+Declares variables that `loadHandlers()` reads after `include_once` (see `modules/CPMasterPlan/HandlersRegister.php`):
 ```php
-return [
-    'vtiger.entity.aftersave' => '{Module}_EntitySave_Handler',
-    'vtiger.entity.beforedelete' => '{Module}_EntityDelete_Handler',
-];
+$registeredEvents = array(
+	'vtiger.entity.beforesave',
+	'vtiger.entity.aftersave',
+	'vtiger.entity.beforedelete',
+	'vtiger.entity.afterdelete',
+);
+
+$handlerName = '{Module}Handler'; // class in modules/{Module}/handlers/{Module}Handler.php
+// $batchHandlerName = '{Module}BatchHandler'; // for vtiger.batchevent.* events
 ```
 
 ### 4. BlocksAndFieldsRegister.php
-Define module fields programmatically (used in migrations).
+Module blocks/fields as code. Quick Repair generates it for a new module (`syncToRegisterFile`) and syncs it to the DB on every run (`repairBlocksAndFields()` → `syncToDatabase`). Dev/customer overlays: `BlocksAndFieldsRegister.dev.php` / `.cus.php`.
 
 ### 5. RelationshipsRegister.php
-Define related list relationships between modules.
+Define related list relationships between modules (applied by Quick Repair `loadRelationships()`).
 
 ## Core VTiger Key Files
 

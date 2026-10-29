@@ -47,8 +47,14 @@ Blocks must breathe — never pack them wall-to-wall:
 
 ## Controller Pattern: `Vtiger.Class()`
 
+`CustomView_BaseController_Js` (and `Vtiger_Index_Js`) define no `getContainer()` — the subclass defines its own root selector:
+
 ```javascript
 CustomView_BaseController_Js('ModuleName_ViewName_Js', {}, {
+
+    getContainer: function() {
+        return jQuery('#module-view-container');  // root element of the view's TPL
+    },
 
     registerEvents: function() {
         this._super();
@@ -77,7 +83,7 @@ Vtiger_Detail_Js('Accounts_Detail_Js', {}, { });
 
 ## DOM Selection Caching
 
-Cache jQuery selectors at the top of `registerEvents()` — never re-query inside loops/callbacks:
+Cache jQuery selectors at the top of `registerEvents()` — never re-query inside loops/callbacks (`getContainer()` = the subclass method defined above):
 
 ```javascript
 registerEvents: function() {
@@ -109,11 +115,11 @@ app.request.post({ data: params }).then(function(error, data) {
     app.helper.hideProgress();
 
     if (error) {
-        app.helper.showErrorNotification({ message: app.vtranslate('JS_ERROR_OCCURRED') });
+        app.helper.showErrorNotification({ message: app.vtranslate('JS_ERROR') });
         return;
     }
 
-    app.helper.showSuccessNotification({ message: app.vtranslate('JS_SAVED_SUCCESSFULLY') });
+    app.helper.showSuccessNotification({ message: app.vtranslate('JS_SAVE_SUCCESSFULLY') });
 });
 ```
 
@@ -171,6 +177,6 @@ container.find('.cancelLink').on('click', function (e) {
 ## Security
 
 - Use `.text()` not `.html()` for dynamic content (prevent XSS)
-- Cache DOM with `container = this.getContainer()`
+- Cache DOM with `container = this.getContainer()` (defined in your controller — see Controller Pattern)
 - Match existing line endings (`\r\n` in some files)
 - Tabs for indentation

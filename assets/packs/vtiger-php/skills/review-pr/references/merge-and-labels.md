@@ -6,11 +6,11 @@
 # Xóa label cũ (clean trạng thái trước đó nếu review lại)
 glab mr update <MR_NUMBER> --repo $REPO --unlabel "Cần Fix,Review Failed,Dev done,Chờ release,Đã release"
 
-# PASS (không có lỗi CRITICAL/HIGH):
+# PASS (không có lỗi CRITICAL/HIGH/PERFORMANCE):
 #   Gắn label "Dev done" — release-check sẽ transition sang "Chờ release" sau khi verify PMS ticket
 glab mr update <MR_NUMBER> --repo $REPO --label "Dev done"
 
-# Có lỗi CRITICAL/HIGH:
+# Có lỗi CRITICAL/HIGH/PERFORMANCE:
 glab mr update <MR_NUMBER> --repo $REPO --label "Cần Fix"
 ```
 
@@ -27,7 +27,7 @@ glab mr update <MR_NUMBER> --repo $REPO --label "Cần Fix"
 
 **Nếu đủ điều kiện:**
 
-1. Merge commit title = `MR: ` + tên MR gốc trên GitLab:
+1. Squash commit message = `MR: ` + tên MR gốc trên GitLab:
    - Format: `MR: <Tên MR gốc>`
    - Ví dụ:
      - Tên MR: `[Campaigns] Request #21766: Individual Zalo, Telegram`
@@ -37,9 +37,9 @@ glab mr update <MR_NUMBER> --repo $REPO --label "Cần Fix"
      - Tên MR: `[CORE] #19396: Release UI/UX CxDay 2025`
        → Commit: `MR: [CORE] #19396: Release UI/UX CxDay 2025`
 
-2. Merge the MR (squash + xoá source branch):
+2. Merge the MR (squash + xoá source branch). Với `--squash`, message của squash commit đi qua `--squash-message` (`--message` là message của merge commit):
    ```bash
-   glab mr merge <MR_NUMBER> --repo $REPO --message "<MERGE_COMMIT_TITLE>" --squash --remove-source-branch --yes
+   glab mr merge <MR_NUMBER> --repo $REPO --squash --squash-message "<MERGE_COMMIT_TITLE>" --remove-source-branch --yes
    ```
 
 3. Confirm merge succeeded and report URL.
@@ -67,7 +67,7 @@ glab mr update <MR_NUMBER> --repo $REPO --label "Cần Fix"
    **⚠️ QUAN TRỌNG:** Dùng `$TICKET_RECORD_ID` (record_id của HelpDesk lấy từ Step 0.6), KHÔNG phải `$TICKET_ID` (ticket_no như `22369`). Sai sẽ trả `Record not found!`.
 
    ```
-   mcp__pms__pms_ticket_update(id=$TICKET_RECORD_ID, data={
+   mcp__pms_ticket_update(id=$TICKET_RECORD_ID, data={
        "ticketstatus": "Testing",
        "helpdesk_released_version": "unreleased",
        "helpdesk_project_type": "rnd",
@@ -97,7 +97,7 @@ glab mr update <MR_NUMBER> --repo $REPO --label "Cần Fix"
    ```
    **MR !<NUMBER>:** <MR_URL>
 
-   ✅ Không phát hiện lỗi CRITICAL/HIGH. Đã auto-merge.
+   ✅ Không phát hiện lỗi CRITICAL/HIGH/PERFORMANCE. Đã auto-merge.
 
    _Reviewed by Dante at <TIMESTAMP>_
    ```
@@ -109,7 +109,7 @@ glab mr update <MR_NUMBER> --repo $REPO --label "Cần Fix"
 
 3. **Lưu ý về `ticketstatus`:**
    - Nếu `Testing` không có trong `$TICKET_VALID_NEXT_STATUSES` → transition fail
-   - Fallback: dùng `pms_ticket_status(ticket_id=$TICKET_RECORD_ID, ticketstatus="Testing")` trước để validate transition, nếu lỗi → log warning và chỉ update 3 field còn lại
+   - Fallback: dùng `mcp__pms_ticket_status(ticket_id=$TICKET_RECORD_ID, ticketstatus="Testing")` trước để validate transition, nếu lỗi → log warning và chỉ update 3 field còn lại
    - Hoặc thử các alias: `Testing`, `Wait Close`, `In Progress` theo workflow dự án
 
 4. **Handle response:**
@@ -121,13 +121,13 @@ glab mr update <MR_NUMBER> --repo $REPO --label "Cần Fix"
    **⚠️ API yêu cầu `assigned_user_id`** — nếu không truyền sẽ trả `These fields are required: assigned_user_id.`. Ưu tiên dùng user ID của reviewer (người chạy skill). Nếu không xác định được → **skip bước này**, không block flow vì `rating_note` đã có đầy đủ context.
 
    ```
-   mcp__pms__pms_comments(action="add", related_to=$TICKET_RECORD_ID,
+   mcp__pms_comments(action="add", related_to=$TICKET_RECORD_ID,
        assigned_user_id=$REVIEWER_USER_ID,
        commentcontent="<p>MR !<NUMBER> đã merge vào master — <TIMESTAMP>.<br/>Link MR: <a href='<MR_URL>'><MR_URL></a><br/>Trạng thái: Chờ release deploy.</p>")
    ```
 
    **Lấy `$REVIEWER_USER_ID`:**
-   - Cách 1: Dùng `mcp__pms__pms_users(action="list")` search theo username (lấy username từ `git config user.name` hoặc git remote)
+   - Cách 1: Dùng `mcp__pms_users(action="list")` search theo username (lấy username từ `git config user.name` hoặc git remote)
    - Cách 2: Hardcode user ID của Dante/reviewer trong config team
    - Cách 3: Skip comment nếu không có — `rating_note` đã đủ
 
