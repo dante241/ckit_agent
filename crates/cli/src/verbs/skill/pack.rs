@@ -111,7 +111,7 @@ pub(crate) fn install_pack_global(home: &Path, name: &str, force: bool) -> Resul
 
 /// Refresh every pack registered with `--global` in `registry` (the global
 /// `skills.toml`) from the embedded assets — offline, local edits kept. Run by
-/// every harness global pass, so `8sync up` applies a new release's pack too.
+/// `harness` init/up/global, so `8sync up` applies a new release's pack too.
 pub(crate) fn refresh_global_packs(home: &Path, registry: &Path) {
     for (key, entry) in super::discover::read_registry(registry) {
         let Some(pack) = entry.src.strip_prefix("pack:") else {

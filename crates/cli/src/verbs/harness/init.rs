@@ -48,6 +48,7 @@ pub(crate) fn harness_init(env: &env_detect::Env, _force: bool) -> Result<()> {
     // 2. Deploy bundled skills (embedded assets → ~/.omp/skills).
     p.step("deploy bundled skills (codegraph · karpathy · ponytail · assp · impeccable · taste · …)");
     deploy::install_bundled_global(env)?;
+    crate::verbs::skill::pack::refresh_global_packs(&env.home, &crate::brand::config_dir(&env.home).join("skills.toml"));
 
     // 3. codegraph binary (auto curl installer if missing).
     p.step("ensure codegraph binary");

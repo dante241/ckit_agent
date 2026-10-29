@@ -179,7 +179,7 @@ pub(crate) fn update_skills(
     }
 
     // --- global packs (`skill add pack:<name> --global`): the explicit verb refreshes
-    // them here; harness runs refresh them in `global_pass` (`refresh_global_packs`) ---
+    // them here; harness init/up/global refresh them via `refresh_global_packs` ---
     for (name, pname) in &global_packs {
         let Some(force) = packs else {
             continue;

@@ -164,7 +164,7 @@ pub(crate) fn add_skill(
             ui::warn("global pack: its always-on rules and RULES.md now load in EVERY omp session, in every repo");
             ui::info("a project's own .omp/ copy (from `skill add pack:<name>` there) still wins over the global one");
             ui::info(&crate::brand::render(&format!(
-                "`8sync up`, `8sync harness global` and `8sync harness` refresh it; `8sync skill update {}` refreshes it on demand. New omp sessions pick it up.",
+                "`8sync up` (new release), `8sync harness global|up` and `8sync harness` refresh it; `8sync skill update {}` refreshes it on demand. New omp sessions pick it up.",
                 name
             )));
             return Ok(());
