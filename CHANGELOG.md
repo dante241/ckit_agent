@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.33] - 2026-10-29
+
 ### Added
 - `vtiger-php` pack now ships the rules `php83`, `modern-php`, `phpstan` and `domain-*` (PHP 8.3 runtime, PHPStan gate, `domains/` layering) that only lived in the vtiger repo, and the `cloudgo-development-rules` path-scoped table lists them.
 - Packs can ship slash commands (`commands/` → `.omp/commands/`, same lock/keep-local-edit rules as skills); `vtiger-php` ships `/review-pr`, which runs the pack's `review-pr` skill.
