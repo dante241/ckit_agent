@@ -12,6 +12,11 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.34] - 2026-10-29
+
+### Fixed
+- v0.1.33 installed the `vtiger-php` pack into `~/.omp` on every `ckit up`/`harness` run for any machine whose global `skills.toml` still held a plain `pack:<name>` row from an older project install. `--global` installs are now recorded as `src = "pack-global:<name>"`, and only those are refreshed globally; plain `pack:` rows in the global registry are ignored. Machines hit by 0.1.33 keep the files it wrote - remove them with the paths in `~/.omp/agent/pack-<name>.lock`.
+
 ## [0.1.33] - 2026-10-29
 
 ### Added

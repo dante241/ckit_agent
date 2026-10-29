@@ -156,7 +156,7 @@ pub(crate) fn add_skill(
             install_pack_global(&env.home, &name, force)?;
             let mut reg = discover::read_registry(toml_path);
             reg.insert(name.clone(), discover::SkillEntry {
-                src: format!("pack:{}", name),
+                src: format!("{}{}", super::pack::GLOBAL_SRC_PREFIX, name),
                 when: Some("on-demand".to_string()),
                 rev: None,
             });

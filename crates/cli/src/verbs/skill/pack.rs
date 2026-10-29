@@ -104,6 +104,10 @@ pub(crate) fn install_pack(root: &Path, name: &str, force: bool) -> Result<()> {
     install_pack_in(&PackScope::Project(root), name, force)
 }
 
+/// Registry `src` prefix of a `--global` pack. Distinct from the project-manifest
+/// `pack:` so a stale `pack:` row in the global registry never installs globally.
+pub(crate) const GLOBAL_SRC_PREFIX: &str = "pack-global:";
+
 /// Same as [`install_pack`] into `~/.omp` (lock: `~/.omp/agent/pack-<name>.lock`).
 pub(crate) fn install_pack_global(home: &Path, name: &str, force: bool) -> Result<()> {
     install_pack_in(&PackScope::Global(home), name, force)
@@ -114,7 +118,7 @@ pub(crate) fn install_pack_global(home: &Path, name: &str, force: bool) -> Resul
 /// `harness` init/up/global, so `8sync up` applies a new release's pack too.
 pub(crate) fn refresh_global_packs(home: &Path, registry: &Path) {
     for (key, entry) in super::discover::read_registry(registry) {
-        let Some(pack) = entry.src.strip_prefix("pack:") else {
+        let Some(pack) = entry.src.strip_prefix(GLOBAL_SRC_PREFIX) else {
             continue;
         };
         if let Err(e) = install_pack_global(home, pack, false) {
@@ -278,7 +282,12 @@ mod tests {
         refresh_global_packs(&home, &registry);
         assert!(!home.join(".omp/agent/rules").exists());
 
+        // a legacy project-style `pack:` row must not opt the machine in
         std::fs::write(&registry, "[vtiger-php]\nsrc = \"pack:vtiger-php\"\nwhen = \"on-demand\"\n").unwrap();
+        refresh_global_packs(&home, &registry);
+        assert!(!home.join(".omp/agent/rules").exists());
+
+        std::fs::write(&registry, "[vtiger-php]\nsrc = \"pack-global:vtiger-php\"\nwhen = \"on-demand\"\n").unwrap();
         refresh_global_packs(&home, &registry);
         assert!(home.join(".omp/agent/rules/php-conventions.md").is_file());
         assert!(home.join(".omp/agent/pack-vtiger-php.lock").is_file());

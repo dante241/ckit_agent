@@ -14,7 +14,7 @@ use anyhow::Result;
 
 use super::deploy::copy_dir_recursive;
 use super::discover::{self, detect_current_project_root};
-use super::pack::{install_pack, install_pack_global};
+use super::pack::{install_pack, install_pack_global, GLOBAL_SRC_PREFIX};
 use super::spec::{collect_repo_skills, git_clone_at, install_path_skill};
 use super::{inject_agents_md, inject_subfolder_indexes};
 use crate::{assets, env_detect, ui};
@@ -37,9 +37,11 @@ pub(crate) fn update_skills(
     let mut reg = discover::read_registry(toml_path);
     let global_packs: Vec<(String, String)> = reg
         .iter()
-        .filter_map(|(k, e)| e.src.strip_prefix("pack:").map(|p| (k.clone(), p.to_string())))
+        .filter_map(|(k, e)| e.src.strip_prefix(GLOBAL_SRC_PREFIX).map(|p| (k.clone(), p.to_string())))
         .collect();
-    reg.retain(|_, e| !e.src.starts_with("pack:"));
+    // Plain `pack:` entries in the global registry are legacy leftovers of a
+    // project install, never an opt-in to a global pack - skip them.
+    reg.retain(|_, e| !e.src.starts_with("pack:") && !e.src.starts_with(GLOBAL_SRC_PREFIX));
     if let Some(pm) = &proj_manifest {
         for (k, v) in discover::read_registry(pm) {
             reg.entry(k).or_insert(v);
