@@ -14,7 +14,7 @@ use anyhow::Result;
 
 use super::deploy::copy_dir_recursive;
 use super::discover::{self, detect_current_project_root};
-use super::pack::install_pack;
+use super::pack::{install_pack, install_pack_global};
 use super::spec::{collect_repo_skills, git_clone_at, install_path_skill};
 use super::{inject_agents_md, inject_subfolder_indexes};
 use crate::{assets, env_detect, ui};
@@ -30,17 +30,22 @@ pub(crate) fn update_skills(
     ui::header("8sync skill update");
     // Global registry (machine-local) ∪ project manifest (agents/skills.toml,
     // committed) — the manifest is what makes skills reproducible on a new machine.
-    // Packs are project-scoped: only the project's own manifest may list one.
+    // A project pack comes from the project manifest; a pack in the global registry
+    // was installed with `--global` into `~/.omp` and is refreshed separately below.
     let project_root = detect_current_project_root();
     let proj_manifest = project_root.as_ref().map(|r| r.join("agents/skills.toml"));
     let mut reg = discover::read_registry(toml_path);
+    let global_packs: Vec<(String, String)> = reg
+        .iter()
+        .filter_map(|(k, e)| e.src.strip_prefix("pack:").map(|p| (k.clone(), p.to_string())))
+        .collect();
     reg.retain(|_, e| !e.src.starts_with("pack:"));
     if let Some(pm) = &proj_manifest {
         for (k, v) in discover::read_registry(pm) {
             reg.entry(k).or_insert(v);
         }
     }
-    if reg.is_empty() {
+    if reg.is_empty() && global_packs.is_empty() {
         ui::info("no registered skills — `8sync skill add <url>` (or commit agents/skills.toml)");
         return Ok(());
     }
@@ -170,6 +175,22 @@ pub(crate) fn update_skills(
                 sources += 1;
             }
             Err(e) => ui::warn(&format!("pack `{}` update failed: {}", pname, e)),
+        }
+    }
+
+    // --- global packs (`skill add pack:<name> --global`): refreshed by every update,
+    // harness runs included — the lock keeps locally edited files unless `--force` ---
+    for (name, pname) in &global_packs {
+        if !want(name) {
+            continue;
+        }
+        match install_pack_global(&env.home, pname, packs.unwrap_or(false)) {
+            Ok(_) => {
+                matched = true;
+                updated += 1;
+                sources += 1;
+            }
+            Err(e) => ui::warn(&format!("global pack `{}` update failed: {}", pname, e)),
         }
     }
 

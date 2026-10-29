@@ -3,11 +3,12 @@
 //! A pack bundles a project-type's SKILL.md set (e.g. VTiger/PHP: `action`,
 //! `field`, `database`, …) together with its `.omp/rules/*.md` convention
 //! files, so a new project of that type gets both in one `skill add pack:<name>`.
-//! Always project-local (never deployed to `~/.omp/skills`) — domain rules only
-//! make sense scoped to a matching project, unlike generic always-on skills.
+//! Project-local by default; `--global` installs it into `~/.omp` for machines
+//! that work on that project type almost exclusively (its always-on rules then
+//! load in every omp session, in every repo).
 use anyhow::Result;
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::meta::audit_skill_layout;
 use crate::{assets, ui};
@@ -62,10 +63,37 @@ pub(crate) fn is_pack_installed(root: &Path, name: &str) -> bool {
     reg.get(name).is_some_and(|e| e.src == format!("pack:{}", name))
 }
 
+/// Where a pack is installed.
+pub(crate) enum PackScope<'a> {
+    /// `<root>/.omp/{skills,rules,commands,agents,RULES.md}`
+    Project(&'a Path),
+    /// `~/.omp/skills/<sub>` + `~/.omp/agent/{rules,commands,agents,RULES.md}`
+    Global(&'a Path),
+}
+
+impl PackScope<'_> {
+    /// Installed path of pack file `rel` (relative to the pack root).
+    fn target(&self, rel: &str) -> PathBuf {
+        match self {
+            PackScope::Project(root) => root.join(".omp").join(rel),
+            PackScope::Global(home) => match rel.strip_prefix("skills/") {
+                Some(skill) => home.join(".omp/skills").join(skill),
+                None => home.join(".omp/agent").join(rel),
+            },
+        }
+    }
+
+    fn lock_path(&self, name: &str) -> PathBuf {
+        match self {
+            PackScope::Project(root) => root.join(".omp").join(format!("pack-{}.lock", name)),
+            PackScope::Global(home) => home.join(".omp/agent").join(format!("pack-{}.lock", name)),
+        }
+    }
+}
+
 /// Deploy pack `name` into the project's `.omp/`: skills (`skills/<sub>`), rule
 /// files (`rules/`), slash commands (`commands/`), agents (`agents/`) and the always-apply `RULES.md`.
-/// Project-local only — packs carry domain convention (PHP/VTiger, …) that
-/// doesn't belong in `~/.omp`.
+/// Domain convention (PHP/VTiger, …) is scoped to a matching project by default.
 ///
 /// `.omp` is usually untracked, so a local edit must never be lost silently:
 /// `.omp/pack-<name>.lock` records the hash of every file as installed. A file
@@ -73,6 +101,15 @@ pub(crate) fn is_pack_installed(root: &Path, name: &str) -> bool {
 /// recorded) file is kept unless `force`, which saves it as `<file>.bak` first.
 /// Errors only if the pack doesn't exist under `assets/packs/`.
 pub(crate) fn install_pack(root: &Path, name: &str, force: bool) -> Result<()> {
+    install_pack_in(&PackScope::Project(root), name, force)
+}
+
+/// Same as [`install_pack`] into `~/.omp` (lock: `~/.omp/agent/pack-<name>.lock`).
+pub(crate) fn install_pack_global(home: &Path, name: &str, force: bool) -> Result<()> {
+    install_pack_in(&PackScope::Global(home), name, force)
+}
+
+fn install_pack_in(scope: &PackScope, name: &str, force: bool) -> Result<()> {
     let pack_prefix = format!("packs/{}/", name);
     let files: Vec<String> = assets::iter_under(&pack_prefix)
         .into_iter()
@@ -85,8 +122,7 @@ pub(crate) fn install_pack(root: &Path, name: &str, force: bool) -> Result<()> {
         anyhow::bail!("no bundled pack `{}` (assets/packs/{}/ not found)", name, name);
     }
 
-    let omp = root.join(".omp");
-    let lock_path = omp.join(format!("pack-{}.lock", name));
+    let lock_path = scope.lock_path(name);
     let mut lock = read_lock(&lock_path);
     let (mut written, mut unchanged) = (0usize, 0usize);
     let mut kept: Vec<String> = Vec::new();
@@ -96,7 +132,7 @@ pub(crate) fn install_pack(root: &Path, name: &str, force: bool) -> Result<()> {
             continue;
         };
         let body = if rel.ends_with(".md") || rel.ends_with(".txt") { crate::brand::render(&body).into_owned() } else { body };
-        let target = omp.join(rel);
+        let target = scope.target(rel);
         let current = std::fs::read_to_string(&target).ok();
         match current {
             Some(cur) if cur == body => unchanged += 1,
@@ -105,7 +141,9 @@ pub(crate) fn install_pack(root: &Path, name: &str, force: bool) -> Result<()> {
                     kept.push(rel.to_string());
                     continue;
                 }
-                std::fs::rename(&target, omp.join(format!("{}.bak", rel)))?;
+                let mut backup = target.clone().into_os_string();
+                backup.push(".bak");
+                std::fs::rename(&target, PathBuf::from(backup))?;
                 write_file(&target, &body)?;
                 written += 1;
             }
@@ -118,17 +156,21 @@ pub(crate) fn install_pack(root: &Path, name: &str, force: bool) -> Result<()> {
     }
     write_lock(&lock_path, &lock)?;
     for sub in pack_skill_names(name) {
-        audit_skill_layout(&omp.join("skills").join(sub));
+        audit_skill_layout(&scope.target(&format!("skills/{}", sub)));
     }
 
-    ui::ok(&format!("pack `{}` → {} file(s) written, {} unchanged → {}", name, written, unchanged, omp.display()));
+    let place = match scope {
+        PackScope::Project(root) => root.join(".omp").display().to_string(),
+        PackScope::Global(home) => format!("{} + {}", home.join(".omp/skills").display(), home.join(".omp/agent").display()),
+    };
+    ui::ok(&format!("pack `{}` → {} file(s) written, {} unchanged → {}", name, written, unchanged, place));
     if !kept.is_empty() {
         ui::warn(&format!(
             "{} locally edited file(s) kept (rerun with --force to overwrite, old copy saved as .bak):",
             kept.len()
         ));
         for rel in &kept {
-            ui::info(&format!("  .omp/{}", rel));
+            ui::info(&format!("  {}", scope.target(rel).display()));
         }
     }
     Ok(())
@@ -170,4 +212,48 @@ fn write_lock(path: &Path, lock: &BTreeMap<String, String>) -> Result<()> {
     let body: String = lock.iter().map(|(p, h)| format!("{}\t{}\n", h, p)).collect();
     std::fs::write(path, body)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_home(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ckit-pack-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn global_scope_maps_skills_to_omp_skills_and_the_rest_to_agent_dir() {
+        let home = Path::new("/h");
+        let scope = PackScope::Global(home);
+        assert_eq!(scope.target("skills/field/SKILL.md"), Path::new("/h/.omp/skills/field/SKILL.md"));
+        assert_eq!(scope.target("rules/php83.md"), Path::new("/h/.omp/agent/rules/php83.md"));
+        assert_eq!(scope.target("commands/review-pr.md"), Path::new("/h/.omp/agent/commands/review-pr.md"));
+        assert_eq!(scope.target("RULES.md"), Path::new("/h/.omp/agent/RULES.md"));
+        assert_eq!(scope.lock_path("vtiger-php"), Path::new("/h/.omp/agent/pack-vtiger-php.lock"));
+    }
+
+    #[test]
+    fn global_install_is_idempotent_and_keeps_a_local_edit() {
+        let home = temp_home("global");
+        install_pack_global(&home, "vtiger-php", false).unwrap();
+        let rule = home.join(".omp/agent/rules/php-conventions.md");
+        let installed = std::fs::read(&rule).unwrap();
+        assert!(home.join(".omp/skills/review-pr/SKILL.md").is_file());
+        assert!(home.join(".omp/agent/commands/review-pr.md").is_file());
+
+        // Rerun writes nothing; an edited file survives a normal update.
+        std::fs::write(&rule, "local edit").unwrap();
+        install_pack_global(&home, "vtiger-php", false).unwrap();
+        assert_eq!(std::fs::read_to_string(&rule).unwrap(), "local edit");
+
+        // --force restores the pack copy and keeps the edit as .bak.
+        install_pack_global(&home, "vtiger-php", true).unwrap();
+        assert_eq!(std::fs::read(&rule).unwrap(), installed);
+        assert_eq!(std::fs::read_to_string(home.join(".omp/agent/rules/php-conventions.md.bak")).unwrap(), "local edit");
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }

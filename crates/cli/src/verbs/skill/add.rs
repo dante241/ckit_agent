@@ -11,7 +11,7 @@ use super::deploy::copy_dir_recursive;
 use super::discover::{self, detect_current_project_root};
 use super::inject::inject_agents_md;
 use super::meta::audit_skill_layout;
-use super::pack::install_pack;
+use super::pack::{install_pack, install_pack_global};
 use super::spec::{
     collect_repo_skills, fetch_github_readme, git_clone_at, github_owner_repo,
     install_path_skill, parse_spec, resolve_head_sha, synthesize_skill_md, write_synth_skill,
@@ -19,7 +19,13 @@ use super::spec::{
 };
 use crate::{assets, env_detect, ui};
 
-pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&str>, force: bool) -> Result<()> {
+pub(crate) fn add_skill(
+    env: &env_detect::Env,
+    toml_path: &Path,
+    spec: Option<&str>,
+    force: bool,
+    global: bool,
+) -> Result<()> {
     let Some(spec) = spec else {
         ui::err("usage: 8sync skill add <https URL|gh:owner/repo|path:/abs|builtin:name>");
         return Ok(());
@@ -143,10 +149,30 @@ pub(crate) fn add_skill(env: &env_detect::Env, toml_path: &Path, spec: Option<&s
                 installed.push(name.clone());
             }
         }
+        Source::Pack { .. } if global => {
+            // `--global`: the whole pack goes into `~/.omp` (skills → ~/.omp/skills,
+            // rules/commands/agents/RULES.md → ~/.omp/agent) and is registered in the
+            // global registry, so every `skill update` / harness run refreshes it.
+            install_pack_global(&env.home, &name, force)?;
+            let mut reg = discover::read_registry(toml_path);
+            reg.insert(name.clone(), discover::SkillEntry {
+                src: format!("pack:{}", name),
+                when: Some("on-demand".to_string()),
+                rev: None,
+            });
+            discover::write_registry(toml_path, &reg)?;
+            ui::warn("global pack: its always-on rules and RULES.md now load in EVERY omp session, in every repo");
+            ui::info("a project's own .omp/ copy (from `skill add pack:<name>` there) still wins over the global one");
+            ui::info(&crate::brand::render(&format!(
+                "refresh with `8sync skill update {}` or any `8sync harness` run; new omp sessions pick it up.",
+                name
+            )));
+            return Ok(());
+        }
         Source::Pack { .. } => {
-            // Domain packs (skills + `.omp/rules/*.md`) are always project-local
+            // Domain packs (skills + `.omp/rules/*.md`) are project-local by default
             // — the rule files only make sense scoped to a matching project — so
-            // they are registered in the project manifest, never the global registry.
+            // they are registered in the project manifest, not the global registry.
             let root = project_root.as_ref().ok_or_else(|| {
                 anyhow!("`pack:{}` must be run inside a project (needs a root for .omp/skills + .omp/rules)", name)
             })?;
