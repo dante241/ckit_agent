@@ -63,7 +63,7 @@ pub(crate) fn is_pack_installed(root: &Path, name: &str) -> bool {
 }
 
 /// Deploy pack `name` into the project's `.omp/`: skills (`skills/<sub>`), rule
-/// files (`rules/`), agents (`agents/`) and the always-apply `RULES.md`.
+/// files (`rules/`), slash commands (`commands/`), agents (`agents/`) and the always-apply `RULES.md`.
 /// Project-local only — packs carry domain convention (PHP/VTiger, …) that
 /// doesn't belong in `~/.omp`.
 ///
@@ -78,7 +78,7 @@ pub(crate) fn install_pack(root: &Path, name: &str, force: bool) -> Result<()> {
         .into_iter()
         .filter(|p| {
             let rel = &p[pack_prefix.len()..];
-            rel == "RULES.md" || ["skills/", "rules/", "agents/"].iter().any(|d| rel.starts_with(d))
+            rel == "RULES.md" || ["skills/", "rules/", "commands/", "agents/"].iter().any(|d| rel.starts_with(d))
         })
         .collect();
     if files.is_empty() {

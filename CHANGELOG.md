@@ -14,6 +14,7 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ### Added
 - `vtiger-php` pack now ships the rules `php83`, `modern-php`, `phpstan` and `domain-*` (PHP 8.3 runtime, PHPStan gate, `domains/` layering) that only lived in the vtiger repo, and the `cloudgo-development-rules` path-scoped table lists them.
+- Packs can ship slash commands (`commands/` → `.omp/commands/`, same lock/keep-local-edit rules as skills); `vtiger-php` ships `/review-pr`, which runs the pack's `review-pr` skill.
 
 ### Fixed
 - `vtiger-php` pack + bundled skills audited against the real vtiger repo, DB and CLIs (2026-10-29): code samples rewritten to real APIs and parent signatures (report handlers, views/ui asset loading, database transactions/Redis, cron/queue, notification, integration, error-handling, export, inventory, module, testing, callcenter, language, migration, handler, config); rule examples fixed (`createPicklistValues(..., true)` is `$isOverride` and wipes values, `getContainer()` is defined by the subclass, TTSR table matches each rule's `scope`, non-existent hooks/commands removed); `cli_tool.php -c quick_repair`; dead harness tools replaced by omp `browser`/`ask`/`xd://mcp__pms_*`.

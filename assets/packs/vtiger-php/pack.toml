@@ -1,1 +1,1 @@
-description = "VTiger/PHP domain skills + code conventions (action, field, database, migration, … + php-conventions/php83/phpstan/domain-*/error-patterns rule files)"
+description = "VTiger/PHP domain skills + code conventions (action, field, database, migration, … + php-conventions/php83/phpstan/domain-*/error-patterns rule files + /review-pr command)"
