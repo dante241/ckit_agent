@@ -109,6 +109,20 @@ pub(crate) fn install_pack_global(home: &Path, name: &str, force: bool) -> Resul
     install_pack_in(&PackScope::Global(home), name, force)
 }
 
+/// Refresh every pack registered with `--global` in `registry` (the global
+/// `skills.toml`) from the embedded assets — offline, local edits kept. Run by
+/// every harness global pass, so `8sync up` applies a new release's pack too.
+pub(crate) fn refresh_global_packs(home: &Path, registry: &Path) {
+    for (key, entry) in super::discover::read_registry(registry) {
+        let Some(pack) = entry.src.strip_prefix("pack:") else {
+            continue;
+        };
+        if let Err(e) = install_pack_global(home, pack, false) {
+            ui::warn(&format!("global pack `{}` refresh failed: {}", key, e));
+        }
+    }
+}
+
 fn install_pack_in(scope: &PackScope, name: &str, force: bool) -> Result<()> {
     let pack_prefix = format!("packs/{}/", name);
     let files: Vec<String> = assets::iter_under(&pack_prefix)
@@ -254,6 +268,20 @@ mod tests {
         install_pack_global(&home, "vtiger-php", true).unwrap();
         assert_eq!(std::fs::read(&rule).unwrap(), installed);
         assert_eq!(std::fs::read_to_string(home.join(".omp/agent/rules/php-conventions.md.bak")).unwrap(), "local edit");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn harness_refresh_installs_only_packs_registered_globally() {
+        let home = temp_home("refresh");
+        let registry = home.join("skills.toml");
+        refresh_global_packs(&home, &registry);
+        assert!(!home.join(".omp/agent/rules").exists());
+
+        std::fs::write(&registry, "[vtiger-php]\nsrc = \"pack:vtiger-php\"\nwhen = \"on-demand\"\n").unwrap();
+        refresh_global_packs(&home, &registry);
+        assert!(home.join(".omp/agent/rules/php-conventions.md").is_file());
+        assert!(home.join(".omp/agent/pack-vtiger-php.lock").is_file());
         let _ = std::fs::remove_dir_all(&home);
     }
 }

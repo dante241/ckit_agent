@@ -178,13 +178,16 @@ pub(crate) fn update_skills(
         }
     }
 
-    // --- global packs (`skill add pack:<name> --global`): refreshed by every update,
-    // harness runs included — the lock keeps locally edited files unless `--force` ---
+    // --- global packs (`skill add pack:<name> --global`): the explicit verb refreshes
+    // them here; harness runs refresh them in `global_pass` (`refresh_global_packs`) ---
     for (name, pname) in &global_packs {
+        let Some(force) = packs else {
+            continue;
+        };
         if !want(name) {
             continue;
         }
-        match install_pack_global(&env.home, pname, packs.unwrap_or(false)) {
+        match install_pack_global(&env.home, pname, force) {
             Ok(_) => {
                 matched = true;
                 updated += 1;

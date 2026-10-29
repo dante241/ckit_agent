@@ -152,7 +152,7 @@ pub(crate) fn add_skill(
         Source::Pack { .. } if global => {
             // `--global`: the whole pack goes into `~/.omp` (skills → ~/.omp/skills,
             // rules/commands/agents/RULES.md → ~/.omp/agent) and is registered in the
-            // global registry, so every `skill update` / harness run refreshes it.
+            // global registry; harness global passes (`8sync up` included) refresh it.
             install_pack_global(&env.home, &name, force)?;
             let mut reg = discover::read_registry(toml_path);
             reg.insert(name.clone(), discover::SkillEntry {
@@ -164,7 +164,7 @@ pub(crate) fn add_skill(
             ui::warn("global pack: its always-on rules and RULES.md now load in EVERY omp session, in every repo");
             ui::info("a project's own .omp/ copy (from `skill add pack:<name>` there) still wins over the global one");
             ui::info(&crate::brand::render(&format!(
-                "refresh with `8sync skill update {}` or any `8sync harness` run; new omp sessions pick it up.",
+                "`8sync up`, `8sync harness global` and `8sync harness` refresh it; `8sync skill update {}` refreshes it on demand. New omp sessions pick it up.",
                 name
             )));
             return Ok(());
