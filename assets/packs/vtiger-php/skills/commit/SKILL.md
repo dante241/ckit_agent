@@ -1,5 +1,6 @@
 ---
 name: commit
+disable-model-invocation: true
 description: "Stage, review, commit and push code changes. Requires ticket number. Auto-creates feature branches from slug analysis."
 ---
 
