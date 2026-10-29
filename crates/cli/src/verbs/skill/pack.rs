@@ -117,13 +117,66 @@ pub(crate) fn install_pack_global(home: &Path, name: &str, force: bool) -> Resul
 /// `skills.toml`) from the embedded assets — offline, local edits kept. Run by
 /// `harness` init/up/global, so `8sync up` applies a new release's pack too.
 pub(crate) fn refresh_global_packs(home: &Path, registry: &Path) {
-    for (key, entry) in super::discover::read_registry(registry) {
-        let Some(pack) = entry.src.strip_prefix(GLOBAL_SRC_PREFIX) else {
+    let reg = super::discover::read_registry(registry);
+    let wanted: Vec<&str> = reg.values().filter_map(|e| e.src.strip_prefix(GLOBAL_SRC_PREFIX)).collect();
+    remove_unregistered_global_packs(home, &wanted);
+    for pack in wanted {
+        if let Err(e) = install_pack_global(home, pack, false) {
+            ui::warn(&format!("global pack `{}` refresh failed: {}", pack, e));
+        }
+    }
+}
+
+/// Undo a global pack whose lock exists but which has no `pack-global:` registry
+/// row (v0.1.33 installed one from a legacy `pack:` row). Only files still
+/// byte-identical to the lock are deleted; locally edited files stay.
+fn remove_unregistered_global_packs(home: &Path, wanted: &[&str]) {
+    let scope = PackScope::Global(home);
+    let Ok(entries) = std::fs::read_dir(home.join(".omp/agent")) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let file = entry.file_name().to_string_lossy().into_owned();
+        let Some(name) = file.strip_prefix("pack-").and_then(|f| f.strip_suffix(".lock")) else {
             continue;
         };
-        if let Err(e) = install_pack_global(home, pack, false) {
-            ui::warn(&format!("global pack `{}` refresh failed: {}", key, e));
+        if wanted.contains(&name) {
+            continue;
         }
+        let (mut removed, mut kept) = (0usize, Vec::new());
+        for (rel, hash) in read_lock(&entry.path()) {
+            let target = scope.target(&rel);
+            match std::fs::read_to_string(&target) {
+                Ok(cur) if fnv1a(&cur) == hash => {
+                    if std::fs::remove_file(&target).is_ok() {
+                        removed += 1;
+                        prune_empty_parents(&target, home);
+                    }
+                }
+                Ok(_) => kept.push(rel),
+                Err(_) => {}
+            }
+        }
+        let _ = std::fs::remove_file(entry.path());
+        ui::warn(&format!(
+            "global pack `{}` removed ({} file(s)): it was never added with `skill add pack:{} --global`",
+            name, removed, name
+        ));
+        for rel in &kept {
+            ui::info(&format!("  kept (locally edited): {}", scope.target(rel).display()));
+        }
+    }
+}
+
+/// Remove now-empty directories above `path`, stopping at `~/.omp/skills` / `~/.omp/agent`.
+fn prune_empty_parents(path: &Path, home: &Path) {
+    let stops = [home.join(".omp/skills"), home.join(".omp/agent"), home.join(".omp")];
+    let mut dir = path.parent();
+    while let Some(d) = dir {
+        if stops.iter().any(|s| s == d) || std::fs::remove_dir(d).is_err() {
+            break;
+        }
+        dir = d.parent();
     }
 }
 
@@ -291,6 +344,25 @@ mod tests {
         refresh_global_packs(&home, &registry);
         assert!(home.join(".omp/agent/rules/php-conventions.md").is_file());
         assert!(home.join(".omp/agent/pack-vtiger-php.lock").is_file());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn harness_refresh_removes_an_unregistered_global_pack_but_keeps_edits() {
+        let home = temp_home("orphan");
+        let registry = home.join("skills.toml");
+        install_pack_global(&home, "vtiger-php", false).unwrap();
+        let edited = home.join(".omp/agent/rules/php83.md");
+        std::fs::write(&edited, "local edit").unwrap();
+
+        // legacy `pack:` row = not an opt-in -> the orphan install is undone
+        std::fs::write(&registry, "[vtiger-php]\nsrc = \"pack:vtiger-php\"\n").unwrap();
+        refresh_global_packs(&home, &registry);
+        assert!(!home.join(".omp/agent/pack-vtiger-php.lock").exists());
+        assert!(!home.join(".omp/agent/RULES.md").exists());
+        assert!(!home.join(".omp/skills/field").exists());
+        assert_eq!(std::fs::read_to_string(&edited).unwrap(), "local edit");
+        assert!(home.join(".omp/skills").is_dir());
         let _ = std::fs::remove_dir_all(&home);
     }
 }

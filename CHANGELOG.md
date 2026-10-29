@@ -12,10 +12,15 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.35] - 2026-10-29
+
+### Fixed
+- Harness runs (`ckit up`, `harness`, `harness up`, `harness global`) now undo a global pack that has a `~/.omp/agent/pack-<name>.lock` but no `pack-global:` registry row, i.e. the unwanted install v0.1.33 made. Only files still identical to the lock are deleted; locally edited files are kept and listed.
+
 ## [0.1.34] - 2026-10-29
 
 ### Fixed
-- v0.1.33 installed the `vtiger-php` pack into `~/.omp` on every `ckit up`/`harness` run for any machine whose global `skills.toml` still held a plain `pack:<name>` row from an older project install. `--global` installs are now recorded as `src = "pack-global:<name>"`, and only those are refreshed globally; plain `pack:` rows in the global registry are ignored. Machines hit by 0.1.33 keep the files it wrote - remove them with the paths in `~/.omp/agent/pack-<name>.lock`.
+- v0.1.33 installed the `vtiger-php` pack into `~/.omp` on every `ckit up`/`harness` run for any machine whose global `skills.toml` still held a plain `pack:<name>` row from an older project install. `--global` installs are now recorded as `src = "pack-global:<name>"`, and only those are refreshed globally; plain `pack:` rows in the global registry are ignored.
 
 ## [0.1.33] - 2026-10-29
 
