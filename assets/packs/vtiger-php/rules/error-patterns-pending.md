@@ -301,3 +301,12 @@ git diff -- <file> | grep -n "^\+.*#[0-9]\{3,\}"                    # ticket ID 
 **Root cause:** `$sawError` was evaluated only inside the cancel/cURL branch (`$endedMidStream`), so a clean close after an error frame took the success path; the transport then mapped success to `done` and every failure to an extra `error`.
 **Rule:** Decide the stream outcome in one place and check "upstream already sent error" first, before any success/partial-reply branch; the transport must not emit a second terminal frame (`done` or generic `error`) after a relayed upstream error.
 **Trigger keywords (review):** `$sawError` · `&& !$sawError` · `$emit(['type' => 'done'])` · `$endedMidStream`
+
+## PEND-03347: validation inside the model, but the action runs side-effect writes before it and after its catch
+**Ticket / MR:** #03347 / !436
+**Date:** 2026-10-29
+**Module / Layer:** `modules/Settings/Picklist/actions/SaveAjax.php::edit/rename` → `Settings_Picklist_Module_Model::renamePickListValues`; any action that wraps one model call in `try/catch` and does other writes around it
+**Symptom:** Request returns error 513 (value too long) but the language files already got the rejected value (`edit`) and Events users' default activity type / status was re-saved (`rename`).
+**Root cause:** The new guard was added at the top of the model method, while the action calls `updateDefaultPicklistValues()` before the model call and `LangUtils::writeModStrings()` after the `try/catch` regardless of the outcome.
+**Rule:** When a guard can reject the request, every write in the action must run after the guarded call succeeded: on `catch` emit the error and `return`; move writes that precede the call to after it (or validate before them).
+**Trigger keywords (review):** `$this->updateDefaultPicklistValues(` · `} catch (Exception $e) {` · `LangUtils::writeModStrings(` · `$response->setError(`

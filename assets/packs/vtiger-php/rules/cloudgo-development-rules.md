@@ -17,6 +17,16 @@ alwaysApply: true
 | `api-connector-rules.md` | `include/Webservice/**/*.php`, `modules/CP*Integration/**/*.php` |
 | `css-rules.md` | `**/*.css`, `**/*.tpl` |
 | `language-rules.md` | `languages/**/*.php` |
+| `domain-php.md` | `domains/**/*.php` |
+| `domain-architecture.md` | `domains/**/*.php`, `integrations/**/*.php`, `modules/**/*.php`, `api/**/*.php`, `include/Webservice/**/*.php`, `include/Webhooks/**/*.php` |
+| `domain-service.md` | `domains/**/*Service.php` |
+| `domain-repository.md` | `domains/**/*Repository.php` |
+| `domain-gateway.md` | `domains/**/*Gateway.php`, `integrations/**/*.php` |
+| `domain-composition-root.md` | `domains/Social/src/Social.php` (composition root hiện chỉ có Social), `domains/**/Channel/**/*Channel.php` |
+| `domain-tests.md` | `domains/**/tests/**/*.php` |
+| `modern-php.md` | code MỚI trong `modules/**`, `include/**`, `includes/**`, `domains/**`, `integrations/**`, `api/**`, `cron/**` (`*.php`) — stack composer thay legacy bundle, trần cú pháp D-019 (8.3) |
+| `php83.md` | `**/*.php`, `**/*.inc`, `**/*.service` — rules PHP 8.3 có mã: C khai báo class, F input/output hàm, P kiểm tra trước khi gọi, V biến, E lỗi, R builtin 8.3, S cú pháp 8.x (bản sao `docs/php83-coding-rules.md`; review trích mã rule) |
+| `phpstan.md` | `**/*.php`, `**/*.inc`, `**/*.service`, `tools/phpstan/**`, `tools/composer.*` — gate PHPStan bắt buộc trước khi xong/commit, cấm ignore/sinh lại baseline |
 
 Always-on (`alwaysApply`, không phải TTSR — luôn nằm trong prompt): `cloudgo-development-rules.md` (file này), `php-conventions.md` (code + review PHP), `javascript-rules.md` (code + review JS).
 
