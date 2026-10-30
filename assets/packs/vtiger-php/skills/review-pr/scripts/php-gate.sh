@@ -10,7 +10,8 @@ TARGET="${2:-master}"
 REPO_ROOT="$(git rev-parse --show-toplevel)" || exit 2
 PHP74="${PHP74:-/opt/homebrew/opt/php@7.4/bin/php}"
 PHP83="${PHP83:-/opt/homebrew/opt/php@8.3/bin/php}"
-WT="/tmp/php-gate-mr${MR}"
+# Real path (macOS /tmp -> /private/tmp): the vtiger load rules resolve the repo root through realpath
+WT="$(cd /tmp && pwd -P)/php-gate-mr${MR}"
 LOCK="/tmp/phpstan-gate.lock.d"
 die() { echo "SETUP ERROR: $*" >&2; echo "GATE: FAIL (setup)"; exit 2; }
 
@@ -42,8 +43,12 @@ if ! git -c user.name=gate -c user.email=gate@local merge -q --no-edit --no-ff "
 	echo "GATE: FAIL"
 	exit 1
 fi
-ln -s "$REPO_ROOT/tools/vendor" tools/vendor
-cp "$REPO_ROOT/include/utils/utils.php8.php" include/utils/utils.php8.php
+# Copy, not symlink: the load rules take the repo root from tools/vendor's real path (APFS clone when available)
+cp -Rc "$REPO_ROOT/tools/vendor" tools/vendor 2>/dev/null || cp -R "$REPO_ROOT/tools/vendor" tools/vendor || die "cannot copy tools/vendor"
+# Decoded ionCube sources (untracked *.php8.php, e.g. include/utils/utils.php8.php, includes/main/WebUI.php8.php)
+(cd "$REPO_ROOT" && git ls-files --others --ignored --exclude-standard -- '*.php8.php') | while IFS= read -r f; do
+	mkdir -p "$(dirname "$f")" && cp "$REPO_ROOT/$f" "$f"
+done
 
 FAIL=0
 
