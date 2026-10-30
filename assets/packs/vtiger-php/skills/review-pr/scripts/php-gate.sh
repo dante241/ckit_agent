@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Mechanical PHP gate for one GitLab MR: lint (PHP 7.4 + 8.3) + PHPStan 2.2.17 on the MR's PHP files,
 # analysed on the real merge result (target branch + MR head) in a throwaway worktree.
-# Usage: bash .omp/skills/review-pr/scripts/php-gate.sh <MR_IID> [TARGET_BRANCH=master]
+# Usage (from the vtiger repo root): bash <skill dir>/scripts/php-gate.sh <MR_IID> [TARGET_BRANCH=master]
+#   <skill dir> = .omp/skills/review-pr (project pack) or ~/.omp/skills/review-pr (pack installed with --global)
 # Output: human summary + last line "GATE: PASS" | "GATE: FAIL" | "GATE: SKIP (no PHP files)". Exit 0 PASS/SKIP, 1 FAIL, 2 setup error.
 set -uo pipefail
 
@@ -75,7 +76,8 @@ done
 until mkdir "$LOCK" 2>/dev/null; do echo "waiting for another PHPStan run ($LOCK)"; sleep 10; done
 LOCKED=1
 
-stan() { php -d memory_limit=4G tools/vendor/bin/phpstan analyse --no-progress "$@"; }
+# PHPStan must run on PHP 8.3 (rule phpstan.md E4), whatever `php` is first on PATH
+stan() { "$PHP83" -d memory_limit=4G tools/vendor/bin/phpstan analyse --no-progress "$@"; }
 
 if [ "${#APP[@]}" -gt 0 ]; then
 	echo "== PHPStan 2.2.17 -c tools/phpstan/phpstan.neon.dist (${#APP[@]} files)"

@@ -2,7 +2,7 @@
 name: review-pr
 disable-model-invocation: true
 description: "Review GitLab Merge Request for bugs, security, logic, and AGENTS.md/.omp/rules compliance. Posts comment and auto-merges if clean."
-allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), Bash(bash .omp/skills/review-pr/scripts/*), mcp__pms_*, Agent, Read, Grep, Glob
+allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), Bash(bash .omp/skills/review-pr/scripts/*), Bash(bash ~/.omp/skills/review-pr/scripts/*), mcp__pms_*, Agent, Read, Grep, Glob
 ---
 
 # Review PR Skill (GitLab)
@@ -97,14 +97,16 @@ git diff origin/<TARGET>..mr/<MR_NUMBER> --stat
    - **Relationships**: Quan hệ giữa các module (1-N, N-N)
    - **Gotchas & edge cases**: Các lỗi đã biết, cần tránh
    - **Business rules**: Quy tắc nghiệp vụ đặc thù của module
-5. **Coding rules (BẮT BUỘC):** map file đổi → rule theo bảng *Path-scoped sibling rules* trong `.omp/rules/cloudgo-development-rules.md`, `read rule://<name>` từng rule khớp, luôn kèm `cloudgo-development-rules` + `error-patterns` → `$RULES_CONTEXT` (danh sách `.omp/rules/<name>.md`). Rule code là tiêu chí review: `scope: tool:edit/write` của rule chỉ quyết định lúc rule tự nạp (khi sửa), KHÔNG phải lý do bỏ/bác finding; loại file rule áp dụng vẫn theo nội dung rule.
+5. **Coding rules (BẮT BUỘC):** map file đổi → rule theo bảng *Path-scoped sibling rules* trong `rule://cloudgo-development-rules`, `read rule://<name>` từng rule khớp, luôn kèm `cloudgo-development-rules` + `error-patterns` → `$RULES_CONTEXT` (danh sách tên rule). Rule code là tiêu chí review: `scope: tool:edit/write` của rule chỉ quyết định lúc rule tự nạp (khi sửa), KHÔNG phải lý do bỏ/bác finding; loại file rule áp dụng vẫn theo nội dung rule.
 6. Truyền knowledge context + `$RULES_CONTEXT` cho TẤT CẢ 5 agents ở Step 3 và mọi validator ở Step 4
-7. **Rule mới nhất:** `.omp/rules/` là bản đang deploy — đọc trực tiếp file, KHÔNG dùng trí nhớ/bản tóm tắt từ review cũ. Re-review (round 2+) cũng nạp lại rule và chạy lại Step 2.6 trên head mới, kể cả khi head không đổi nhưng `master` đã có rule/gate mới.
+7. **Rule mới nhất:** `rule://<name>` là bản đang deploy (`.omp/rules/` của project, hoặc `~/.omp/agent/rules/` khi pack cài `--global`) — đọc trực tiếp, KHÔNG dùng trí nhớ/bản tóm tắt từ review cũ. Re-review (round 2+) cũng nạp lại rule và chạy lại Step 2.6 trên head mới, kể cả khi head không đổi nhưng `master` đã có rule/gate mới.
 
 ### Step 2.6: PHP gate cơ học (BẮT BUỘC — không bỏ, không thay bằng đọc code)
 
 ```bash
-bash .omp/skills/review-pr/scripts/php-gate.sh <MR_NUMBER> <TARGET_BRANCH>
+# chạy từ gốc repo vtiger; script nằm trong thư mục skill (project-local, hoặc ~/.omp khi pack cài --global)
+GATE=.omp/skills/review-pr/scripts/php-gate.sh; [ -f "$GATE" ] || GATE="$HOME/.omp/skills/review-pr/scripts/php-gate.sh"
+bash "$GATE" <MR_NUMBER> <TARGET_BRANCH>
 ```
 
 Script dựng worktree tạm = `origin/<TARGET>` + merge MR (phân tích đúng code sẽ vào master), rồi chạy `php -l` trên PHP 7.4 + 8.3 và PHPStan 2.2.17 (`tools/phpstan/phpstan.neon.dist`; `domains/` dùng `phpstan-domains.neon.dist`, không được vượt 10 lỗi có sẵn) trên mọi file `.php/.inc/.service` MR đổi. Dòng cuối: `GATE: PASS` | `GATE: FAIL` | `GATE: SKIP (no PHP files)`.

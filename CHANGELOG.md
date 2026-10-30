@@ -12,6 +12,16 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.36] - 2026-10-30
+
+### Added
+- `vtiger-php` pack: `/review-pr` runs a mandatory mechanical PHP gate (`skills/review-pr/scripts/php-gate.sh`) on the MR's merge result: `php -l` on PHP 7.4 and 8.3, PHPStan 2.2.17 on PHP 8.3 (`tools/phpstan/phpstan.neon.dist`, `domains/` capped at its 10 known errors). `GATE: FAIL` blocks merge; every review comment carries a "Gate tự động" section.
+- `vtiger-php` pack ships the `gitlab-mr-delta-rereview` skill that `review-pr` hands re-reviews to (verify prior findings on the new head, review only the delta; rebase-aware via `git range-diff`).
+
+### Fixed
+- `review-pr` works when the pack is installed with `--global`: the command reads `skill://review-pr`, rules are read through `rule://`, and the gate script is looked up in `.omp/skills/review-pr/scripts/` then `~/.omp/skills/review-pr/scripts/`.
+- The gate runs PHPStan with `$PHP83` instead of the first `php` on `PATH` (a machine whose default `php` is 7.4 analysed on the wrong runtime).
+
 ## [0.1.35] - 2026-10-29
 
 ### Fixed
