@@ -21,6 +21,7 @@ glab mr update <MR_NUMBER> --repo $REPO --label "Cần Fix"
 **Điều kiện merge:**
 - ✅ Không có lỗi CRITICAL hoặc HIGH
 - ✅ Không có lỗi PERFORMANCE (bất kỳ severity nào do Agent 1 phát hiện)
+- ✅ `GATE: PASS` hoặc `GATE: SKIP (no PHP files)` từ `scripts/php-gate.sh` (Step 2.6) chạy trên đúng head đang merge — head đổi sau khi chạy gate → chạy lại
 - ✅ Không có flag `--no-merge` hoặc `--dry-run`
 - ✅ Comment đã được post thành công ở Step 6
 - ✅ Label "Dev done" đã gán xong ở Step 6.5

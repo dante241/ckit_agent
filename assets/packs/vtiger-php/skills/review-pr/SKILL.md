@@ -2,7 +2,7 @@
 name: review-pr
 disable-model-invocation: true
 description: "Review GitLab Merge Request for bugs, security, logic, and AGENTS.md/.omp/rules compliance. Posts comment and auto-merges if clean."
-allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), mcp__pms_*, Agent, Read, Grep, Glob
+allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), Bash(bash .omp/skills/review-pr/scripts/*), mcp__pms_*, Agent, Read, Grep, Glob
 ---
 
 # Review PR Skill (GitLab)
@@ -99,6 +99,22 @@ git diff origin/<TARGET>..mr/<MR_NUMBER> --stat
    - **Business rules**: Quy tắc nghiệp vụ đặc thù của module
 5. **Coding rules (BẮT BUỘC):** map file đổi → rule theo bảng *Path-scoped sibling rules* trong `.omp/rules/cloudgo-development-rules.md`, `read rule://<name>` từng rule khớp, luôn kèm `cloudgo-development-rules` + `error-patterns` → `$RULES_CONTEXT` (danh sách `.omp/rules/<name>.md`). Rule code là tiêu chí review: `scope: tool:edit/write` của rule chỉ quyết định lúc rule tự nạp (khi sửa), KHÔNG phải lý do bỏ/bác finding; loại file rule áp dụng vẫn theo nội dung rule.
 6. Truyền knowledge context + `$RULES_CONTEXT` cho TẤT CẢ 5 agents ở Step 3 và mọi validator ở Step 4
+7. **Rule mới nhất:** `.omp/rules/` là bản đang deploy — đọc trực tiếp file, KHÔNG dùng trí nhớ/bản tóm tắt từ review cũ. Re-review (round 2+) cũng nạp lại rule và chạy lại Step 2.6 trên head mới, kể cả khi head không đổi nhưng `master` đã có rule/gate mới.
+
+### Step 2.6: PHP gate cơ học (BẮT BUỘC — không bỏ, không thay bằng đọc code)
+
+```bash
+bash .omp/skills/review-pr/scripts/php-gate.sh <MR_NUMBER> <TARGET_BRANCH>
+```
+
+Script dựng worktree tạm = `origin/<TARGET>` + merge MR (phân tích đúng code sẽ vào master), rồi chạy `php -l` trên PHP 7.4 + 8.3 và PHPStan 2.2.17 (`tools/phpstan/phpstan.neon.dist`; `domains/` dùng `phpstan-domains.neon.dist`, không được vượt 10 lỗi có sẵn) trên mọi file `.php/.inc/.service` MR đổi. Dòng cuối: `GATE: PASS` | `GATE: FAIL` | `GATE: SKIP (no PHP files)`.
+
+- `GATE: FAIL` → **chặn merge** (độc lập severity, như PERFORMANCE). Mỗi lỗi PHPStan/lint = 1 finding, KHÔNG qua validator Step 4 (cơ học, đã chắc chắn): `method.notFound`, `variable.undefined`, `arguments.count`, `class.notFound`, `argument.type`, `return.type`, `offsetAccess.notFound`, `foreach.nonIterable`, `*.nonObject`, lint → **HIGH**; `missingType.*`, `phpDoc.*` → **MEDIUM**. Cách sửa theo `rule://phpstan` (mục "Viết code để PHPStan hiểu"): sửa kiểu thật, CẤM `@phpstan-ignore`, ép kiểu để im lỗi, hay thêm vào baseline.
+- Merge conflict với target → `GATE: FAIL`, yêu cầu author rebase, review chỉ dừng ở đây.
+- MR đổi chữ ký hàm/method → chạy thêm PHPStan trên các file gọi hàm đó (`lsp references`), theo `rule://phpstan`.
+- File "Outside PHPStan gate" (vtlib, libraries, Webforms…) → agent Step 3 review kỹ bằng tay + probe runtime; ghi rõ trong comment.
+- Setup error (exit 2: thiếu `tools/vendor`, `utils.php8.php`, php@7.4/8.3) → DỪNG review, báo user sửa môi trường. KHÔNG post "PASS" khi gate chưa chạy.
+- Lưu nguyên output gate → `$GATE_RESULT`, truyền cho Step 3 agents và đưa vào comment (mục "Gate tự động").
 
 ### Step 2.5: Business Logic Extraction (BẮT BUỘC)
 
@@ -324,8 +340,8 @@ Score each validated issue 0-100:
 
 | Tình huống | Hành động |
 |-----------|-----------|
-| Không có lỗi CRITICAL/HIGH/PERFORMANCE | **Tự động** post comment (Step 6) + gán label "Dev done" (Step 6.5) + **tự động** merge (Step 7). KHÔNG hỏi user. |
-| Có lỗi CRITICAL/HIGH/PERFORMANCE | Trình kết quả cho user + dùng `ask` hỏi trước khi post. KHÔNG merge. |
+| Không có lỗi CRITICAL/HIGH/PERFORMANCE **và** `GATE: PASS`/`SKIP` | **Tự động** post comment (Step 6) + gán label "Dev done" (Step 6.5) + **tự động** merge (Step 7). KHÔNG hỏi user. |
+| Có lỗi CRITICAL/HIGH/PERFORMANCE **hoặc** `GATE: FAIL` **hoặc** gate chưa chạy | Trình kết quả cho user + dùng `ask` hỏi trước khi post. KHÔNG merge. |
 | Có `--dry-run` flag | Chỉ in kết quả ra terminal, KHÔNG post, KHÔNG merge. |
 | Có `--no-merge` flag | Post comment + gán label, nhưng KHÔNG merge kể cả khi clean. |
 
@@ -366,7 +382,7 @@ Comment format chuẩn (2 template: có lỗi / clean): đọc [references/comme
 | **MEDIUM** | Rules violation, missing type cast, convention break | No (warning) |
 | **LOW** | Style, naming, minor improvement | No |
 
-CRITICAL, HIGH, và PERFORMANCE đều block merge. PERFORMANCE là một category độc lập — kể cả khi Agent 1 đánh giá severity là MEDIUM trên thang thông thường, nó vẫn chặn auto-merge.
+CRITICAL, HIGH, và PERFORMANCE đều block merge. PERFORMANCE là một category độc lập — kể cả khi Agent 1 đánh giá severity là MEDIUM trên thang thông thường, nó vẫn chặn auto-merge. `GATE: FAIL` (Step 2.6) cũng chặn merge, kể cả khi mọi lỗi gate chỉ là MEDIUM (`missingType.*`): code mới phải qua gate sạch.
 
 ## False Positive Filters
 

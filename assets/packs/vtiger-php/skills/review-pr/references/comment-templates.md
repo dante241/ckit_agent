@@ -76,6 +76,18 @@ Quy tắc:
 4. **<Tiêu đề lỗi>** — `<file>:<line>`
    <Mô tả chi tiết>
 
+### Gate tự động
+
+**BẮT BUỘC trong mọi comment (cả template có lỗi lẫn clean).** Lấy từ `$GATE_RESULT` (Step 2.6), không viết tay.
+
+- `[x|!|-]` Lint PHP 7.4 + 8.3 — <số file> file: <OK | N lỗi>
+- `[x|!|-]` PHPStan 2.2.17 (`tools/phpstan/phpstan.neon.dist`, merge-result của MR vào `<TARGET>`): <`[OK] No errors` | N lỗi (liệt kê trong "Các lỗi phát hiện")>
+- `[x|!|-]` PHPStan domains (nếu MR đổi `domains/`): <N lỗi / 10 lỗi có sẵn>
+- File ngoài phạm vi gate (review tay): <danh sách | "Không có">
+- Rule đã áp dụng: <danh sách `.omp/rules/<name>.md` trong `$RULES_CONTEXT`>
+
+`[-]` chỉ khi MR không đổi file PHP (`GATE: SKIP`). Gate FAIL → MR KHÔNG được merge.
+
 ### Các tiêu chí đã kiểm tra
 
 **Build động dựa trên kết quả thực tế từ 5 agents.**
