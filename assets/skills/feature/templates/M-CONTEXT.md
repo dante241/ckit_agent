@@ -30,7 +30,7 @@
 
 | AC | UC | Nguồn | GIVEN / WHEN / THEN (đo được) | Cách verify | Tier | Task nguồn |
 |----|----|-------|-------------------------------|-------------|------|------------|
-| AC-01 | UC-01 | US-01·AC-02, BR-01 | GIVEN [tiền đề] WHEN [hành động] THEN [kết quả đo được] | [lệnh/SQL/script/thao tác] | must-test / verify-sql / verify-only | T1 |
+| AC-01 | UC-01 | US-01·AC-02, BR-01 | GIVEN [tiền đề] WHEN [hành động] THEN [kết quả đo được]. Ví dụ: `[đầu vào] → [kết quả]`; biên: `[rỗng/trùng/hết quyền] → [kết quả]` | [lệnh/SQL/script/thao tác] | must-test / verify-sql / verify-only | T1 |
 
 ### Chuyển phase (mã của phase này nhưng không có AC ở đây)
 

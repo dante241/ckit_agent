@@ -12,6 +12,18 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.37] - 2026-11-01
+
+### Added
+- Engine red-first gate: a task planned with `red: true` + `tests: [paths]` needs `engine_red` to see its verify commands FAIL before any non-test file of the task changes; `engine_verify` refuses the task until that red is recorded. `engine_red` refuses when code files already changed, when the test already passes, or when every failure is exit 126/127.
+- `feature` skill: `scripts/phase_gate.py --phase Mx [--check plan|verification]`. Plan check: a task carrying `[AC:]` needs a `[verify:]` that runs more than syntax/existence probes (`php -l`, `node --check`, `test -s`); `[trivial]` tasks cannot carry an AC; must-test without `[red:]` warns. Verification check: each AC has exactly one verdict word (PASS/FAIL/NEEDS-CONFIRM) across all tables; every NEEDS-CONFIRM has an owner row and a STATE Blockers line; prints DONE / CONDITIONAL / NOT DONE.
+- `feature` skill: `plan` requires a concrete example and a boundary case per AC and runs `phase_gate.py --check plan` before gate 2; `ship` adds a cross-model correctness reviewer, mutation check per must-test AC, and closes a phase only on `phase_gate.py --check verification`.
+
+### Changed
+- `engine_plan` rejects a task with no verify commands unless it is `trivial: true` (plans saved before this release keep advancing as before).
+- `engine_verify {commands}` adds commands to the plan's verify list instead of replacing it.
+- Partial or unfinished work is FAIL, not NEEDS-CONFIRM; NEEDS-CONFIRM is only for the part blocked outside the team's reach.
+
 ## [0.1.36] - 2026-10-30
 
 ### Added

@@ -24,6 +24,7 @@ Spawn ĐỒNG THỜI `task` subagent `agent: code-reviewer` (dự án có `.omp/
 
 Scope = file phase này đụng (từ PLAN). Barrier → gộp findings.
 Có lỗi → fix (main thread hoặc spawn) → re-review tới sạch. Phase nhỏ → 1 reviewer tổng hợp cũng được.
+**Chấm chéo khác model:** thêm 1 reviewer lens `correctness` với `model` khác nhà cung cấp so với model đã code phase (truyền `model` trong item `task`; chọn từ `~/.config/8sync/models.toml` / `modelRoles` của omp, vd model đang gán cho vai `commit`). Prompt: bảng AC literal + `git diff <first>..<last>` của phase + log test — "AC nào code KHÔNG thỏa hoặc test không thực sự đo?". Máy không có model khác → ghi STATE Log "cross-model review: không có model khác", không bỏ qua im lặng.
 
 **Nhúng UC + AC + nguồn vào prompt reviewer:** mỗi prompt kèm Requirement scope + bảng AC literal (từ Step 0) + đoạn đặc tả nguyên văn mà các AC trỏ tới + đoạn bản đồ (R16) của vùng phase đụng + yêu cầu: "Ngoài lens <dimension>, soát code có thỏa đúng UC/AC và nguyên văn nguồn thuộc lens này không (vd security lens ↔ AC/BR nào về permission/inject); báo UC/AC/mã nguồn nào code KHÔNG thỏa kèm `file:line`." Reviewer trả findings gắn UC-ID/AC-NN/mã nguồn khi liên quan. Nhúng R10 literal (dùng code-intel qua `xd://` device định vị, tóm tắt output dài).
 
@@ -44,6 +45,8 @@ Nhiều component độc lập → spawn tester song song (1 component/agent). B
 **Test BÁM UC/AC, không test mò:** mỗi tester nhận Requirement scope + bảng AC literal + đoạn đặc tả nguyên văn của cột Nguồn + chỉ thị "viết test chứng minh ĐÚNG các UC/AC được giao (dùng cột 'Cách verify' của AC làm kịch bản; Given/When/Then làm assertion; nguyên văn nguồn là chuẩn khi AC viết thiếu điều kiện). Mỗi AC must-test/verify-sql → ≥1 test thực thi, trả PASS/FAIL kèm output thật." Test bổ sung ngoài AC (edge/security) vẫn khuyến khích, nhưng KHÔNG được thiếu UC/AC nào.
 
 > Test lint/build đã chạy như GATE của từng task trong `/feature go` (engine `verify`); Step 2 là tầng nghiệm thu AC end-to-end, bổ sung chứ không thay verify-gate của engine.
+
+**Mutation (mỗi AC must-test có test tự động):** file phải sạch (`git diff --quiet -- <file>`) trước khi phá. Sau khi test AC PASS, phá đúng dòng logic AC đó kiểm (đảo điều kiện, bỏ nhánh, đổi hằng số) → chạy lại lệnh "Cách verify" của AC → phải FAIL → hoàn tác (`git checkout -- <file>`, kiểm `git diff` sạch). Test vẫn PASS khi code đã bị phá = test không đo AC → AC đó là **FAIL** (vào Step 2.5, sửa test). Ghi vào cột Bằng chứng: `mutation: <file:line, phá gì> → FAIL ✓`.
 
 ### Ghi `M<x>-VERIFICATION.md` — bắt buộc dạng AC-matrix
 ```markdown
@@ -79,8 +82,8 @@ Bỏ qua khi matrix đã toàn PASS. Ngược lại, lặp tối đa `config.wor
 
 ## Step 2.6 — NEEDS-CONFIRM (đóng phase có điều kiện)
 
-NEEDS-CONFIRM chỉ dành cho AC **bị chặn ngoài tầm** (môi trường prod, quyền/credential, dữ liệu thật, bên thứ ba) — không bao giờ cho lỗi code hay test chưa viết. Phase còn NEEDS-CONFIRM (không còn FAIL) được đóng **có điều kiện** khi đủ:
-1. Mỗi dòng ghi ở mục NEEDS-CONFIRM của VERIFICATION: chặn bởi gì, **ai** xác nhận (user/QA/ops), khi nào/ở đâu, bằng chứng đã có (vd test local PASS).
+NEEDS-CONFIRM chỉ dành cho AC **bị chặn ngoài tầm** (môi trường prod, quyền/credential, dữ liệu thật, bên thứ ba) — không bao giờ cho lỗi code hay test chưa viết. Ô Verdict chỉ được là ĐÚNG một từ `PASS` / `FAIL` / `NEEDS-CONFIRM`: "PASS (code) · NEEDS-CONFIRM (prod)", "PASS (một phần)", "CHƯA LÀM" đều sai. Code thiếu/chưa xong/test chưa viết → `FAIL` (vào Step 2.5 converge). Chỉ khi phần code đã PASS đủ và phần còn lại bị chặn ngoài tầm → `NEEDS-CONFIRM`, ghi phần đã PASS ở cột Bằng chứng. Phase còn NEEDS-CONFIRM (không còn FAIL) được đóng **có điều kiện** khi đủ:
+1. Mỗi AC NEEDS-CONFIRM có dòng ở mục NEEDS-CONFIRM của VERIFICATION: chặn bởi gì, **ai** xác nhận (user/QA/ops), khi nào/ở đâu, bằng chứng đã có (vd test local PASS).
 2. Không `--auto`: `ask` user chấp nhận đóng có điều kiện (Đóng có điều kiện / Giữ phase mở). `--auto`: KHÔNG tự đóng — giữ phase `[~]`, báo user.
 3. User chấp nhận → ROADMAP ghi `[x]` kèm "(NEEDS-CONFIRM: AC-xx)", STATE `## Blockers/Concerns` thêm từng dòng (AC + phase + ai xác nhận). Phase sau KHÔNG được phụ thuộc vào hành vi của AC đang chờ, trừ khi user chốt.
 4. Khi xác nhận xong → cập nhật verdict PASS + bằng chứng trong VERIFICATION của phase cũ, xoá dòng Blockers, bỏ ghi chú ở ROADMAP. Xác nhận ra FAIL → mở converge cho phase cũ (hoặc task ở phase hiện tại nếu user chọn).
@@ -93,7 +96,7 @@ NEEDS-CONFIRM chỉ dành cho AC **bị chặn ngoài tầm** (môi trường pr
    - Không `--auto`: trình diff bản đồ + `ask` (Ghi / Sửa / Bỏ qua). `--auto`: ghi luôn, STATE Log ghi file bản đồ đã đổi. Nhiều vùng → spawn `task` (`agent: task`), prompt nhúng R16 literal + mục Bổ sung bản đồ.
 2. **Commit**: code đã commit atomic per-task trong `/feature go` (qua `engine_advance`) rồi — KHÔNG commit gộp lại. Ship chỉ:
    - Commit nốt phần phụ của phase chưa thuộc task nào (`M<x>-VERIFICATION.md`/STATE/ROADMAP đổi + file bản đồ của mục 1): `docs: M<x> close phase <tên>` (Conventional Commits, tiếng Anh, milestone ở đầu — xem `execute.md` §Commit).
-   - Verify **AC matrix trong M<x>-VERIFICATION.md MỌI AC = PASS** (Step 0+1+2) TRƯỚC khi tính phase done. Còn FAIL → KHÔNG đóng phase. Còn NEEDS-CONFIRM → chỉ đóng có điều kiện theo Step 2.6.
+   - Verify **AC matrix trong M<x>-VERIFICATION.md MỌI AC = PASS** (Step 0+1+2) TRƯỚC khi tính phase done, bằng `python3 ~/.omp/skills/feature/scripts/phase_gate.py agents/planning/<slug> --phase M<x> --check verification`: exit 1 → KHÔNG đóng phase (sửa verdict/NEEDS-CONFIRM/Blockers theo từng dòng ERROR, không sửa script). Dòng tổng `DONE` → đóng; `CONDITIONAL` → chỉ đóng có điều kiện theo Step 2.6; `NOT DONE` → còn FAIL, quay lại Step 2.5. Dán dòng tổng vào phần Kết luận của VERIFICATION.
    - **KHÔNG `git push` / mở PR** — chỉ push khi user yêu cầu rõ.
 3. **ROADMAP**: phase `[~]` → `[x]` + ghi Phase log (range commit `<first>..<last>` của phase, contract đã export).
 4. **STATE cập nhật**:

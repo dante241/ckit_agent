@@ -30,7 +30,7 @@ Mỗi `M<x>-CONTEXT.md` PHẢI có 3 mục dưới TRƯỚC khi plan. Đây là 
    - **Không làm ở phase này**: ranh giới nếu UC còn phần future/out-of-scope.
 2. **🎯 Goal** — 1 câu: output đo được của phase + ranh giới (CHƯA làm gì → tránh review đòi hỏi quá phạm vi).
 3. **✅ Acceptance Criteria (UAT)** — bảng `AC-NN`, mỗi dòng:
-   - **Given/When/Then** điều kiện PASS **đo được** (số, trạng thái, output cụ thể — KHÔNG "chạy ổn", "đúng").
+   - **Given/When/Then** điều kiện PASS **đo được** (số, trạng thái, output cụ thể — KHÔNG "chạy ổn", "đúng"), kèm **ví dụ cụ thể**: ≥1 dòng `đầu vào → kết quả mong đợi` của luồng chính + ≥1 trường hợp biên/ngoại lệ (rỗng, trùng, hết quyền, giá trị 0…). User duyệt ví dụ ở gate 2 — đây là chỗ bắt "hiểu sai ý" rẻ nhất; tester dùng chính ví dụ làm assertion.
    - **UC**: UC-ID từ Requirement scope mà AC này chứng minh (vd UC-15).
    - **Nguồn**: mã đặc tả AC này chứng minh — tiêu chí `US-01·AC-03`, quy tắc `BR-04`, luồng `UC-02 A4`, ngoại lệ `E1`; không có đặc tả ngoài → `REQUIREMENTS`. Viết GIVEN/WHEN/THEN bám nguyên văn nguồn, không diễn giải lại theo ý mình.
    - **Cách verify**: lệnh/SQL/script/thao tác cụ thể để chứng minh (đây cũng là `verify` của engine task ở `go`).
@@ -62,8 +62,9 @@ Nếu phase cần khảo nhiều mặt codebase (và `config.workflow.paralleliz
 Tạo `M<x>-NN-PLAN.md` (NN bắt đầu 01, dùng `templates/M-PLAN.md`). BẮT BUỘC mỗi task có:
 - **file ownership** `[file:]`: đụng file/folder nào — `go` dùng để chặn 2 task sửa cùng file chạy song song + để commit đúng file của task.
 - **phụ thuộc** `[depends:]`: task nào PHẢI xong (test PASS + commit) trước. Ghi `—` nếu không phụ thuộc. → `go` chạy song song mọi task đã đủ phụ thuộc, không chờ theo đợt.
-- **verify** `[verify:]`: lệnh lint/test THẬT, **scoped vào task** (lint file của task, test filter của task) — `go` chạy nó ngay khi task dev xong, trong lúc task khác còn đang sửa.
+- **verify** `[verify:]`: lệnh lint/test THẬT, **scoped vào task** (lint file của task, test filter của task) — `go` chạy nó ngay khi task dev xong, trong lúc task khác còn đang sửa. Task gánh AC mà tier ≠ verify-only: verify phải chạy test hành vi; chỉ `php -l` / `node --check` / `test -s` / `ls` là bị `phase_gate.py` báo lỗi. Task không code (doc, config tĩnh) → `[trivial]`, không cần verify — và KHÔNG được gắn `[AC:]` (AC cần bằng chứng chạy được).
 - **test tier**: must-test / verify-sql / verify-only.
+- **red-first** `[red: <test paths>]` (BẮT BUỘC cho must-test có test tự động): test viết TRƯỚC và phải ĐỎ trên code cũ — engine (`engine_red`) ghi bằng chứng, `engine_verify` từ chối task chưa có. Các path này phải nằm trong `[file:]`, và `[file:]` phải còn file code. Thiếu `[red:]` ở task must-test = `phase_gate.py` cảnh báo; ghi lý do ở Decisions nếu cố ý bỏ (vd test cần dữ liệu thật).
 - **skill**: skill repo nào chi phối task (`.omp/skills/<name>` hoặc `~/.omp/skills/<name>`). BẮT BUỘC — subagent KHÔNG tự biết skill nào áp dụng; cột này là nguồn để `go` resolve. Task không rõ skill → ghi `—` nhưng tự hỏi đã đúng chưa (đa số task code có ≥1 skill chi phối). Sai/thiếu skill = nguồn lỗi "code đúng task nhưng sai convention".
 - **UC phục vụ**: task này phục vụ UC-ID nào trong `REQUIREMENTS.md`/Requirement scope (vd UC-15).
 - **AC thỏa**: task này thỏa AC-NN nào (truy ngược về CONTEXT). Mọi AC phải có ≥1 task thỏa; task không gắn AC/UC nào = nghi vấn thừa, soát lại.
@@ -72,9 +73,9 @@ Template PLAN:
 ```markdown
 # M<x>-NN-PLAN — <phase name>
 ## Tasks
-- [ ] T1: <việc>   [file: path]   [depends: —]    [verify: <lệnh>]   [skill: <name>]   [tier: ...]   [UC: UC-15]   [AC: AC-01,AC-03]
-- [ ] T2: <việc>   [file: path]   [depends: —]    [verify: <lệnh>]   [skill: <name>]   [tier: ...]   [UC: UC-16]   [AC: AC-05]
-- [ ] T3: <việc>   [file: path]   [depends: T1]   [verify: <lệnh>]   [skill: <name>]   [tier: ...]   [UC: UC-15]   [AC: AC-08]
+- [ ] T1: <việc>   [file: path, tests/XTest.php]   [depends: —]    [verify: <lệnh test>]   [red: tests/XTest.php]   [skill: <name>]   [tier: must-test]   [UC: UC-15]   [AC: AC-01,AC-03]
+- [ ] T2: <việc>   [file: path]   [depends: —]    [verify: <lệnh>]   [skill: <name>]   [tier: verify-sql]   [UC: UC-16]   [AC: AC-05]
+- [ ] T3: <việc không code: doc/config tĩnh>   [file: path]   [depends: T1]   [trivial]   [skill: —]   [tier: verify-only]   [UC: UC-15]
 ## Checkpoints / Gates
 - review dimensions: <từ config.workflow.review_dimensions>
 - **Acceptance**: phase done ⇔ mọi AC trong M<x>-CONTEXT PASS (verify ở /feature ship → M<x>-VERIFICATION.md). KHÔNG dùng DoD mơ hồ — dùng AC.
@@ -114,6 +115,8 @@ Có NEEDS-FIX → sửa PLAN/CONTEXT (main thread) → ghi tóm tắt vào `M<x>
 > Auto-mode: plan-review chạy **THAY** gate 2 (xem `auto.md`) — verdict READY thì tự duyệt; NEEDS-FIX thì sửa rồi tự duyệt, ghi `(auto-decided)`.
 
 ## Step 4 — USER DUYỆT plan (gate 2)
+
+**Trước khi trình:** `python3 ~/.omp/skills/feature/scripts/phase_gate.py agents/planning/<slug> --phase M<x> --check plan` phải exit 0 (task gánh AC thiếu `[verify:]`, hoặc verify chỉ kiểm cú pháp → sửa PLAN, không trình). Dán các dòng WARN vào phần trình gate 2.
 
 Trình **Goal + bảng AC (kèm cột Nguồn) + PLAN** (AC là phần user nghiệm thu — nêu rõ để user soát tiêu chí đúng ý) + danh sách mã chuyển phase + tóm tắt verdict plan-review (Step 3.5) nếu có chạy. Dùng `ask` xác nhận trước khi code. Cập nhật STATE:
 - `status: planned`, `next_action: execute-phase`.

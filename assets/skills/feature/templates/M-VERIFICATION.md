@@ -10,7 +10,7 @@
 | UC-01 | AC-01 | US-01·AC-02, BR-01 | PASS | [test/script → output thật ✓] |
 | UC-02 | AC-05 | BR-04 | FAIL | [lỗi cụ thể — file:line / migration lỗi dòng X] |
 
-> Verdict ∈ PASS / FAIL / NEEDS-CONFIRM (bị chặn bởi môi trường/dữ liệu/quyền ngoài tầm — KHÔNG dùng cho lỗi code).
+> Verdict = ĐÚNG một từ PASS / FAIL / NEEDS-CONFIRM. Code thiếu/chưa xong ("một phần", "chưa làm") = FAIL. NEEDS-CONFIRM chỉ khi code đã PASS đủ và phần còn lại bị chặn ngoài tầm (môi trường/dữ liệu/quyền) — ghi phần đã PASS ở cột Bằng chứng. Một AC chỉ có một verdict, kể cả khi xuất hiện ở nhiều bảng. Kiểm bằng `phase_gate.py --phase Mx --check verification`.
 > Có đặc tả ngoài: mọi mã của phase (`coverage.py --phase Mx`) phải xuất hiện ở cột Nguồn của ≥1 dòng, hoặc ở mục "Chuyển phase" của CONTEXT.
 
 ## NEEDS-CONFIRM (đóng phase có điều kiện)

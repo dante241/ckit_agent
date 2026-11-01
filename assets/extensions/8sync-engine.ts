@@ -30,6 +30,14 @@ interface EngineTask {
   depends: string[];
   files: string[];
   note: string;
+  /** Red-first: engine_red must see the verify FAIL before the task's non-test files change. */
+  red: boolean;
+  /** Paths inside `files` that hold the task's tests: the only files allowed to change before engine_red. */
+  tests: string[];
+  /** Declared check-free (docs/config): the only kind of task that may have no verify commands. */
+  trivial: boolean;
+  /** engine_red evidence (time + failing output excerpt); empty until recorded. */
+  redProof: string;
 }
 interface EngineSlice {
   id: string;
@@ -65,6 +73,11 @@ export default function (pi: ExtensionAPI) {
     depends: z.array(z.string()).default(() => []),
     files: z.array(z.string()).default(() => []),
     note: z.string(),
+    red: z.boolean().default(false),
+    tests: z.array(z.string()).default(() => []),
+    // Plans saved before this field existed never declared it: keep their old behaviour.
+    trivial: z.boolean().default(true),
+    redProof: z.string().default(""),
   });
   const stateSchema = z.object({
     goal: z.string(),
@@ -198,12 +211,33 @@ export default function (pi: ExtensionAPI) {
     return null;
   }
 
+  /** p is one of roots or sits under one of them. */
+  function inside(p: string, roots: string[]): boolean {
+    const norm = (x: string) => x.replace(/^\.\//, "").replace(/\/+$/, "");
+    const np = norm(p);
+    return roots.some((r) => np === norm(r) || np.startsWith(`${norm(r)}/`));
+  }
+
+  /** Gate rules for newly planned tasks; returns the first violation. */
+  function validateTasks(tasks: EngineTask[]): string | null {
+    for (const t of tasks) {
+      if (!t.verify.length && !t.trivial) {
+        return `task ${t.key} has no verify commands — give it the real lint/test that proves it, or mark it trivial:true (docs/config only)`;
+      }
+      if (!t.red) continue;
+      if (!t.verify.length) return `task ${t.key} is red:true but has no verify commands that could fail`;
+      if (t.tests.some((p) => !inside(p, t.files))) return `task ${t.key}: every tests path must be inside its files`;
+      if (!t.files.some((f) => !inside(f, t.tests))) return `task ${t.key} is red:true but owns no non-test file — red-first proves a code change`;
+    }
+    return null;
+  }
+
   /** Non-login shell with omp's own env: a login shell re-sources /etc/profile, whose macOS path_helper puts /usr/bin first (wrong git/php). */
-  function run(cmd: string): { ok: boolean; output: string } {
+  function run(cmd: string): { ok: boolean; output: string; code: number | null } {
     const r = spawnSync("bash", ["-c", cmd], { cwd: process.cwd(), env: process.env, encoding: "utf8" });
     const raw = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
     const output = raw.length > MAX_OUTPUT ? `${raw.slice(0, MAX_OUTPUT)}\n…[truncated]` : raw;
-    return { ok: r.status === 0, output };
+    return { ok: r.status === 0, output, code: r.status };
   }
 
   /** FNV-1a 32-bit fingerprint of a failure output — lets the no-progress
@@ -225,7 +259,7 @@ export default function (pi: ExtensionAPI) {
     name: "engine_plan",
     label: "Engine: plan",
     description:
-      "Create/replace the run-to-done plan: a goal decomposed into slices, each with atomic tasks and optional verify commands (lint/test). Optional per task: `key` (e.g. T3, defaults to the task id), `depends` (keys that must be done first) and `files` (paths/dirs the task owns) — engine_ready runs independent tasks in parallel from these. `append: true` keeps the current plan (goal, tasks, statuses) and adds the slices after it, so new tasks may depend on existing keys. Rejects duplicate/unknown keys and dependency cycles. Persists to .cache/ckit/engine/state.json.",
+      "Create/replace the run-to-done plan: a goal decomposed into slices, each with atomic tasks and verify commands (the project's real lint/test). Optional per task: `key` (e.g. T3, defaults to the task id), `depends` (keys that must be done first) and `files` (paths/dirs the task owns) — engine_ready runs independent tasks in parallel from these. A task with no verify commands is REJECTED unless `trivial: true` (docs/config only). `red: true` makes the task red-first: `tests` (paths inside `files`) may change first, then engine_red must see the verify FAIL before any other file of the task changes; engine_verify refuses the task until that red is recorded. `append: true` keeps the current plan (goal, tasks, statuses) and adds the slices after it, so new tasks may depend on existing keys. Rejects duplicate/unknown keys and dependency cycles. Persists to .cache/ckit/engine/state.json.",
     parameters: z.object({
       goal: z.string(),
       maxRetries: z.number().int().min(0).max(10).default(3),
@@ -241,6 +275,9 @@ export default function (pi: ExtensionAPI) {
                 verify: z.array(z.string()).default(() => []),
                 depends: z.array(z.string()).default(() => []),
                 files: z.array(z.string()).default(() => []),
+                red: z.boolean().default(false),
+                tests: z.array(z.string()).default(() => []),
+                trivial: z.boolean().default(false),
               }),
             ),
           }),
@@ -260,14 +297,14 @@ export default function (pi: ExtensionAPI) {
           tasks: s.tasks.map((t) => {
             ti += 1;
             const id = `s${si}.t${ti}`;
-            return { id, key: t.key || id, title: t.title, status: "pending", retries: 0, verify: t.verify, depends: t.depends, files: t.files, note: "", verified: false, failStreak: 0, lastFailureHash: "" };
+            return { id, key: t.key || id, title: t.title, status: "pending", retries: 0, verify: t.verify, depends: t.depends, files: t.files, note: "", verified: false, failStreak: 0, lastFailureHash: "", red: t.red, tests: t.tests, trivial: t.trivial, redProof: "" };
           }),
         };
       });
       const state: EngineState = base
         ? { ...base, updatedAt: now, slices: [...base.slices, ...added] }
         : { goal: params.goal, createdAt: now, updatedAt: now, maxRetries: params.maxRetries, slices: added };
-      const invalid = validateGraph(allTasks(state));
+      const invalid = validateGraph(allTasks(state)) ?? validateTasks(added.flatMap((s) => s.tasks));
       if (invalid) return text(`Plan REJECTED: ${invalid}. Nothing saved.`);
       save(state);
       const c = counts(state);
@@ -296,7 +333,8 @@ export default function (pi: ExtensionAPI) {
           const retries = t.retries ? ` (retries:${t.retries})` : "";
           const note = t.status === "blocked" && t.note ? ` — ${t.note}` : "";
           const files = t.status === "in_progress" && t.files.length ? ` [files: ${t.files.join(", ")}]` : "";
-          lines.push(`  [${t.status}] ${t.id}${key} ${t.title}${deps}${retries}${files}${note}`);
+          const red = t.red ? (t.redProof ? " (red ✓)" : " (red-first: engine_red pending)") : "";
+          lines.push(`  [${t.status}] ${t.id}${key} ${t.title}${deps}${retries}${files}${red}${note}`);
         }
       }
       return text(lines.join("\n"));
@@ -320,7 +358,10 @@ export default function (pi: ExtensionAPI) {
       next.task.status = "in_progress";
       save(state);
       const verify = next.task.verify.length ? `\nVerify with: ${next.task.verify.join(" && ")}` : "";
-      return text(`NEXT ${next.task.id} (slice ${next.slice.title}): ${next.task.title}${verify}\nImplement it, then call engine_verify, then engine_advance.`);
+      const steps = next.task.red
+        ? `RED-FIRST: write/adjust the test in ${next.task.tests.join(", ") || "the task's tests"}, call engine_red BEFORE editing any other file of the task, then implement, engine_verify, engine_advance.`
+        : "Implement it, then call engine_verify, then engine_advance.";
+      return text(`NEXT ${next.task.id} (slice ${next.slice.title}): ${next.task.title}${verify}\n${steps}`);
     },
   });
 
@@ -356,12 +397,55 @@ export default function (pi: ExtensionAPI) {
       const fmt = (t: EngineTask) => {
         const files = t.files.length ? `\n    files: ${t.files.join(", ")}` : "";
         const verify = t.verify.length ? `\n    verify: ${t.verify.join(" && ")}` : "";
-        return `  ${t.id} ${t.key} ${t.title}${files}${verify}`;
+        const red = t.red ? `\n    RED-FIRST: tests ${t.tests.join(", ") || "—"} first → engine_red → then the other files` : "";
+        return `  ${t.id} ${t.key} ${t.title}${files}${verify}${red}`;
       };
       const lines = [`READY ${ready.length} (now in_progress — dispatch in parallel):`, ...ready.map(fmt)];
       if (running.length) lines.push(`STILL IN PROGRESS ${running.length}:`, ...running.map((t) => `  ${t.id} ${t.key} ${t.title}${t.files.length ? ` [files: ${t.files.join(", ")}]` : ""}`));
-      lines.push("Per task: engine_verify → engine_advance {files:[changed files]}; call engine_ready again after each advance.");
+      lines.push("Per task: (red-first: engine_red before touching non-test files) → engine_verify → engine_advance {files:[changed files]}; call engine_ready again after each advance.");
       return text(lines.join("\n") + blockedNote);
+    },
+  });
+
+  pi.registerTool({
+    name: "engine_red",
+    label: "Engine: red-first proof",
+    description:
+      "For a red:true task: run its verify commands BEFORE the code change and require them to FAIL. Refused when any of the task's non-test files already changed (git status), when the commands already pass (the test does not capture the behaviour), or when every failure is exit 126/127 (command missing, not a real red). Records the failing output as evidence; engine_verify refuses the task until this is recorded.",
+    parameters: z.object({ taskId: z.string() }),
+    async execute(_id, params) {
+      const state = load();
+      if (!state) return text("No plan yet. Call engine_plan first.");
+      const target = allTasks(state).find((t) => t.id === params.taskId);
+      if (!target) return text(`No task ${params.taskId}.`);
+      if (!target.red) return text(`Task ${target.id} is not red-first (red:false) — no red proof needed.`);
+      if (target.redProof) return text(`RED already recorded for ${target.id}:\n${target.redProof}`);
+      if (target.status === "done" || target.status === "blocked") return text(`Task ${target.id} is ${target.status}.`);
+
+      const st = git(["status", "--porcelain", "--untracked-files=all", "--", ...target.files]);
+      if (!st.ok) return text(`REFUSED ${target.id}: git status failed:\n${st.output}`);
+      // git() trims the output, so the first line may have lost its leading status space: strip "XY " by pattern.
+      const changed = st.output
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => l.replace(/^[ MADRCTU?!]{1,2}\s+/, "").replace(/^.* -> /, "").replace(/^"|"$/g, ""))
+        .filter((p) => !inside(p, target.tests));
+      if (changed.length) {
+        return text(`REFUSED ${target.id}: non-test files already changed — the red must run before the code change:\n  ${changed.join("\n  ")}\nRevert/stash them (only ${target.tests.join(", ") || "the tests"} may change first), then call engine_red again.`);
+      }
+
+      const results = target.verify.map((cmd) => ({ cmd, ...run(cmd) }));
+      const failed = results.filter((r) => !r.ok);
+      if (!failed.length) {
+        return text(`REFUSED ${target.id}: the verify commands already PASS before the change, so they do not capture the required behaviour. Strengthen the test in ${target.tests.join(", ") || "the task's tests"}, then call engine_red again.`);
+      }
+      if (failed.every((r) => r.code === 126 || r.code === 127)) {
+        return text(`REFUSED ${target.id}: every failure is exit 126/127 (command not found / not executable) — that is a broken command, not a red test:\n\n${failed.map((r) => `$ ${r.cmd}\n${r.output}`).join("\n\n")}`);
+      }
+      const excerpt = failed.map((r) => `$ ${r.cmd} (exit ${r.code})\n${r.output.slice(0, 600)}`).join("\n\n");
+      target.redProof = `${new Date().toISOString()}\n${excerpt}`;
+      save(state);
+      return text(`RED recorded for ${target.id} — check the failure is the expected assertion, not a syntax/setup error:\n\n${excerpt}\n\nNow implement, then engine_verify.`);
     },
   });
 
@@ -369,7 +453,7 @@ export default function (pi: ExtensionAPI) {
     name: "engine_verify",
     label: "Engine: verify (auto-retry gate)",
     description:
-      "Run the task's verify commands (or the ones passed). All must pass to advance. On failure the retry counter increments; once it reaches maxRetries the task is BLOCKED. Identical consecutive failures trip the no-progress guard: 2x warns, 3x BLOCKS early (doom-loop). The gate is code-enforced — engine_advance refuses an unverified task.",
+      "Run the task's planned verify commands plus any extra `commands` (extras ADD to the plan's commands, never replace them). All must pass to advance. A red-first task is refused until engine_red recorded its red. On failure the retry counter increments; once it reaches maxRetries the task is BLOCKED. Identical consecutive failures trip the no-progress guard: 2x warns, 3x BLOCKS early (doom-loop). The gate is code-enforced — engine_advance refuses an unverified task.",
     parameters: z.object({ taskId: z.string(), commands: z.array(z.string()).optional() }),
     async execute(_id, params) {
       const state = load();
@@ -377,8 +461,11 @@ export default function (pi: ExtensionAPI) {
       let target: EngineTask | undefined;
       for (const s of state.slices) for (const t of s.tasks) if (t.id === params.taskId) target = t;
       if (!target) return text(`No task ${params.taskId}.`);
-      const cmds = params.commands?.length ? params.commands : target.verify;
-      if (!cmds.length) return text(`Task ${target.id} has no verify commands — add some or advance manually if truly trivial.`);
+      if (target.red && !target.redProof) {
+        return text(`REFUSED ${target.id}: red-first task with no recorded red — call engine_red (before changing its non-test files) first.`);
+      }
+      const cmds = [...target.verify, ...(params.commands ?? []).filter((c) => !target.verify.includes(c))];
+      if (!cmds.length) return text(`Task ${target.id} is trivial (no verify commands) — call engine_advance directly.`);
 
       const failures: string[] = [];
       for (const cmd of cmds) {

@@ -5,19 +5,21 @@
 
 ## Tasks
 
-- [ ] T1: <việc>   [file: path]   [depends: —]    [verify: <lệnh>]   [skill: <name>]   [tier: must-test]     [UC: UC-01]   [AC: AC-01,AC-03]
+- [ ] T1: <việc>   [file: path, tests/XTest.php]   [depends: —]    [verify: <lệnh test>]   [red: tests/XTest.php]   [skill: <name>]   [tier: must-test]   [UC: UC-01]   [AC: AC-01,AC-03]
 - [ ] T2: <việc>   [file: path]   [depends: —]    [verify: <lệnh>]   [skill: <name>]   [tier: verify-sql]    [UC: UC-02]   [AC: AC-05]
 - [ ] T3: <việc>   [file: path]   [depends: T1]   [verify: <lệnh>]   [skill: <name>]   [tier: verify-only]   [UC: UC-01]   [AC: AC-08]
+- [ ] T4: <việc không code: doc/config tĩnh>   [file: path]   [depends: —]   [trivial]   [skill: —]   [tier: verify-only]   [UC: UC-01]
 
 ## Checkpoints / Gates
 
 - **Review dimensions:** [từ config.workflow.review_dimensions, vd security, correctness, convention]
-- **Verify (engine gate):** mỗi task chạy `[verify:]` qua `engine_verify`; `engine_advance` từ chối task chưa pass. Hết task → chạy test đầy đủ 1 lần.
+- **Verify (engine gate):** mỗi task chạy `[verify:]` qua `engine_verify`; `engine_advance` từ chối task chưa pass. Task `[red:]`: `engine_red` phải thấy test ĐỎ trước khi file code đổi, nếu không `engine_verify` từ chối. Hết task → chạy test đầy đủ 1 lần.
 - **Acceptance:** phase done ⇔ mọi AC trong Mx-CONTEXT PASS (verify ở `/feature ship` → Mx-VERIFICATION.md). KHÔNG dùng DoD mơ hồ — dùng AC.
 
 ## Kiểm tra phủ (trước khi trình gate 2)
 
 - [ ] Mọi UC trong Requirement scope có ≥1 AC.
 - [ ] Mọi AC-NN xuất hiện ở cột `[AC:]` của ≥1 task.
-- [ ] Mọi task có `[UC:]` + `[AC:]` + `[skill:]` (task code `[skill: —]` = cờ đỏ) + `[verify:]` scoped.
+- [ ] Mọi task có `[UC:]` + `[AC:]` + `[skill:]` (task code `[skill: —]` = cờ đỏ) + `[verify:]` scoped (hoặc `[trivial]` nếu không code); task must-test có `[red:]`.
+- [ ] `python3 ~/.omp/skills/feature/scripts/phase_gate.py agents/planning/<slug> --phase Mx --check plan` exit 0.
 - [ ] `[depends:]` chỉ có cạnh thật (cần symbol/bảng/file của task kia); 2 task cùng file/tài nguyên dùng chung có phụ thuộc nhau; không vòng.

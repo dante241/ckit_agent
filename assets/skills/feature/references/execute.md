@@ -27,6 +27,8 @@ Gọi **`engine_plan`** một lần:
 - `goal` = literal 🎯 **Goal** của phase.
 - `slices` = 1 slice (tên phase) — thứ tự chạy do `depends` quyết, không do slice.
 - Mỗi task: `key` = `T<n>`, `title` = mô tả task, `depends` = `[depends:]` (key), `files` = `[file:]`, `verify` = `[verify:]` (lệnh THẬT).
+- Task có `[red: <test paths>]` → `red: true`, `tests` = các path đó (phải nằm trong `files`, và `files` phải còn ≥1 file không phải test). Task `[trivial]` → `trivial: true` (được advance không verify). Task không trivial mà thiếu `verify` → engine REJECT cả plan.
+- Trước khi gọi: `python3 ~/.omp/skills/feature/scripts/phase_gate.py agents/planning/<slug> --phase M<x> --check plan` phải exit 0 (gate 2 đã chạy nó; PLAN sửa sau gate 2 → chạy lại).
 
 Resume (đã có plan engine) → `engine_status`, KHÔNG plan lại.
 
@@ -38,7 +40,7 @@ Giới hạn số task dev đồng thời: `config.workflow.max_parallel_tasks` 
 Lặp:
 
 1. **`engine_ready {limit: max_parallel_tasks}`** → engine trả mọi task đủ phụ thuộc + không chồng file với task đang chạy (tổng số task đang chạy không vượt `limit`), và đánh dấu `in_progress`. Task test lỗi vẫn giữ `in_progress` (giữ chỗ file) trong lúc dev lại.
-2. **Spawn dev** cho các task sẵn sàng (tới giới hạn) — **1 lời gọi `task`, nhiều item**, `agent: task`, chạy nền (kết quả tự về, orchestrator không chờ từng cái). Prompt mỗi agent BẮT BUỘC nhúng (subagent KHÔNG đọc được CONTEXT/config/skill):
+2. **Spawn dev** cho các task sẵn sàng (tới giới hạn) — **1 lời gọi `task`, nhiều item**, `agent: task`, chạy nền (kết quả tự về, orchestrator không chờ từng cái). **Task `red: true` chạy 2 lượt:** (a) agent CHỈ viết/sửa file trong `tests` rồi dừng → orchestrator gọi **`engine_red {taskId}`** (engine từ chối nếu file code đã đổi, nếu test đã PASS sẵn, hoặc lỗi chỉ là exit 126/127) → đọc lỗi: phải là assertion đúng hành vi AC, không phải lỗi cú pháp/setup — sai thì quay lại (a); (b) RED đã ghi → spawn dev implement như dưới. Prompt mỗi agent BẮT BUỘC nhúng (subagent KHÔNG đọc được CONTEXT/config/skill):
    1. Task cụ thể + **danh sách file được phép sửa** + "chỉ làm task này, KHÔNG commit, KHÔNG chạy cả test suite".
    2. **UC literal** task phục vụ.
    3. **AC literal** task gánh (Given/When/Then nguyên văn) + **đoạn nguồn nguyên văn** mà cột Nguồn của các AC đó trỏ tới (R12: có đặc tả ngoài → copy đúng đoạn BR / bước luồng / tiêu chí US·AC từ file đặc tả; không có → dòng UC trong REQUIREMENTS). Dev phải thấy quy tắc gốc, không chỉ bản AC viết lại.
@@ -52,7 +54,7 @@ Lặp:
    Lần dev lại sau test lỗi: nhúng thêm **output lỗi nguyên văn** + "sửa NGUYÊN NHÂN, không lặp cách sửa cũ".
 3. **Dev xong 1 task → test ngay** (các agent khác vẫn đang dev):
    - **Kiểm phạm vi** — các agent dùng CHUNG working tree, nên `git status --porcelain` có cả file của task khác đang dev. File ngoài phạm vi của task = (file agent báo ∪ file mới thay đổi trong `git status --porcelain`) − `[file:]` của task − `files` của các task còn `in_progress` (liệt kê trong output `engine_ready`/`engine_status`) − file đã bẩn sẵn trước khi `go` bắt đầu (chụp `git status --porcelain` 1 lần lúc vào Bước 2). Còn file nào → coi như test lỗi, nêu rõ file. Agent báo đã sửa file nằm trong `files` của task khác → cũng là lỗi (đè việc task đó).
-   - **`engine_verify {taskId}`** — gate chạy đúng `[verify:]`.
+   - **`engine_verify {taskId}`** — gate chạy đúng `[verify:]`; `commands` truyền thêm chỉ được CỘNG vào, không thay. Task red chưa có RED → REFUSED.
 4. **Kết quả test:**
    - **PASS** → **`engine_advance {taskId, commit:true, files:[đúng các file agent báo đã sửa/tạo], message:"<type>: M<x> - T<n> <English desc>"}`** — engine chỉ stage + commit các file đó (R8). KHÔNG truyền thư mục của `[file:]` (task khác có thể đang tạo file trong cùng thư mục). → Bookkeeping (Bước 3) → quay lại 1 (task phụ thuộc vừa được mở khóa).
    - **FAILED** → spawn lại dev cho task đó (mục 2, kèm output lỗi). Engine đếm retry: 2 lỗi giống nhau = cảnh báo, 3 hoặc chạm `maxRetries` = BLOCKED.

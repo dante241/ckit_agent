@@ -20,12 +20,12 @@ Trivial / small (a few files, clear path) → just do it, no engine ceremony. Me
 First **research** the unknowns so the plan is grounded — never guess:
 - Scout the codebase: **codegraph** (callers/deps/impact) + **codebase-memory-mcp** (architecture) + **serena** (symbols).
 - Domain/external unknowns: **feynman** skills (`deep-research` / `autoresearch` / `literature-review`) + `web_search` / `last30days`. Log decisions under `## Assumptions` in `agents/STATE.md`.
-Then call **engine_plan** with the goal + slices; each slice's atomic tasks; each task's `verify` commands = the project's REAL lint/test/build (this is the gate). Smallest-first.
+Then call **engine_plan** with the goal + slices; each slice's atomic tasks; each task's `verify` commands = the project's REAL lint/test/build (this is the gate). A task without `verify` is REJECTED unless marked `trivial: true` (docs/static config only). Bug fixes and behaviour changes with an automated test: `red: true` + `tests: [test paths]` (inside `files`). Smallest-first.
 
 ## 3. Loop until done (in an autonomous run, do not yield between tasks)
 1. **engine_next** → next task + scoped context. Understand before editing (codegraph callers/deps + `git log/blame` + `agents/DECISIONS.md`).
-2. Implement at the right size. Prefer **serena** symbol-level edits over blind whole-file rewrites.
-3. **engine_verify** `{taskId}` — the gate runs the commands. FAILED → fix the cause, call engine_verify again — with a DIFFERENT fix: 2 identical failures warn, 3 BLOCK the task early (no-progress/doom-loop guard). BLOCKED → write a `failure:` to `agents/KNOWLEDGE.md`, move to the next unblocked task or escalate.
+2. Red-first task → write/adjust ONLY its `tests` files, call **engine_red** `{taskId}` (refused if code files already changed, if the test already passes, or on exit 126/127) and check the failure is the expected assertion. Then implement at the right size. Prefer **serena** symbol-level edits over blind whole-file rewrites.
+3. **engine_verify** `{taskId}` — the gate runs the plan's commands; extra `commands` are added, never substituted. FAILED → fix the cause, call engine_verify again — with a DIFFERENT fix: 2 identical failures warn, 3 BLOCK the task early (no-progress/doom-loop guard). BLOCKED → write a `failure:` to `agents/KNOWLEDGE.md`, move to the next unblocked task or escalate.
 4. **engine_advance** `{taskId, commit:true}` — code-REFUSED unless engine_verify passed (your own "done" is not a stop signal); gitleaks clean.
 5. Tick `agents/STATE.md` (Current/Next); distill a `validated:` runbook into `agents/PLAYBOOKS.md` when a multi-step procedure worked.
 6. Loop. Use **engine_worktree** to isolate a risky/large slice (open → work → merge squash → remove).
