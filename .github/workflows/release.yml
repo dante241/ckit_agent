@@ -38,14 +38,15 @@ jobs:
             ext: ""
             cross: true
           # macOS — both slices on Apple-Silicon runners (macos-13 Intel is
-          # deprecated / scarce). arm64 builds native; x86_64 cross-compiles via
-          # the rustup target (Apple clang handles the C deps for both arches).
-          - runner: macos-14
+          # deprecated / scarce; macos-14 images retire 2026-11-02). arm64 builds
+          # native; x86_64 cross-compiles via the rustup target (Apple clang
+          # handles the C deps for both arches).
+          - runner: macos-15
             target: x86_64-apple-darwin
             label: darwin-x86_64
             ext: ""
             cross: false
-          - runner: macos-14
+          - runner: macos-15
             target: aarch64-apple-darwin
             label: darwin-arm64
             ext: ""
