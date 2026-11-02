@@ -96,12 +96,24 @@ const SUBS: [string, string][] = [
   ["on", "nối phiên này (chọn tên topic)"],
   ["name", "đặt tên topic của phiên này"],
   ["off", "ngắt phiên này"],
-  ["setup", "ghép đôi bot: /tg setup <token>"],
+  ["setup", "ghép đôi bot: /tg setup [token]"],
+  ["help", "hướng dẫn cài bot + group Topics"],
   ["allow", "cho phép thư mục này"],
   ["deny", "bỏ cho phép thư mục này"],
   ["rich", "định dạng tin: /tg rich on|off (off cho app Telegram cũ)"],
   ["reset", "xoá cấu hình Telegram"],
 ];
+const GUIDE =
+  "Cài Telegram cho omp:\n" +
+  "1. Tạo bot: nhắn @BotFather → /newbot → đặt tên + username (đuôi 'bot') → nhận token.\n" +
+  "   Đã ghép bot ở Board (nút Telegram trên dashboard) thì bỏ qua: /tg setup không cần token.\n" +
+  "2. Chọn nơi chat:\n" +
+  "   • Chat riêng với bot: mỗi lúc một phiên omp.\n" +
+  "   • Group nhiều phiên (khuyên dùng): tạo group → Edit → bật Topics → thêm bot, cho làm admin có quyền Manage Topics.\n" +
+  "3. Trong omp: /tg setup <token> → nhận mã 6 số.\n" +
+  "4. Gửi /start <mã> vào chat riêng với bot, hoặc topic General của group.\n" +
+  "Xong: mỗi phiên omp tự có một topic (tên repo; /tg name để đổi), tự mở lại khi ckit . / /resume, đóng khi /tg off.\n" +
+  "Repo khác: /tg setup ở repo đó (chỉ thêm quyền, không ghép lại). Ghép chat khác: /tg reset rồi /tg setup.";
 
 function real(p: string): string {
   try {
@@ -941,7 +953,7 @@ export default function (pi: ExtensionAPI) {
       const cfg = loadConfig();
       if (sub === "setup") {
         const token = arg || cfg?.token || readJson<Config>(SHARED)?.token || "";
-        if (!token) return ctx.ui.notify("Dùng: /tg setup <token từ @BotFather>", "warning");
+        if (!token) return ctx.ui.notify(`Chưa có token bot.\n${GUIDE}`, "warning");
         // Already paired with this bot: just allow this repo and link; re-pairing would move every session.
         if (cfg?.chat_id !== undefined && token === cfg.token) {
           writeJson(CONFIG, { ...cfg, allow: [...new Set([...(cfg.allow ?? []), real(ctx.cwd)])] });
@@ -1006,7 +1018,8 @@ export default function (pi: ExtensionAPI) {
         rmSync(RUN, { recursive: true, force: true });
         return ctx.ui.notify("Đã xoá cấu hình Telegram của omp.", "info");
       }
-      if (!cfg) return ctx.ui.notify("Telegram chưa cấu hình: /tg setup [token] (không có token thì dùng lại bot của Board)", "info");
+      if (sub === "help") return ctx.ui.notify(GUIDE, "info");
+      if (!cfg) return ctx.ui.notify(`Telegram chưa cấu hình.\n${GUIDE}`, "info");
       const where = cfg.chat_id === undefined ? `chờ /start ${cfg.pair_code}` : cfg.forum ? "group Topics (mỗi phiên một topic)" : "chat riêng (mỗi lúc một phiên)";
       const all = sessions();
       ctx.ui.notify(
