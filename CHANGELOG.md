@@ -12,6 +12,11 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.42] - 2026-11-02
+
+### Fixed
+- **Telegram: `/tg help` no longer points at a dashboard button this build doesn't have.** The "skip the token" hint now names the file `/tg setup` actually reuses, `~/.config/ckit/telegram.json`.
+
 ## [0.1.41] - 2026-11-02
 
 ### Added

@@ -106,7 +106,7 @@ const SUBS: [string, string][] = [
 const GUIDE =
   "Cài Telegram cho omp:\n" +
   "1. Tạo bot: nhắn @BotFather → /newbot → đặt tên + username (đuôi 'bot') → nhận token.\n" +
-  "   Đã ghép bot ở Board (nút Telegram trên dashboard) thì bỏ qua: /tg setup không cần token.\n" +
+  "   Đã có bot ghép sẵn (~/.config/ckit/telegram.json) thì bỏ qua: /tg setup không cần token.\n" +
   "2. Chọn nơi chat:\n" +
   "   • Chat riêng với bot: mỗi lúc một phiên omp.\n" +
   "   • Group nhiều phiên (khuyên dùng): tạo group → Edit → bật Topics → thêm bot, cho làm admin có quyền Manage Topics.\n" +
