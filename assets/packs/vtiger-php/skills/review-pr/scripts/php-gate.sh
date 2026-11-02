@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mechanical PHP gate for one GitLab MR: lint (PHP 7.4 + 8.3) + PHPStan 2.2.17 on the MR's PHP files,
+# Mechanical PHP gate for one GitLab MR: lint (PHP 8.3) + PHPStan 2.2.17 on the MR's PHP files,
 # analysed on the real merge result (target branch + MR head) in a throwaway worktree.
 # Usage (from the vtiger repo root): bash <skill dir>/scripts/php-gate.sh <MR_IID> [TARGET_BRANCH=master]
 #   <skill dir> = .omp/skills/review-pr (project pack) or ~/.omp/skills/review-pr (pack installed with --global)
@@ -9,14 +9,13 @@ set -uo pipefail
 MR="${1:?usage: php-gate.sh <MR_IID> [TARGET_BRANCH]}"
 TARGET="${2:-master}"
 REPO_ROOT="$(git rev-parse --show-toplevel)" || exit 2
-PHP74="${PHP74:-/opt/homebrew/opt/php@7.4/bin/php}"
 PHP83="${PHP83:-/opt/homebrew/opt/php@8.3/bin/php}"
 # Real path (macOS /tmp -> /private/tmp): the vtiger load rules resolve the repo root through realpath
 WT="$(cd /tmp && pwd -P)/php-gate-mr${MR}"
 LOCK="/tmp/phpstan-gate.lock.d"
 die() { echo "SETUP ERROR: $*" >&2; echo "GATE: FAIL (setup)"; exit 2; }
 
-for f in "$REPO_ROOT/tools/vendor/bin/phpstan" "$REPO_ROOT/include/utils/utils.php8.php" "$PHP74" "$PHP83"; do
+for f in "$REPO_ROOT/tools/vendor/bin/phpstan" "$REPO_ROOT/include/utils/utils.php8.php" "$PHP83"; do
 	[ -e "$f" ] || die "missing $f (phpstan rule E2/E3: composer install -d tools; decoded utils.php8.php)"
 done
 
@@ -54,12 +53,12 @@ done
 FAIL=0
 
 echo "== Lint (${#FILES[@]} PHP files)"
-for bin in "$PHP74" "$PHP83"; do
+for bin in "$PHP83"; do
 	for f in "${FILES[@]}"; do
 		out=$("$bin" -l "$f" 2>&1) || { echo "LINT FAIL [$("$bin" -r 'echo PHP_VERSION;')] $out"; FAIL=1; }
 	done
 done
-[ "$FAIL" -eq 0 ] && echo "lint OK on $("$PHP74" -r 'echo PHP_VERSION;') and $("$PHP83" -r 'echo PHP_VERSION;')"
+[ "$FAIL" -eq 0 ] && echo "lint OK on $("$PHP83" -r 'echo PHP_VERSION;')"
 
 # Split files by PHPStan config; everything else is outside the gate (rule phpstan.md) and must be reviewed by hand
 APP=(); DOM=(); OUT=()

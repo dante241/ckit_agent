@@ -1,5 +1,5 @@
 ---
-description: "Modern-code principle cho source 2005: code MỚI dùng stack composer có sẵn (Guzzle/Monolog/Carbon/JWT v6...), cấm mở rộng legacy bundle (log4php/NuSOAP/PHPExcel/Zend_Json/ADOdb raw); target duy nhất PHP 8.3 (D-019, 2026-10-26 — thay D-016 floor 7.2 + D-017 dual-run)."
+description: "Modern-code principle cho source 2005: code MỚI dùng stack composer có sẵn (Guzzle/Monolog/Carbon/JWT v6...), cấm mở rộng legacy bundle (log4php/NuSOAP/PHPExcel/Zend_Json/ADOdb raw); runtime duy nhất PHP 8.3 (D-019)."
 scope: "tool:edit(modules/**/*.php), tool:write(modules/**/*.php), tool:edit(include/**/*.php), tool:write(include/**/*.php), tool:edit(includes/**/*.php), tool:write(includes/**/*.php), tool:edit(domains/**/*.php), tool:write(domains/**/*.php), tool:edit(integrations/**/*.php), tool:write(integrations/**/*.php), tool:edit(api/**/*.php), tool:write(api/**/*.php), tool:edit(cron/**/*.php), tool:write(cron/**/*.php)"
 condition: ".*"
 ---
@@ -8,15 +8,15 @@ condition: ".*"
 
 > Nguyên tắc một câu: **code cũ được đông lạnh, code mới phải hiện đại.** Không restyle code cũ hàng loạt (diff nhiễu, rủi ro hồi quy — bài học MR PHP 8.3: 3.209 file); mọi ranh giới dưới đây áp cho dòng code VIẾT MỚI.
 
-## Trần cú pháp (theo D-019: target 8.3 — trần cũ D-016 đã gỡ 2026-10-26)
-- Target runtime = PHP 8.3. Code MỚI được dùng toàn bộ cú pháp ≤ 8.3: typed property, arrow fn, `??=`, spread, match, nullsafe `?->`, enum, promotion, readonly, typed const. Boot 7.4 KHÔNG còn được cam kết (D-019): release yêu cầu server 8.3; rollback = rollback release. Cú pháp 8.3 dùng được ở MỌI code mới, kể cả domains/ load runtime.
+## Trần cú pháp (D-019: runtime PHP 8.3)
+- Runtime = PHP 8.3; release yêu cầu server 8.3. Code MỚI được dùng toàn bộ cú pháp ≤ 8.3: typed property, arrow fn, `??=`, spread, match, nullsafe `?->`, enum, promotion, readonly, typed const — ở MỌI code mới, kể cả domains/ load runtime.
 - ĐƯỢC (và NÊN) dùng: type declaration cho param/return (`: bool`, `: ?int`), `declare(strict_types=1)` trong file MỚI hoàn toàn, `??`, const visibility, closure thay `create_function`.
 - Kỷ luật runtime 8.3 (count trên non-array, static-call, dynamic property, chia 0, ép kiểu input…): rule `php83.md`. Không needle rỗng.
 - Gate PHPStan bắt buộc trước khi báo xong/commit: rule `phpstan.md`.
 
 ## Dependency — một nguồn duy nhất
 - Thư viện MỚI: chỉ qua **composer** (pin version, package còn maintain). CẤM chép thư viện mới vào `libraries/`.
-- CẤM sửa tay file trong `vendor/` (3 patch GdImage/CurlHandle hiện tại là ngoại lệ được D-017/D-019 ghi nhận, sẽ gỡ bằng composer-patches/upgrade ở MR follow-up).
+- CẤM sửa tay file trong `vendor/` (3 patch GdImage/CurlHandle hiện tại là ngoại lệ được D-019 ghi nhận, sẽ gỡ bằng composer-patches/upgrade ở MR follow-up).
 - CẤM thêm code mới NẠP các bundle đông lạnh. Bản thay thế đã nằm sẵn trong vendor:
 
 | Việc | CẤM dùng (legacy, chỉ code cũ) | DÙNG (có sẵn trong vendor) |

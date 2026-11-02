@@ -154,7 +154,7 @@ git diff -- <file> | grep -n "^\+.*#[0-9]\{3,\}"                    # ticket ID 
 **Date:** 2026-09-30
 **Module / Layer:** `vtlib/Vtiger/Block.php::getModuleBlockRows`, `vtlib/Vtiger/Field.php::getModuleFieldRows`; tổng quát: mọi chỗ đổi vòng `num_rows()`/`query_result` sang `while (fetch_array)`
 **Symptom:** Deadlock / lock-wait timeout / "gone away" khi đọc metadata làm trang chết vì fatal error (`FetchRow()` on bool). Code cũ trả rỗng và trang vẫn chạy.
-**Root cause:** `dieOnError` mặc định là false, nên `pquery` trả `false` khi lỗi. `num_rows(false)` xử lý được giá trị này, nhưng `fetch_array(false)` gọi `$result->FetchRow()` trên bool, nên PHP 7.4 báo Error. Code refactor sang `while (fetch_array)` bỏ mất lớp bảo vệ ngầm đó. Nếu kết quả còn được cache, lỗi tạm thời có thể bị lưu thành "rỗng".
+**Root cause:** `dieOnError` mặc định là false, nên `pquery` trả `false` khi lỗi. `num_rows(false)` xử lý được giá trị này, nhưng `fetch_array(false)` gọi `$result->FetchRow()` trên bool, nên PHP 8.3 ném Error. Code refactor sang `while (fetch_array)` bỏ mất lớp bảo vệ ngầm đó. Nếu kết quả còn được cache, lỗi tạm thời có thể bị lưu thành "rỗng".
 **Rule:** Sau `pquery` mà kết quả đi thẳng vào `fetch_array`/`fetchByAssoc` trong `while`, phải có `if ($result === false) return …;`. Không ghi cache khi query lỗi.
 **Trigger keywords (review):** `while ($row = $adb->fetch_array($result))` · `while ($row = $db->fetchByAssoc($result))` ngay sau `pquery(` không có `=== false`
 
@@ -278,10 +278,10 @@ git diff -- <file> | grep -n "^\+.*#[0-9]\{3,\}"                    # ticket ID 
 ## PEND-27248: `count($x ?? [])` on a variable that can hold a plain string
 **Ticket:** #27248
 **Date:** 2026-10-29
-**Module / Layer:** `modules/Import/actions/Data.php::transformForImport` (reference fields); any `count($x ?? [])` left by the php7Count retirement (11200e8861)
-**Symptom:** On PHP 8.3, importing Leads with a reference column holding a plain label (no `Module::::` prefix) crashed the import (500, `count(): Argument #1 must be of type Countable|array, string given`); PHP 7.4 imported it.
-**Root cause:** One branch kept the raw string (`$fieldValueDetails = $fieldValue`) while the others `explode()`; PHP 7 `count('label')` returned 1 and the label-lookup branch ran. `?? []` only replaces null, so the string reached `count()`.
-**Rule:** When retiring php7Count, trace every assignment of the variable: if any branch leaves a scalar, make that branch produce an array (`[$value]`) at the assignment, not `?? []` at the use site. Same family as EP-018 (objects): `?? []` guards null only.
+**Module / Layer:** `modules/Import/actions/Data.php::transformForImport` (reference fields); any native `count($x ?? [])` on a variable some branch leaves as a scalar
+**Symptom:** On PHP 8.3, importing Leads with a reference column holding a plain label (no `Module::::` prefix) crashed the import (500, `count(): Argument #1 must be of type Countable|array, string given`).
+**Root cause:** One branch kept the raw string (`$fieldValueDetails = $fieldValue`) while the others `explode()`; on PHP 8.3 `count('label')` throws `TypeError`, so the label-lookup branch never ran. `?? []` only replaces null, so the string reached `count()`.
+**Rule:** Before calling native `count()` on a variable, trace every assignment: if any branch leaves a scalar, make that branch produce an array (`[$value]`) at the assignment, not `?? []` at the use site. Same family as EP-018 (objects): `?? []` guards null only.
 **Trigger keywords (review):** `$fieldValueDetails = $fieldValue;` · `count($fieldValueDetails` · `?? []) > 1` · `?? []) == 2`
 
 ## PEND-27223: `:hover` rule that changes an inline item's size makes it wrap away from the pointer and flicker

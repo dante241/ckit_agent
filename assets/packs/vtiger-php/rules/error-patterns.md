@@ -301,11 +301,11 @@ Verify bằng luồng save THẬT (không chỉ `php -l`/read-test) rằng side-
 **Date:** 2026-10-29
 **Module / Layer:** `modules/Settings/MailConverter/handlers/MailRecordMessage.php::parseHeader` (any code reading `Webklex\PHPIMAP\Header::get()`)
 
-**Symptom:** On PHP 8.3 the Mail Converter converted no email: "Quét hộp thư" showed "Chuyển đổi Email đang chạy" and the MailScanner cron failed, while PHP 7 servers worked.
+**Symptom:** On PHP 8.3 the Mail Converter converted no email: "Quét hộp thư" showed "Chuyển đổi Email đang chạy" and the MailScanner cron failed.
 
-**Root cause:** `Header::get('date')` returns `Webklex\PHPIMAP\Attribute|null`; `Attribute` implements `ArrayAccess` and has a `count()` method but not `Countable`. PHP 7 `count($attr)` warned and returned 1; the php7Count retirement turned it into `count($x ?? [])`, a `TypeError` on every mail (`?? []` only covers null). `performScanNow()` catches every Throwable, so the UI only showed a generic message.
+**Root cause:** `Header::get('date')` returns `Webklex\PHPIMAP\Attribute|null`; `Attribute` implements `ArrayAccess` and has a `count()` method but not `Countable`. On PHP 8.3 `count($attr)` — also written as `count($x ?? [])` — throws `TypeError` on every mail (`?? []` only covers null). `performScanNow()` catches every Throwable, so the UI only showed a generic message.
 
-**Rule:** Before replacing `php7Count()`/`count()` on a value, check what it can hold: an object needs its own API (`$x->count()`, `$x->toArray()`) or `instanceof Countable`; `?? []` does not make a non-null object countable. Read the class of library return values (webklex, Carbon, collections) instead of assuming arrays.
+**Rule:** Before calling native `count()` on a value, check what it can hold: an object needs its own API (`$x->count()`, `$x->toArray()`) or `instanceof Countable`; `?? []` does not make a non-null object countable. Read the class of library return values (webklex, Carbon, collections) instead of assuming arrays.
 
 **Trigger keywords (review):** `count($dateHeader` · `count($header->get(` · `->get('date')` · `?? []) > 0 &&` · `Webklex\PHPIMAP\Attribute`
 
@@ -315,11 +315,11 @@ Verify bằng luồng save THẬT (không chỉ `php -l`/read-test) rằng side-
 **Date:** 2026-10-29
 **Module / Layer:** `modules/Settings/MailConverter/handlers/MailRecord.php::__convert_encoding` (shared by MailConverter and MailManager `__mime_decode`)
 
-**Symptom:** Headers like `Re: =?utf-8?...?=` or a charset mbstring does not know (`windows-1258`, `unknown-8bit`) killed the whole request on PHP 8.3; PHP 7.4 only warned.
+**Symptom:** Headers like `Re: =?utf-8?...?=` or a charset mbstring does not know (`windows-1258`, `unknown-8bit`) killed the whole request on PHP 8.3.
 
-**Root cause:** `imap_mime_header_decode()` marks unencoded parts with charset `default`, and mail charsets are free text. PHP 8 `mb_convert_encoding()` throws `ValueError` for any name it does not know; PHP 7.4 warned and converted from the internal encoding (byte-identical to `mb_convert_encoding($s, $to, mb_internal_encoding())` on 8.3).
+**Root cause:** `imap_mime_header_decode()` marks unencoded parts with charset `default`, and mail charsets are free text. On PHP 8.3 `mb_convert_encoding()` throws `ValueError` for any charset name it does not know.
 
-**Rule:** A charset name that comes from outside (mail headers/parts, imap, HTTP, files) must not reach `mb_convert_encoding()`/`mb_check_encoding()` unguarded: catch `ValueError` and fall back to the internal encoding (PHP 7 behaviour) or validate the name first. Never fall back to returning raw bytes when the result goes through `Normalizer::normalize()` (invalid UTF-8 → `false` → empty text).
+**Rule:** A charset name that comes from outside (mail headers/parts, imap, HTTP, files) must not reach `mb_convert_encoding()`/`mb_check_encoding()` unguarded: catch `ValueError` and fall back to `mb_convert_encoding($s, $to, mb_internal_encoding())`, or validate the name first. Never fall back to returning raw bytes when the result goes through `Normalizer::normalize()` (invalid UTF-8 → `false` → empty text).
 
 **Trigger keywords (review):** `mb_convert_encoding($input, $to, $from)` · `imap_mime_header_decode(` · `$prop->charset` · `->charset->first()` · `mb_convert_encoding($data, `
 
@@ -327,11 +327,11 @@ Verify bằng luồng save THẬT (không chỉ `php -l`/read-test) rằng side-
 
 **Ticket:** #27245 (MR !450)
 **Date:** 2026-10-29
-**Module / Layer:** any `strpos/stripos/strstr/str_contains` left by the php7Strstr/php7Strpos retirement (11200e8861): `ComposeEmail::emailReplyAll`, Reports `ReportContents.tpl` / `CustomReportDetail.tpl` / `ReportRun`, `AbenlaConnector`
+**Module / Layer:** any native `strpos/stripos/strstr/str_contains` whose needle comes from optional data: `ComposeEmail::emailReplyAll`, Reports `ReportContents.tpl` / `CustomReportDetail.tpl` / `ReportRun`, `AbenlaConnector`
 
 **Symptom:** On PHP 8.3 reply-all of a MailScanner email lost the To address; reports grouped by 1–2 fields rendered every non-group column as an empty summary cell.
 
-**Root cause:** PHP 8 `strpos($h, '')` = 0 and `strstr($h, '')` = `$h` (PHP 7: false). The needle came from optional data (`mailboxemail` absent → null, unused group level never assigned → null/''). A guard `=== ''` misses null, and Smarty `strstr($NAME, $X)` with unassigned `$X` gets null.
+**Root cause:** On PHP 8.3 `strpos($h, '')` = 0 and `strstr($h, '')` = `$h`, so an empty needle matches everything. The needle came from optional data (`mailboxemail` absent → null, unused group level never assigned → null/''). A guard `=== ''` misses null, and Smarty `strstr($NAME, $X)` with unassigned `$X` gets null.
 
 **Rule:** Before a native substring search on a needle that may be absent, guard with `empty($needle)` / `$needle !== '' && $needle !== null` (Smarty: `$X neq '' && strstr(...)`), and initialise optional needles to '' at assignment.
 
@@ -359,7 +359,7 @@ Verify bằng luồng save THẬT (không chỉ `php -l`/read-test) rằng side-
 
 **Symptom:** Settings > Picklist: deleting or renaming a Potentials value on PHP 8.3 threw `array_key_exists(): Argument #2 ($array) must be of type array, VTEmailTask given`.
 
-**Root cause:** PHP 7 accepted an object in `array_key_exists()` (deprecated in 7.4) and checked its properties. PHP 8 throws a TypeError. The earlier sweep fixed only the `field_value_mapping` line and missed the same call two branches down.
+**Root cause:** On PHP 8.3 `array_key_exists()` only accepts an array; passing an object throws a TypeError. The earlier sweep fixed only the `field_value_mapping` line and missed the same call two branches down.
 
 **Rule:** On objects use `is_object($o) && property_exists($o, $name)`, which gives the same result for public and dynamic properties. When fixing one call, grep the whole file for the same pattern.
 

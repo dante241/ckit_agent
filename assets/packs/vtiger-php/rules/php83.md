@@ -8,11 +8,11 @@ condition: ".*"
 
 # Rules: viết code PHP 8.3
 
-**Cập nhật:** 2026-10-28 · Runtime: **PHP 8.3** (D-019) · Phạm vi: code **mới** và **đoạn code được sửa** trong `modules/`, `include/`, `includes/`, `api/`, `cron/`, `domains/`, `integrations/`. Không sửa format hàng loạt code cũ.
+**Cập nhật:** 2026-11-02 · Runtime: **PHP 8.3** (D-019) · Phạm vi: code **mới** và **đoạn code được sửa** trong `modules/`, `include/`, `includes/`, `api/`, `cron/`, `domains/`, `integrations/`. Không sửa format hàng loạt code cũ.
 
 - **PHẢI** / **KHÔNG** = bắt buộc. Vi phạm là finding khi review: ghi mã rule (vd `F7`) trong comment review.
 - Style chung (header, K&R, đặt tên, comment): `docs/code-standards.md`. Gate PHPStan: `docs/phpstan.md`.
-- Mọi hành vi ghi ở cột "Trên 8.3" đã chạy thử 7.4 so với 8.3. Trên 7.4 phần lớn chỉ là cảnh báo; **trên 8.3 thì request chết** (`TypeError` / `ValueError` / `Error`).
+- Mọi hành vi ghi ở cột "Trên 8.3" đã chạy thử trên PHP 8.3: **request chết** (`TypeError` / `ValueError` / `Error`).
 - Agent dùng cùng file này, cùng mã rule (`.omp/rules/php83.md`).
 
 ---
@@ -30,7 +30,7 @@ condition: ".*"
 | **C7** | Model vtiger (`Vtiger_Base_Model`, `Vtiger_Record_Model`): dữ liệu record đọc/ghi qua `get()` / `set()`. KHÔNG khai báo thuộc tính trùng tên field; thuộc tính chỉ dành cho state riêng của class. |
 | **C8** | Thuộc tính `static` chỉ dùng làm cache **có khoá**, có kiểu: `private static array $cache = [];`. KHÔNG singleton bỏ qua tham số (instance của user 7 bị trả cho user 9). |
 | **C9** | Helper / service / utils mới không có lớp con → `final class`. KHÔNG thêm hàm global mới vào `include/utils/*`; đặt thành method static trong helper của module. |
-| **C10** | Override PHẢI tương thích chữ ký class cha: cùng số tham số, tham số cha có default thì con cũng PHẢI có default. Bỏ default (`f($a, $b)` override `f($a, $b = 1)`) → 7.4 chỉ cảnh báo, **8.3 fatal ngay khi nạp class**. |
+| **C10** | Override PHẢI tương thích chữ ký class cha: cùng số tham số, tham số cha có default thì con cũng PHẢI có default. Bỏ default (`f($a, $b)` override `f($a, $b = 1)`) → **fatal ngay khi nạp class**. |
 
 | Trên 8.3 (đã đo) | Kết quả |
 |---|---|
@@ -75,7 +75,7 @@ final class CPExample_Report_Helper {
 | **F1** | PHẢI ghi phạm vi (`public` / `protected` / `private`), kiểu **mọi** tham số, kiểu trả về (`void` khi không trả). `static` chỉ khi hàm không dùng `$this`. Gate PHPStan tự chặn hàm mới / tham số mới thiếu kiểu (`missingType.parameter`, `missingType.return`). |
 | **F2** | Docblock: một dòng mô tả (tiếng Anh); `@param` / `@return` khi kiểu PHP chưa nói đủ (mảng, ý nghĩa của `null`); `@throws` khi hàm ném lỗi. |
 | **F3** | Kiểu tham số: `int` / `string` / `bool` / `float` / `array` / class / `?T`. Union chỉ khi thật sự nhận hai kiểu. KHÔNG `mixed` trừ khi chỉ chuyển tiếp. Tham số bắt buộc trước, tuỳ chọn sau. |
-| **F4** | **Nơi gọi PHẢI ép kiểu trước khi truyền.** Truyền `''` / `null` vào tham số `int` là `TypeError` trên cả 7.4 lẫn 8.3 (file không `strict_types`); `"12abc"` lỗi trên 8.3. |
+| **F4** | **Nơi gọi PHẢI ép kiểu trước khi truyền.** Truyền `''` / `null` vào tham số `int` là `TypeError` (file không `strict_types`); `"12abc"` cũng `TypeError`. |
 | **F5** | KHÔNG thêm kiểu vào hàm cũ khi chưa rà hết nơi gọi (`lsp references` / grep) và lớp con. Một nơi gọi truyền `''` / `null` = lỗi chết mới. Thêm kiểu trả về ở lớp cha mà lớp con override chưa có kiểu → **fatal khi nạp class**; thêm kiểu tham số ở lớp con khi lớp cha chưa có → **fatal**. `: void` mà nơi gọi đang dùng kết quả → hàm đó đang có lỗi logic, sửa nơi gọi trước. |
 | **F6** | Hơn 4 tham số → mảng có shape (`@param array{from: string, to: string, ids: list<int>} $filter`) hoặc class giá trị. KHÔNG gán lại tham số (copy sang biến mới). KHÔNG thêm tham số tham chiếu `&$x` mới. |
 | **F7** | Giá trị trả về: không tìm thấy → `null` (`?T`); danh sách rỗng → `[]`; có/không → `bool`; sự cố → `throw`. Code mới KHÔNG trả `array\|false`, `string\|false`. |
@@ -165,7 +165,7 @@ public function process(Vtiger_Request $request) {
 | **V1** | Khởi tạo trước khi dùng, đúng kiểu cuối cùng. KHÔNG định nghĩa trong `if` / vòng lặp rồi dùng ở ngoài. Biến dùng trong `catch` PHẢI gán trước `try`. | `if ($x) { $rows = …; } return $rows;` → `$rows = []; if ($x) { … }` |
 | **V2** | Mỗi biến một kiểu; tên nói lên kiểu: `$recordId` (int), `$recordModel` (object), `$rows` / `$recordIds` (danh sách), `$isActive` / `$hasPermission` (bool), `$amount` (float). | `$data` lúc chuỗi lúc mảng |
 | **V3** | Ép kiểu **ngay khi gán** dữ liệu từ request / DB / API, sau đó dùng thẳng. Tiền / giờ / % → `(float)`. KHÔNG `(array)` cho danh sách id. | `(array) $request->get('ids')` (`''` → `['']` → id 0 giả) → `array_map('intval', $request->get('ids') ?: [])` |
-| **V4** | So sánh chặt: `===` / `!==`, `in_array($v, $list, true)`, `array_search($v, $list, true)`. So chuỗi DB với số → ép kiểu rồi `===`. | `0 == 'abc'`: 7.4 `true`, 8.3 `false` |
+| **V4** | So sánh chặt: `===` / `!==`, `in_array($v, $list, true)`, `array_search($v, $list, true)`. So chuỗi DB với số → ép kiểu rồi `===`. | `0 == 'abc'` → `false`, `'1e1' == '10'` → `true` |
 | **V5** | `empty()` / `!$x` chỉ khi `'0'` và `0` không phải giá trị hợp lệ. Picklist có `'0'`, số lượng / tiền `0` → `=== ''`, `=== null`, `=== 0`. | `if (empty($qty))` bỏ qua số lượng 0 hợp lệ |
 | **V6** | Mảng tạo bằng `[]`. List giữ là list, map giữ là map, không trộn. | `$x = ''; $x[] = 1;` → `Error`; `$x = false; $x[] = 1;` → deprecated |
 | **V7** | `??` không xử lý `false`: giá trị có thể `false` / `''` / `null` → `?:`; không chắc kiểu → `is_array($x) ? $x : []`. | `count($x ?? [])` với `$x = false` → `TypeError` |

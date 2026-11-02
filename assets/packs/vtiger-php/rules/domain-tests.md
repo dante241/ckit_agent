@@ -25,7 +25,7 @@ Glue ── <Domain>::xxxService() ── XxxService ──┬─ XxxStore ─�
 ## Checklist
 
 - Vị trí `domains/<Domain>/tests/` (tracked); KHÔNG `test/` hay `.cache/` (gitignore).
-- PHPUnit **9.6** chạy bằng PHP **8.3** (target D-019; suite cũng còn chạy được trên 7.4) (`tools/vendor/bin/phpunit`, `phpunit.xml.dist`); cài trong `tools/`, không `require-dev` ở composer gốc.
+- PHPUnit **9.6** chạy bằng PHP **8.3** (D-019) (`tools/vendor/bin/phpunit`, `phpunit.xml.dist`); cài trong `tools/`, không `require-dev` ở composer gốc.
 - Fake implement **interface** của port, đặt `tests/Fake/` (vd `FakeCommentStore`, `FakeInboxGateway` có `callsTo()`, `FixedClock`). Class `final` không mock được — luôn fake theo interface.
 - Mỗi test kiểm hành vi người dùng thấy được: kết quả, trạng thái lưu, lời gọi ra ngoài, nhánh lỗi. Không test wiring/getter/chuỗi nguyên văn.
 - Có nhánh `throw`/fallback → có test cho nhánh đó. Có idempotency/đua → test chạy lại 2 lần cho cùng kết quả.

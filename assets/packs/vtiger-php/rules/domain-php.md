@@ -9,9 +9,9 @@ condition: ".*"
 > Áp cho code PSR-4 trong `domains/<Domain>/src` + `domains/<Domain>/tests`. Code module vtiger (`modules/**`) vẫn theo `php-conventions.md` nguyên vẹn.
 > Nguồn: D-007, D-011..D-014 trong `agents/DECISIONS.md`. Kiến trúc tầng, ai gọi ai, vendor, trả dữ liệu, exception/try-catch: **`domain-architecture.md`** (đọc kèm).
 
-## Runtime target: PHP 8.3 (D-019, 2026-10-26 — thay mục "PHP 7.2" chốt 2026-10-20)
+## Runtime target: PHP 8.3 (D-019)
 
-- Release yêu cầu server PHP 8.3; không còn cam kết chạy 7.x (rollback = rollback release). Code `domains/*/src`, `domains/*/config`, `integrations/` được dùng toàn bộ cú pháp ≤ 8.3.
+- Runtime duy nhất = PHP 8.3; release yêu cầu server PHP 8.3. Code `domains/*/src`, `domains/*/config`, `integrations/` được dùng toàn bộ cú pháp ≤ 8.3.
 - **Nên dùng** khi viết mới: typed property, constructor promotion, `readonly` cho VO/DTO, `enum` cho tập giá trị cố định mới, `match` thay `switch` khi map giá trị, union type `A|B` khi thật sự hai kiểu, `?->`, `??=`, arrow `fn`, `str_contains`/`str_starts_with`, kiểu `mixed`/`static` khi đúng nghĩa.
 - Không đổi chữ ký public (tham số/return) chỉ để "hiện đại hoá" — đổi chữ ký là đổi contract, mọi caller + bản cài interface phải sửa cùng MR.
 - **Gate**: `php -l` bằng PHP 8.3 cho mọi file đã sửa, PHPUnit (`domains/*/tests`, chạy được trên 8.3), PHPStan `tools/phpstan/phpstan-domains.neon.dist` (rule `phpstan.md`). Nạp toàn bộ class `CloudGo\*` dưới 8.3 để bắt lỗi chữ ký interface/abstract.

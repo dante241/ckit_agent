@@ -1,6 +1,6 @@
 # Report Handler Reference
 
-Two complete handlers, run against the real base classes and the local DB (PHP 7.4 + 8.3): `getReportApiTableData()`, `renderReportTables()`, `getReportApiChartData()` and `renderReportCharts()` all return data/HTML.
+Two complete handlers, run against the real base classes and the local DB (PHP 8.3): `getReportApiTableData()`, `renderReportTables()`, `getReportApiChartData()` and `renderReportCharts()` all return data/HTML.
 For a production-size example read `modules/Reports/custom/TicketSummaryByStatusReportHandler.php` (group-by picklist, previous period, M2M temp table).
 
 ## Rules the samples follow

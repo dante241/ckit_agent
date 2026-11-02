@@ -109,13 +109,13 @@ GATE=.omp/skills/review-pr/scripts/php-gate.sh; [ -f "$GATE" ] || GATE="$HOME/.o
 bash "$GATE" <MR_NUMBER> <TARGET_BRANCH>
 ```
 
-Script dựng worktree tạm = `origin/<TARGET>` + merge MR (phân tích đúng code sẽ vào master), rồi chạy `php -l` trên PHP 7.4 + 8.3 và PHPStan 2.2.17 (`tools/phpstan/phpstan.neon.dist`; `domains/` dùng `phpstan-domains.neon.dist`, không được vượt 10 lỗi có sẵn) trên mọi file `.php/.inc/.service` MR đổi. Dòng cuối: `GATE: PASS` | `GATE: FAIL` | `GATE: SKIP (no PHP files)`.
+Script dựng worktree tạm = `origin/<TARGET>` + merge MR (phân tích đúng code sẽ vào master), rồi chạy `php -l` trên PHP 8.3 và PHPStan 2.2.17 (`tools/phpstan/phpstan.neon.dist`; `domains/` dùng `phpstan-domains.neon.dist`, không được vượt 10 lỗi có sẵn) trên mọi file `.php/.inc/.service` MR đổi. Dòng cuối: `GATE: PASS` | `GATE: FAIL` | `GATE: SKIP (no PHP files)`.
 
 - `GATE: FAIL` → **chặn merge** (độc lập severity, như PERFORMANCE). Mỗi lỗi PHPStan/lint = 1 finding, KHÔNG qua validator Step 4 (cơ học, đã chắc chắn): `method.notFound`, `variable.undefined`, `arguments.count`, `class.notFound`, `argument.type`, `return.type`, `offsetAccess.notFound`, `foreach.nonIterable`, `*.nonObject`, lint → **HIGH**; `missingType.*`, `phpDoc.*` → **MEDIUM**. Cách sửa theo `rule://phpstan` (mục "Viết code để PHPStan hiểu"): sửa kiểu thật, CẤM `@phpstan-ignore`, ép kiểu để im lỗi, hay thêm vào baseline.
 - Merge conflict với target → `GATE: FAIL`, yêu cầu author rebase, review chỉ dừng ở đây.
 - MR đổi chữ ký hàm/method → chạy thêm PHPStan trên các file gọi hàm đó (`lsp references`), theo `rule://phpstan`.
 - File "Outside PHPStan gate" (vtlib, libraries, Webforms…) → agent Step 3 review kỹ bằng tay + probe runtime; ghi rõ trong comment.
-- Setup error (exit 2: thiếu `tools/vendor`, `utils.php8.php`, php@7.4/8.3) → DỪNG review, báo user sửa môi trường. KHÔNG post "PASS" khi gate chưa chạy.
+- Setup error (exit 2: thiếu `tools/vendor`, `utils.php8.php`, php@8.3) → DỪNG review, báo user sửa môi trường. KHÔNG post "PASS" khi gate chưa chạy.
 - Lưu nguyên output gate → `$GATE_RESULT`, truyền cho Step 3 agents và đưa vào comment (mục "Gate tự động").
 
 ### Step 2.5: Business Logic Extraction (BẮT BUỘC)

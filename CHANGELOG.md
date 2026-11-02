@@ -12,6 +12,11 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.43] - 2026-11-02
+
+### Changed
+- **vtiger-php pack: PHP 8.3 only.** The review-pr gate (`php-gate.sh`) lints with PHP 8.3 alone and no longer needs `php@7.4`; SKILL, comment template and `/review-pr` command say "lint 8.3". Rules `php83`, `phpstan` (E4: run PHPStan with PHP 8.3), `domain-php`, `domain-tests`, `modern-php`, `error-patterns`, `error-patterns-pending` and the report-handler reference describe PHP 8.3 behaviour only, with no 7.x comparisons.
+
 ## [0.1.42] - 2026-11-02
 
 ### Fixed

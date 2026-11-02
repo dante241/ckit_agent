@@ -29,7 +29,7 @@ php -d memory_limit=4G tools/vendor/bin/phpstan analyse -c tools/phpstan/phpstan
 | E1 | Chỉ dùng `tools/vendor/bin/phpstan`, ghim **2.2.17** (`tools/composer.json` + lock). KHÔNG dùng phar/bản khác: baseline khớp câu chữ của đúng bản này (bản 2.3.2 từng báo 75 lỗi oan). |
 | E2 | Cài: `composer install -d tools`. KHÔNG `composer update` trong `tools/` trừ khi chủ động nâng PHPStan. |
 | E3 | Cần `include/utils/utils.php8.php` (untracked, machine-local, bản giải mã ionCube; KHÔNG commit, `.gitignore` chặn `*.php8.php`). Thiếu → ~2.400 lỗi "function not found": đó là lỗi môi trường, không phải lỗi code. |
-| E4 | Chạy từ gốc repo, `-d memory_limit=4G`. PHP 7.4 hay 8.3 đều cho cùng kết quả. |
+| E4 | Chạy từ gốc repo bằng PHP 8.3 (kiểm `php -v`), `-d memory_limit=4G`. PHPStan lấy class/hàm built-in từ chính bản PHP chạy nó. |
 | E5 | Mỗi lúc chỉ MỘT tiến trình PHPStan (3–4GB RAM; máy 16GB đã từng sập khi chạy 3 cái song song). Subagent song song phải xếp hàng (lock file). |
 
 ## Viết code để PHPStan hiểu (MUST)
