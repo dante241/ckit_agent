@@ -22,7 +22,9 @@ const RUN = join(DIR, "telegram-omp");
 const SESS = join(RUN, "sessions"); // <sid>.json: linked sessions
 const INBOX = join(RUN, "inbox"); // <sid>.jsonl: updates handed to a session by the poller
 const ASKS = join(RUN, "asks"); // <message id>.json: open single-choice questions
-const TOPICS = join(RUN, "topics"); // <name>.json: topic thread id, reused by the next session of that name
+const TOPICS = join(RUN, "topics"); // <name>.json: topic thread id + the omp conversation that owns it
+const CLAIMS = join(RUN, "claims"); // <name>.json: the live session holding that topic name
+const BYSESSION = join(RUN, "bysession"); // <omp session id>.json: that conversation's topic name
 const POLLER = join(RUN, "poller.lock");
 const HEALTH = join(RUN, "health.json");
 const OFFSET = join(RUN, "offset.json");
@@ -39,7 +41,7 @@ type Item = { kind: "text" | "stop" | "status" | "answer"; text?: string; mid?: 
 /** `mid`: the question's own message, set on the "✎ Khác…" prompt that forwards to it. */
 type AskFile = { sid: string; question: string; options: string[]; mid?: number };
 type Health = "ok" | "down" | "conflict";
-type TopicFile = { thread: number; chat?: number; cwd?: string; name?: string };
+type TopicFile = { thread: number; chat?: number; cwd?: string; name?: string; session?: string };
 type Choice = { label: string; description?: string };
 
 const readJson = <T>(p: string): T | undefined => {
@@ -78,11 +80,16 @@ function richMd(md: string): string {
 const isDm = (c: Config) => c.chat_id !== undefined && !c.forum;
 const owner = (c: Config, uid: unknown) => uid === (c.user_id ?? c.chat_id);
 const askPath = (mid: number) => join(ASKS, `${mid}.json`);
-/** Saved topic of `name`. Long (e.g. Vietnamese) names would exceed the 255-byte file name limit once encoded: hashed instead. */
-function topicPath(name: string): string {
+/** File stem for `name`. Long (e.g. Vietnamese) names would exceed the 255-byte file name limit once encoded: hashed instead. */
+function fileKey(name: string): string {
   const enc = encodeURIComponent(name);
-  return join(TOPICS, `${enc.length <= 200 ? enc : `h-${createHash("sha256").update(name).digest("hex").slice(0, 32)}`}.json`);
+  return enc.length <= 200 ? enc : `h-${createHash("sha256").update(name).digest("hex").slice(0, 32)}`;
 }
+const topicPath = (name: string) => join(TOPICS, `${fileKey(name)}.json`);
+const claimPath = (name: string) => join(CLAIMS, `${fileKey(name)}.json`);
+const bindPath = (session: string) => join(BYSESSION, `${encodeURIComponent(session)}.json`);
+/** Telegram's answer for a topic that no longer exists (anything else, e.g. 429 or missing rights, is retried). */
+const GONE = /TOPIC_ID_INVALID|TOPIC_DELETED|thread not found/i;
 const MAX_NAME = 128; // Telegram's topic name limit
 const normName = (s: string | undefined) => (s ?? "").trim().replace(/\s+/g, " ");
 const SUBS: [string, string][] = [
@@ -244,6 +251,7 @@ export default function (pi: ExtensionAPI) {
   let richWarned = false;
   let menuFor: number | undefined; // chat whose `/` command menu this process already set
   let chosen: string | undefined; // name picked with /tg on or /tg name; else the repo name
+  let held: string | undefined; // topic name this session has claimed (claims/<name>.json)
 
   const saveReg = () => reg && writeJson(join(SESS, `${me}.json`), reg);
   const linked = () => {
@@ -351,7 +359,7 @@ export default function (pi: ExtensionAPI) {
       if (force && h && h.sid !== me) rmSync(POLLER, { force: true });
       if (!takePoller(me)) return `Phiên omp khác đang nối chat riêng với @${cfg.bot} (/tg on để lấy về). Muốn nhiều phiên cùng lúc: ghép đôi với group có Topics (/tg setup).`;
     }
-    reg ??= { sid: me, pid: process.pid, cwd: ctx.cwd, name: chosen ?? basename(ctx.cwd) };
+    reg ??= { sid: me, pid: process.pid, cwd: ctx.cwd, name: chosen ?? boundName(ctx) ?? basename(ctx.cwd) };
     saveReg();
     timer ??= ctx.setInterval(tick, 700);
     maintain();
@@ -363,6 +371,8 @@ export default function (pi: ExtensionAPI) {
     if (cfg?.forum && reg?.thread !== undefined && reg.chat === cfg.chat_id) void tg(cfg, "closeForumTopic", { chat_id: cfg.chat_id, message_thread_id: reg.thread });
     stopPoll();
     if (holder()?.sid === me) rmSync(POLLER, { force: true });
+    if (held !== undefined) release(held);
+    held = undefined;
     rmSync(join(SESS, `${me}.json`), { force: true });
     rmSync(join(INBOX, `${me}.jsonl`), { force: true });
     if (timer && cur) cur.clearTimer(timer);
@@ -393,15 +403,77 @@ export default function (pi: ExtensionAPI) {
     footer(cfg);
   }
 
-  /** This session's topic: `<repo>` (`<repo> 2`… when taken by a live session), reopened when it exists. */
+  /** The omp conversation shown in this session (changes on /new, /resume). */
+  function convo(ctx = cur): string | undefined {
+    try {
+      return ctx?.sessionManager.getSessionId() || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  const boundName = (ctx = cur) => {
+    const s = convo(ctx);
+    return s ? readJson<{ name: string }>(bindPath(s))?.name : undefined;
+  };
+
+  /** Remember `name` as this conversation's topic: `ckit .` / `/resume` come back to it. */
+  function bind(name: string) {
+    const s = convo();
+    if (s) writeJson(bindPath(s), { name });
+  }
+
+  /** Hold topic name `name` across processes: exclusive file, taken over when its holder died. */
+  function claim(name: string): boolean {
+    const p = claimPath(name);
+    for (let i = 0; i < 2; i++) {
+      try {
+        mkdirSync(CLAIMS, { recursive: true });
+        writeFileSync(p, JSON.stringify({ sid: me, pid: process.pid }), { flag: "wx", mode: 0o600 });
+        return true;
+      } catch {
+        const h = readJson<{ sid: string; pid: number }>(p);
+        if (h?.sid === me) return true;
+        if (!h || alive(h.pid)) return false; // unreadable = being written right now
+        rmSync(p, { force: true });
+      }
+    }
+    return false;
+  }
+
+  function release(name: string) {
+    if (readJson<{ sid: string }>(claimPath(name))?.sid === me) rmSync(claimPath(name), { force: true });
+  }
+
+  /** `name` (already claimed) becomes this session's; the previous one is released. */
+  function hold(name: string) {
+    if (held !== undefined && held !== name) release(held);
+    held = name;
+  }
+
+  /** This session's topic: the one its conversation used before (`ckit .`, /resume), else `<repo>` (`<repo> 2`… when held by
+   *  a live session or owned by another conversation). A saved topic is reopened, a missing one created. */
   async function ensureTopic(cfg: Config) {
     if (!reg || !cur) return;
     topicBusy = true;
     try {
-      const used = new Set(sessions().filter((s) => s.sid !== me).map((s) => s.name));
-      const base = chosen ?? basename(reg.cwd);
-      let name = base;
-      for (let i = 2; used.has(name); i++) name = `${base} ${i}`;
+      const ses = convo();
+      const bound = boundName();
+      const base = chosen ?? bound ?? basename(reg.cwd);
+      let name: string | undefined;
+      for (let i = 1; i <= 50 && name === undefined; i++) {
+        const n = i === 1 ? base : `${base} ${i}`;
+        const t = readJson<TopicFile>(topicPath(n));
+        const mine = n === held || (i === 1 && (chosen !== undefined || n === bound));
+        // Another conversation's topic is never reopened on our own: its history is not this one's.
+        if (!mine && t?.session && t.session !== ses && (t.chat === undefined || t.chat === cfg.chat_id)) continue;
+        if (claim(n)) name = n;
+      }
+      if (name === undefined) {
+        topicRetryAt = Date.now() + 10_000;
+        return;
+      }
+      hold(name);
       reg.name = name;
       saveReg();
       const tf = topicPath(name);
@@ -413,7 +485,13 @@ export default function (pi: ExtensionAPI) {
           topicRetryAt = Date.now() + 10_000; // network: retry, never create a duplicate
           return;
         }
-        if (!r.ok && !/NOT_MODIFIED/i.test(String(r.description))) thread = undefined; // deleted
+        if (!r.ok && !/NOT_MODIFIED/i.test(String(r.description))) {
+          if (!GONE.test(String(r.description))) {
+            topicRetryAt = Date.now() + 60_000; // rate limit, missing rights…: the topic may well exist
+            return;
+          }
+          thread = undefined;
+        }
       }
       if (thread === undefined) {
         const r = await call(cfg.token, "createForumTopic", { chat_id: cfg.chat_id, name }).catch(() => undefined);
@@ -423,9 +501,10 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         thread = r.result.message_thread_id as number;
-        writeJson(tf, { thread, chat: cfg.chat_id, cwd: reg.cwd, name } satisfies TopicFile);
       }
-      if (!reg) return;
+      if (!reg || convo() !== ses) return; // unlinked or switched conversation meanwhile: the next tick starts over
+      writeJson(tf, { thread, chat: cfg.chat_id, cwd: reg.cwd, name, session: ses } satisfies TopicFile);
+      bind(name);
       reg.thread = thread;
       reg.chat = cfg.chat_id;
       saveReg();
@@ -683,6 +762,24 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => unlink());
 
+  // /new, /resume, fork: follow the conversation to its own topic (closing the one it leaves).
+  pi.on("session_switch", async (_e, ctx) => {
+    cur = ctx;
+    chosen = undefined;
+    const cfg = loadConfig();
+    if (!reg || !cfg?.forum || cfg.chat_id === undefined) return;
+    const bound = boundName(ctx);
+    if (reg.thread !== undefined && bound === reg.name) return;
+    if (reg.thread !== undefined && reg.chat === cfg.chat_id) void tg(cfg, "closeForumTopic", { chat_id: cfg.chat_id, message_thread_id: reg.thread });
+    if (held !== undefined) release(held);
+    held = undefined;
+    reg.thread = undefined;
+    reg.name = bound ?? basename(reg.cwd);
+    saveReg();
+    topicRetryAt = 0;
+    maintain();
+  });
+
   pi.on("agent_end", async (e) => {
     if (e.willContinue || !linked()) return;
     const last = [...e.messages].reverse().find((m: any) => m.role === "assistant") as any;
@@ -763,16 +860,22 @@ export default function (pi: ExtensionAPI) {
     const name = normName(raw);
     if (!name || name.length > MAX_NAME) return { ok: false, msg: `Tên phải từ 1 đến ${MAX_NAME} ký tự.` };
     if (name === reg?.name) return { ok: true, msg: `Đang dùng tên "${name}".` };
-    if (sessions().some((s) => s.sid !== me && s.name === name)) return { ok: false, msg: `"${name}" đang là tên của phiên omp khác.` };
     if (topicBusy) return { ok: false, msg: "Đang tạo topic, thử lại sau vài giây." };
+    if (!claim(name)) return { ok: false, msg: `"${name}" đang là tên của phiên omp khác.` };
+    const fail = (msg: string) => {
+      if (name !== held) release(name);
+      return { ok: false, msg };
+    };
     const cfg = loadConfig();
-    chosen = name;
     if (!reg || !cfg?.forum || cfg.chat_id === undefined || reg.thread === undefined) {
       // No topic yet (private chat, not paired, or still creating): the name is used when one is made.
+      chosen = name;
+      hold(name);
       if (reg) {
         reg.name = name;
         saveReg();
         footer(cfg);
+        if (cfg?.forum) bind(name);
       }
       return { ok: true, msg: `Tên phiên: "${name}".` };
     }
@@ -781,10 +884,14 @@ export default function (pi: ExtensionAPI) {
     const saved = readJson<TopicFile>(topicPath(name));
     if (saved && saved.thread !== from && (saved.chat === undefined || saved.chat === chat)) {
       const r = await call(cfg.token, "reopenForumTopic", { chat_id: chat, message_thread_id: saved.thread }).catch(() => undefined);
-      if (!r) return { ok: false, msg: "Không gọi được Telegram, thử lại sau." };
+      if (!r) return fail("Không gọi được Telegram, thử lại sau.");
       if (r.ok || /NOT_MODIFIED/i.test(String(r.description))) {
-        if (!reg) return { ok: false, msg: "Phiên đã ngắt Telegram." };
+        if (!reg) return fail("Phiên đã ngắt Telegram.");
         void tg(cfg, "closeForumTopic", { chat_id: chat, message_thread_id: from });
+        chosen = name;
+        hold(name);
+        writeJson(topicPath(name), { ...saved, chat, cwd: reg.cwd, name, session: convo() } satisfies TopicFile);
+        bind(name);
         reg.thread = saved.thread;
         reg.name = name;
         saveReg();
@@ -792,15 +899,18 @@ export default function (pi: ExtensionAPI) {
         void send(`🟢 omp ${name} đã nối lại topic này.`);
         return { ok: true, msg: `Đã chuyển sang topic cũ "${name}" (giữ lịch sử).` };
       }
-      if (!/TOPIC_ID_INVALID|not found/i.test(String(r.description))) return { ok: false, msg: `Telegram: ${r.description}` };
+      if (!GONE.test(String(r.description))) return fail(`Telegram: ${r.description}`);
       // The saved topic was deleted: rename the current one instead.
     }
     const r = await call(cfg.token, "editForumTopic", { chat_id: chat, message_thread_id: from, name }).catch(() => undefined);
-    if (!r?.ok && !/NOT_MODIFIED/i.test(String(r?.description))) return { ok: false, msg: `Telegram: ${r?.description ?? "không gọi được"}` };
-    if (!reg) return { ok: false, msg: "Phiên đã ngắt Telegram." };
+    if (!r?.ok && !/NOT_MODIFIED/i.test(String(r?.description))) return fail(`Telegram: ${r?.description ?? "không gọi được"}`);
+    if (!reg) return fail("Phiên đã ngắt Telegram.");
     const prev = reg.name;
-    writeJson(topicPath(name), { thread: from, chat, cwd: reg.cwd, name } satisfies TopicFile);
+    chosen = name;
+    hold(name);
+    writeJson(topicPath(name), { thread: from, chat, cwd: reg.cwd, name, session: convo() } satisfies TopicFile);
     if (readJson<TopicFile>(topicPath(prev))?.thread === from) rmSync(topicPath(prev), { force: true });
+    bind(name);
     reg.name = name;
     saveReg();
     footer(cfg);
