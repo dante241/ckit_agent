@@ -1091,7 +1091,8 @@ pub(crate) fn ensure_engine(home: &Path, root: Option<&Path>) -> Result<()> {
         ".omp/commands/cook.md",
         "/cook command",
     )?;
-    ensure_gw_quota(home)
+    ensure_gw_quota(home)?;
+    ensure_telegram_extension(home)
 }
 
 /// Deploy the `gw-quota` omp extension — a belowEditor widget showing the
@@ -1110,6 +1111,20 @@ pub(crate) fn ensure_gw_quota(home: &Path) -> Result<()> {
         ".omp/agent/extensions/gw-quota.ts",
         ".omp/extensions/gw-quota.ts",
         "gw-quota extension",
+    )
+}
+
+/// Deploy the Telegram bridge for interactive omp sessions: the linked session sends
+/// turn results / `ask` questions to the paired chat and takes replies as user
+/// messages (`/tg setup <token>`). Global-only, idempotent.
+pub(crate) fn ensure_telegram_extension(home: &Path) -> Result<()> {
+    deploy_omp_pair(
+        home,
+        None,
+        "extensions/ckit-telegram.ts",
+        ".omp/agent/extensions/ckit-telegram.ts",
+        ".omp/extensions/ckit-telegram.ts",
+        "telegram extension",
     )
 }
 
