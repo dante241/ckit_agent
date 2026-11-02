@@ -27,15 +27,17 @@ const POLLER = join(RUN, "poller.lock");
 const HEALTH = join(RUN, "health.json");
 const OFFSET = join(RUN, "offset.json");
 const API = process.env.CKIT_TELEGRAM_API ?? "https://api.telegram.org";
-const MAX_TEXT = 3500;
+const MAX_TEXT = 3500; // plain messages (Telegram: 4096 incl. entities)
+const MAX_RICH = 32000; // rich messages (Telegram: 32768 UTF-8 characters)
 const KEY = "ckit-telegram";
 // A blocked call always reaches the model as an error result (omp emits no tool_result for it): say plainly it is not one.
 const FORWARDED = "Not an error: the user is away and the question was forwarded to their Telegram. End your turn now without asking again; their answer arrives as the next user message.";
 
-type Config = { token: string; bot: string; chat_id?: number; user_id?: number; forum?: boolean; pair_code?: string; allow?: string[] };
+type Config = { token: string; bot: string; chat_id?: number; user_id?: number; forum?: boolean; pair_code?: string; allow?: string[]; rich?: boolean };
 type Reg = { sid: string; pid: number; cwd: string; name: string; chat?: number; thread?: number };
 type Item = { kind: "text" | "stop" | "status" | "answer"; text?: string; mid?: number; question?: string };
-type AskFile = { sid: string; question: string; options: string[] };
+/** `mid`: the question's own message, set on the "✎ Khác…" prompt that forwards to it. */
+type AskFile = { sid: string; question: string; options: string[]; mid?: number };
 type Health = "ok" | "down" | "conflict";
 type TopicFile = { thread: number; chat?: number; cwd?: string; name?: string };
 type Choice = { label: string; description?: string };
@@ -58,7 +60,21 @@ function writeJson(p: string, data: unknown) {
 }
 
 const loadConfig = () => readJson<Config>(CONFIG);
-const clip = (s: string) => (s.length <= MAX_TEXT ? s : `${s.slice(0, MAX_TEXT)}\n… (cắt bớt)`);
+const clip = (s: string, max = MAX_TEXT) => (s.length <= max ? s : `${s.slice(0, max)}\n… (cắt bớt)`);
+
+/** Agent markdown for a rich message: images become links or text (Telegram fetches images; a local path fails the whole send). Code is left alone. */
+function richMd(md: string): string {
+  return md
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/)
+    .map((part, i) =>
+      i % 2
+        ? part
+        : part.replace(/!\[([^\]]*)\]\(<?([^)\s>]+)>?(?:\s+"[^"]*")?\)/g, (_m, alt: string, url: string) =>
+            /^https?:\/\//i.test(url) ? `[${alt || url}](${url})` : `${alt ? `${alt} ` : ""}\`${url}\``,
+          ),
+    )
+    .join("");
+}
 const isDm = (c: Config) => c.chat_id !== undefined && !c.forum;
 const owner = (c: Config, uid: unknown) => uid === (c.user_id ?? c.chat_id);
 const askPath = (mid: number) => join(ASKS, `${mid}.json`);
@@ -76,6 +92,7 @@ const SUBS: [string, string][] = [
   ["setup", "ghép đôi bot: /tg setup <token>"],
   ["allow", "cho phép thư mục này"],
   ["deny", "bỏ cho phép thư mục này"],
+  ["rich", "định dạng tin: /tg rich on|off (off cho app Telegram cũ)"],
   ["reset", "xoá cấu hình Telegram"],
 ];
 
@@ -224,6 +241,8 @@ export default function (pi: ExtensionAPI) {
   let topicBusy = false;
   let topicRetryAt = 0;
   const pending = new Map<number, (answer: string) => void>(); // ask message id → open terminal dialog
+  let richWarned = false;
+  let menuFor: number | undefined; // chat whose `/` command menu this process already set
   let chosen: string | undefined; // name picked with /tg on or /tg name; else the repo name
 
   const saveReg = () => reg && writeJson(join(SESS, `${me}.json`), reg);
@@ -237,6 +256,48 @@ export default function (pi: ExtensionAPI) {
     if (!reg || cfg?.chat_id === undefined || (cfg.forum && reg.thread === undefined)) return undefined;
     const thread = cfg.forum ? { message_thread_id: reg.thread } : {};
     return tg(cfg, "sendMessage", { chat_id: cfg.chat_id, ...thread, text: clip(text), disable_web_page_preview: true, ...extra });
+  }
+
+  const where = (cfg: Config) => ({ chat_id: cfg.chat_id, ...(cfg.forum ? { message_thread_id: reg?.thread } : {}) });
+
+  /** Markdown to this session's chat: a rich message (tables, code, <details>…), else plain text, else an .md file when too long. */
+  async function sendRich(md: string, extra: Record<string, unknown> = {}): Promise<any> {
+    const cfg = loadConfig();
+    if (!reg || cfg?.chat_id === undefined || (cfg.forum && reg.thread === undefined)) return undefined;
+    if (cfg.rich !== false && md.length <= MAX_RICH) {
+      const r = await call(cfg.token, "sendRichMessage", { ...where(cfg), rich_message: { markdown: richMd(md) }, ...extra }).catch(() => undefined);
+      if (r?.ok) return r.result;
+      if (!r) return undefined; // network down: plain would fail too
+      // Rejected by the server (syntax, block/nesting limits, media): plain text instead. An old app showing
+      // "unsupported message" is never reported back; `/tg rich off` covers that.
+      if (!richWarned) cur?.ui.notify(`Telegram từ chối rich message (${r.description}); gửi dạng chữ thường.`, "warning");
+      richWarned = true;
+    }
+    if (md.length <= MAX_TEXT) return tg(cfg, "sendMessage", { ...where(cfg), text: md, disable_web_page_preview: true, ...extra });
+    return upload(cfg, `${(reg.name || "omp").replace(/[^\p{L}\p{N}._-]+/gu, "-")}.md`, md, clip(md, 900), extra);
+  }
+
+  /** sendDocument: `text` as a file, `caption` under it. */
+  async function upload(cfg: Config, file: string, text: string, caption: string, extra: Record<string, unknown> = {}): Promise<any> {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries({ ...where(cfg), caption, ...extra })) if (v !== undefined) fd.set(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+    fd.set("document", new Blob([text], { type: "text/markdown" }), file);
+    try {
+      const r = await fetch(`${API}/bot${cfg.token}/sendDocument`, { method: "POST", body: fd, signal: AbortSignal.timeout(60_000) });
+      const j: any = await r.json();
+      return j?.ok ? j.result : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Question answered: its buttons become one disabled "✅ answer" (none if the client rejects that). */
+  async function markAnswered(cfg: Config, mid: number, answer: string, via = "") {
+    const base = { chat_id: cfg.chat_id, message_id: mid };
+    const done = { text: `✅ ${via}${answer}`.slice(0, 64), disabled: {}, style: "success" };
+    if (!(await tg(cfg, "editMessageReplyMarkup", { ...base, reply_markup: { inline_keyboard: [[done]] } }))) {
+      await tg(cfg, "editMessageReplyMarkup", { ...base, reply_markup: { inline_keyboard: [] } });
+    }
   }
 
   /** From the poller: a message into a topic (undefined = General / the private chat). */
@@ -419,6 +480,16 @@ export default function (pi: ExtensionAPI) {
       first = false;
       conflictTold = false;
       setHealth("ok");
+      if (cfg.chat_id !== undefined && menuFor !== cfg.chat_id) {
+        menuFor = cfg.chat_id;
+        void tg(cfg, "setMyCommands", {
+          commands: [
+            { command: "stop", description: "Dừng lượt đang chạy của phiên này" },
+            { command: "status", description: "Phiên đang chạy hay rảnh, model nào" },
+          ],
+          scope: { type: "chat", chat_id: cfg.chat_id },
+        });
+      }
       for (const u of res.result as any[]) {
         writeJson(OFFSET, { offset: Math.max(offset, u.update_id + 1) });
         try {
@@ -447,11 +518,24 @@ export default function (pi: ExtensionAPI) {
       const mid = cb.message.message_id as number;
       const thread = cb.message.is_topic_message ? (cb.message.message_thread_id as number) : undefined;
       const a = readJson<AskFile>(askPath(mid));
-      const choice = a?.options[Number(String(cb.data).replace(/^a:/, ""))];
+      const data = String(cb.data);
       await tg(cfg, "answerCallbackQuery", { callback_query_id: cb.id });
-      if (!a || choice === undefined) return sendTo(cfg, thread, "Câu hỏi này đã hết hạn, gõ câu trả lời thay vì bấm nút.");
+      if (!a) return sendTo(cfg, thread, "Câu hỏi này đã hết hạn, gõ câu trả lời thay vì bấm nút.");
+      if (data === "o") {
+        // "✎ Khác…": a reply-to prompt; its answer goes to the same question.
+        const p = await tg(cfg, "sendMessage", {
+          chat_id: cfg.chat_id,
+          ...(thread === undefined ? {} : { message_thread_id: thread }),
+          text: `✎ Trả lời khác cho: ${a.question}`.slice(0, MAX_TEXT),
+          reply_markup: { force_reply: true, input_field_placeholder: "Câu trả lời của bạn" },
+        });
+        if (p?.message_id) writeJson(askPath(p.message_id), { ...a, mid } satisfies AskFile);
+        return;
+      }
+      const choice = a.options[Number(data.replace(/^a:/, ""))];
+      if (choice === undefined) return;
       rmSync(askPath(mid), { force: true });
-      await tg(cfg, "editMessageReplyMarkup", { chat_id: cfg.chat_id, message_id: mid, reply_markup: { inline_keyboard: [] } });
+      await markAnswered(cfg, mid, choice);
       return route(cfg, a.sid, thread, { kind: "answer", mid, text: choice, question: a.question });
     }
     const m = u.message;
@@ -472,8 +556,11 @@ export default function (pi: ExtensionAPI) {
     const rid = m.reply_to_message?.message_id;
     const a = rid !== undefined && rid !== thread ? readJson<AskFile>(askPath(rid)) : undefined;
     if (a) {
+      const origin = a.mid ?? rid;
       rmSync(askPath(rid), { force: true });
-      return route(cfg, a.sid, thread, { kind: "answer", mid: rid, text, question: a.question });
+      rmSync(askPath(origin), { force: true });
+      await markAnswered(cfg, origin, text);
+      return route(cfg, a.sid, thread, { kind: "answer", mid: origin, text, question: a.question });
     }
     let target: string | undefined;
     if (cfg.forum) {
@@ -486,7 +573,7 @@ export default function (pi: ExtensionAPI) {
     if (!target) return;
     if (text === "/stop") return post(target, { kind: "stop" });
     if (text === "/status" || text === "/start") return post(target, { kind: "status" });
-    post(target, { kind: "text", text });
+    post(target, { kind: "text", text, mid: m.message_id });
   }
 
   /** General topic: which sessions are linked, where to type. */
@@ -515,10 +602,15 @@ export default function (pi: ExtensionAPI) {
 
   // ── items handed to this session ──────────────────────────────────────────
 
-  function deliver(text: string) {
+  /** `mid`: the Telegram message it came from, acknowledged with a reaction (text if reactions are off). */
+  function deliver(text: string, mid?: number) {
     const idle = cur?.isIdle() ?? true;
     pi.sendUserMessage(text); // idle → new turn; running → steer
-    void send(idle ? "▶️ Đã gửi vào phiên." : "↪️ Đã chen vào lượt đang chạy.");
+    const cfg = loadConfig();
+    if (mid === undefined || cfg?.chat_id === undefined) return;
+    void tg(cfg, "setMessageReaction", { chat_id: cfg.chat_id, message_id: mid, reaction: [{ type: "emoji", emoji: idle ? "👀" : "✍" }] }).then((ok) => {
+      if (!ok) void send(idle ? "▶️ Đã gửi vào phiên." : "↪️ Đã chen vào lượt đang chạy.");
+    });
   }
 
   function onItem(it: Item) {
@@ -539,7 +631,7 @@ export default function (pi: ExtensionAPI) {
       if (open) return open(it.text ?? "");
       return deliver(`Trả lời câu hỏi "${it.question}": ${it.text}`);
     }
-    deliver(it.text ?? "");
+    deliver(it.text ?? "", it.mid);
   }
 
   // ── ask ───────────────────────────────────────────────────────────────────
@@ -548,17 +640,26 @@ export default function (pi: ExtensionAPI) {
   async function forwardAsk(qs: any[]): Promise<{ mid: number; question: string; options: string[] } | undefined> {
     const name = reg?.name ?? "";
     if (qs.length === 1 && !qs[0].multi && qs[0].options?.length > 0) {
-      const question = String(qs[0].question);
-      const options: string[] = qs[0].options.map((o: any) => String(o.label));
-      const kb = options.map((label, i) => [{ text: label.slice(0, 60), callback_data: `a:${i}` }]);
-      const sent = await send(`❓ [${name}] ${question}\n(bấm nút hoặc reply tin này)`, { reply_markup: { inline_keyboard: kb } });
+      const q = qs[0];
+      const question = String(q.question);
+      const opts: { label: string; description?: string }[] = q.options.map((o: any) => ({ label: String(o.label), description: o.description ? String(o.description) : undefined }));
+      const options = opts.map((o) => o.label);
+      const rec = typeof q.recommended === "number" ? q.recommended : -1;
+      const lines = opts.map((o, i) => `${i + 1}. **${o.label}**${i === rec ? " ⭐" : ""}${o.description ? ` — ${o.description}` : ""}`);
+      const md = `❓ **[${name}]** ${question}\n\n${lines.join("\n")}\n\n_Bấm nút, hoặc reply tin này để trả lời khác._`;
+      const btn = (o: { label: string }, i: number) => ({ text: `${i + 1}. ${o.label}${i === rec ? " ⭐" : ""}`.slice(0, 64), callback_data: `a:${i}`, ...(i === rec ? { style: "primary" } : {}) });
+      const pairs = opts.every((o) => o.label.length <= 18);
+      const kb: any[][] = [];
+      opts.forEach((o, i) => (pairs && i % 2 ? kb[kb.length - 1].push(btn(o, i)) : kb.push([btn(o, i)])));
+      kb.push([{ text: "✎ Khác…", callback_data: "o" }]);
+      const sent = await sendRich(md, { reply_markup: { inline_keyboard: kb } });
       if (!sent?.message_id) return undefined;
       pruneAsks();
       writeJson(askPath(sent.message_id), { sid: me, question, options } satisfies AskFile);
       return { mid: sent.message_id, question, options };
     }
-    const body = qs.map((q, i) => `${i + 1}. ${q.question}${q.options?.length ? `\n   ${q.options.map((o: any) => o.label).join(" · ")}` : ""}`).join("\n");
-    await send(`❓ [${name}] Agent hỏi:\n${body}\n(trả lời bằng một tin, ghi theo số câu)`);
+    const body = qs.map((q, i) => `${i + 1}. **${q.question}**${q.options?.length ? `\n   ${q.options.map((o: any) => o.label).join(" · ")}` : ""}`).join("\n");
+    await sendRich(`❓ **[${name}]** Agent hỏi:\n\n${body}\n\n_Trả lời bằng một tin, ghi theo số câu._`);
     return undefined;
   }
 
@@ -589,7 +690,7 @@ export default function (pi: ExtensionAPI) {
       ? last.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n").trim()
       : "";
     const tail = last?.stopReason === "aborted" ? "\n(⏹ đã dừng)" : last?.stopReason === "error" ? `\n(⚠️ lỗi: ${last.errorMessage ?? "?"})` : "";
-    await send(`✅ [${reg?.name ?? ""}] ${text || "Xong lượt."}${tail}`);
+    await sendRich(`✅ **[${reg?.name ?? ""}]**\n\n${text || "Xong lượt."}${tail}`);
   });
 
   // Single choice: the terminal dialog and the Telegram buttons race, the first answer wins.
@@ -612,7 +713,7 @@ export default function (pi: ExtensionAPI) {
       if (fromTelegram === undefined && local !== undefined) {
         rmSync(askPath(q.mid), { force: true }); // answered in the terminal: retire the buttons
         const cfg = loadConfig();
-        if (cfg?.chat_id !== undefined) void tg(cfg, "editMessageReplyMarkup", { chat_id: cfg.chat_id, message_id: q.mid, reply_markup: { inline_keyboard: [] } });
+        if (cfg?.chat_id !== undefined) void markAnswered(cfg, q.mid, local, "terminal: ");
       }
     }
     const text = got === undefined ? FORWARDED : `Not an error: the user answered this question: ${got}`;
@@ -772,6 +873,14 @@ export default function (pi: ExtensionAPI) {
         return ctx.ui.notify(r.msg, r.ok ? "info" : "warning");
       }
       if (sub === "off") return unlink("Đã ngắt Telegram khỏi phiên này.");
+      if (sub === "rich") {
+        if (!cfg) return ctx.ui.notify("Chưa cấu hình: /tg setup", "warning");
+        if (arg && arg !== "on" && arg !== "off") return ctx.ui.notify("Dùng: /tg rich on|off", "warning");
+        const rich = arg ? arg === "on" : cfg.rich === false;
+        writeJson(CONFIG, { ...cfg, rich });
+        richWarned = false;
+        return ctx.ui.notify(rich ? "Tin gửi dạng rich message (bảng, code, tiêu đề). App Telegram cũ chỉ hiện 'tin không hỗ trợ': khi đó /tg rich off." : "Tin gửi dạng chữ thường.", "info");
+      }
       if (sub === "allow" || sub === "deny") {
         if (!cfg) return ctx.ui.notify("Chưa cấu hình: /tg setup", "warning");
         const here = real(arg || ctx.cwd);
@@ -794,6 +903,7 @@ export default function (pi: ExtensionAPI) {
         `@${cfg.bot} · ${where}\n` +
           `Phiên này: ${reg ? `đã nối · "${reg.name}"${reg.thread !== undefined ? " (topic)" : ""} — đổi tên: /tg name` : "chưa nối (/tg on)"} · đang nối: ${all.length} phiên\n` +
           `Thư mục được phép: ${(cfg.allow ?? []).join(", ") || "(trống)"}\n` +
+          `Định dạng: ${cfg.rich === false ? "chữ thường (/tg rich on)" : "rich message (/tg rich off nếu app Telegram cũ)"}\n` +
           "Quyền tool theo phiên omp; muốn không bị hỏi duyệt thì chạy omp --approval-mode yolo.",
         "info",
       );
