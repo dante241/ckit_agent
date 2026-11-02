@@ -12,6 +12,12 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.39] - 2026-11-02
+
+### Changed
+- **Telegram (omp sessions): readable on the phone.** Turn results and questions go out as Telegram rich messages: the agent's Markdown renders with headings, tables, code blocks and `<details>`, up to 32K characters. Images (`![](…)`) become links, or the path as code for local files, because Telegram fetches them and a local path fails the whole send; code is left untouched. If the server rejects a rich message, the text goes out plain, and as an `.md` file when longer than 3500 characters. An old Telegram app that cannot show rich messages is never reported back to the bot, so `/tg rich off` sends plain text everywhere (`rich` in `telegram-omp.json`; `/tg` shows the current mode).
+- **Telegram `ask`:** each option is listed with its description; the recommended one has ⭐ and a blue button; short labels sit two per row. "✎ Khác…" opens a reply box for a free answer. Once answered (button, reply or terminal), the buttons become one disabled "✅ <answer>". Text sent to a session is acknowledged with a 👀 reaction (✍ when it steers a running turn) instead of a chat line, falling back to the line when reactions are off. `/stop` and `/status` appear in the `/` menu of the paired chat.
+
 ## [0.1.38] - 2026-11-02
 
 ### Added
