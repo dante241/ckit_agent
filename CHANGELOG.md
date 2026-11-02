@@ -12,6 +12,11 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.41] - 2026-11-02
+
+### Added
+- **Telegram (omp sessions): `/tg help`** prints the setup guide in omp: create the bot with @BotFather, private chat vs. group with Topics (bot admin with Manage Topics), `/tg setup`, `/start <code>`, and how topics are created, reopened and closed. The same guide shows when `/tg setup` finds no token and on bare `/tg` before setup, instead of the one-line usage hint.
+
 ## [0.1.40] - 2026-11-02
 
 ### Changed
