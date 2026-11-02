@@ -12,6 +12,14 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.40] - 2026-11-02
+
+### Changed
+- **Telegram (omp sessions): one topic per omp conversation.** `ckit .` (or `/resume`) brings a conversation back to the topic it used before, with the name you gave it (`/tg name`); before, a restarted session took the repo-named topic and often created a new one. A new conversation takes the repo name (`ckit`, then `ckit 2`… when that name is held by a live session or belongs to another conversation), so histories never mix. `/new` and `/resume` inside omp move the session to that conversation's topic and close the one it leaves. `bysession/<omp session id>.json` remembers each conversation's topic.
+
+### Fixed
+- **Telegram: duplicate topics.** Sessions started at the same time could pick the same name and create two topics; names are now claimed through `claims/<name>.json` (created exclusively, taken over from a dead process). A topic is recreated only when Telegram says it no longer exists; other errors when reopening it (429, missing rights after switching bots) are retried instead of creating a duplicate.
+
 ## [0.1.39] - 2026-11-02
 
 ### Changed
