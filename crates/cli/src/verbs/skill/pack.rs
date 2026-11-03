@@ -115,10 +115,12 @@ pub(crate) fn install_pack(home: &Path, root: &Path, name: &str, force: bool) ->
         link_pack(root, &store, name, force)?;
         record_project(home, name, root)
     }
+    // No symlinks: copy into `.omp/`, but record the project so `8sync .` sees it
+    // as installed and stays quiet on later launches.
     #[cfg(not(unix))]
     {
-        let _ = home;
-        install_pack_in(&PackScope::Project(root), name, force)
+        install_pack_in(&PackScope::Project(root), name, force)?;
+        record_project(home, name, root)
     }
 }
 
