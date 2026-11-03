@@ -330,6 +330,10 @@ Session memory được omp tự quản (retain/recall/auto-compact). Không c�
         }
     }
 
+    // A fresh clone / copy-mode install of a listed pack gets its .omp links
+    // first, so the skills block below already lists the pack's skills.
+    skill::pack::link_listed_packs(&env.home, root);
+
     // Re-inject the dynamic skills block (root) + a compact index into every
     // significant sub-folder, so an agent opening any sub-tree still sees the
     // skill rules (progressive disclosure: nearest AGENTS.md wins).
@@ -339,7 +343,5 @@ Session memory được omp tự quản (retain/recall/auto-compact). Không c�
     if let Err(e) = skill::inject_subfolder_indexes(root) {
         ui::warn(&format!("could not inject sub-folder skill indexes: {}", e));
     }
-    // A fresh clone / copy-mode install of a listed pack gets its .omp links.
-    skill::pack::link_listed_packs(&env.home, root);
     Ok(())
 }

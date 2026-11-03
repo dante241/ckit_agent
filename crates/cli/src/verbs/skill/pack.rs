@@ -137,16 +137,23 @@ pub(crate) fn link_listed_packs(home: &Path, root: &Path) {
     }
 }
 
-/// Recorded for `name`, every pack entry present under `.omp/`, every link resolving.
+/// Recorded for `name` and every pack entry present under `.omp/`: a real file
+/// (kept local edit) counts, a link counts only while it points into the store.
 fn is_linked(home: &Path, root: &Path, name: &str) -> bool {
     let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     if !read_projects(home, name).contains(&canonical) {
         return false;
     }
-    let omp = root.join(".omp");
+    let (omp, store) = (root.join(".omp"), store_dir(home, name));
     pack_entries(name).iter().all(|e| {
         let path = omp.join(e);
-        std::fs::symlink_metadata(&path).is_ok_and(|m| !m.file_type().is_symlink() || path.exists())
+        match std::fs::symlink_metadata(&path) {
+            Ok(m) if m.file_type().is_symlink() => {
+                std::fs::read_link(&path).is_ok_and(|t| t == store.join(e)) && path.exists()
+            }
+            Ok(_) => true,
+            Err(_) => false,
+        }
     })
 }
 
