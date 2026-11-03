@@ -99,8 +99,8 @@ impl PackScope<'_> {
 
 /// Install pack `name` into a project: refresh the shared store, then make every
 /// top-level pack entry under `<root>/.omp/` (`RULES.md`, `rules/<f>`,
-/// `commands/<f>`, `agents/<f>`, `skills/<dir>`) a symlink into it, and record
-/// the project so `8sync up` re-links it after a release.
+/// `commands/<f>`, `agents/<f>`, `skills/<dir>`) a symlink into it (a copy off
+/// unix), and record the project so `8sync up` refreshes it after a release.
 ///
 /// `.omp` is usually untracked, so a local edit must never be lost silently: a
 /// real file/dir (copy-mode install) is replaced only while every file in it
@@ -109,19 +109,24 @@ impl PackScope<'_> {
 /// Edits made through a link land in the store and are kept by later refreshes
 /// unless `force`. Errors only if the pack doesn't exist under `assets/packs/`.
 pub(crate) fn install_pack(home: &Path, root: &Path, name: &str, force: bool) -> Result<()> {
+    let store = refresh_store(home, name, force)?;
+    deploy_project(root, &store, name, force)?;
+    record_project(home, name, root)
+}
+
+/// Put the pack into one project: symlinks into the store on unix; off unix a
+/// copy (lock-guarded, local edits kept unless `force`). Either way the pack
+/// entries go into the clone's git exclude block.
+fn deploy_project(root: &Path, store: &Path, name: &str, force: bool) -> Result<()> {
     #[cfg(unix)]
-    {
-        let store = refresh_store(home, name, force)?;
-        link_pack(root, &store, name, force)?;
-        record_project(home, name, root)
-    }
-    // No symlinks: copy into `.omp/`, but record the project so `8sync .` sees it
-    // as installed and stays quiet on later launches.
+    link_pack(root, store, name, force)?;
     #[cfg(not(unix))]
     {
+        let _ = store;
         install_pack_in(&PackScope::Project(root), name, force)?;
-        record_project(home, name, root)
     }
+    exclude_pack_from_git(root, name);
+    Ok(())
 }
 
 /// Link every pack this project lists in `agents/skills.toml` that is not linked
@@ -134,8 +139,7 @@ pub(crate) fn link_listed_packs(home: &Path, root: &Path) {
             continue;
         }
         if is_linked(home, root, &pk.name) {
-            #[cfg(unix)]
-            exclude_links_from_git(root, &pk.name);
+            exclude_pack_from_git(root, &pk.name);
             continue;
         }
         if let Err(e) = install_pack(home, root, &pk.name, false) {
@@ -164,12 +168,11 @@ fn is_linked(home: &Path, root: &Path, name: &str) -> bool {
     })
 }
 
-/// `8sync up` / harness passes: refresh each linked pack's store once, then
-/// re-link every recorded project (new pack entries get a link, removed ones
-/// lose theirs). A recorded project that is gone or no longer lists the pack in
-/// `agents/skills.toml` is dropped from the record.
+/// `8sync up` / harness passes: refresh each project pack's store once, then
+/// re-deploy it into every recorded project (new pack entries get a link or
+/// copy, removed links go). A recorded project that is gone or no longer lists
+/// the pack in `agents/skills.toml` is dropped from the record.
 pub(crate) fn refresh_linked_packs(home: &Path) {
-    #[cfg(unix)]
     for pk in discover_packs() {
         let recorded = read_projects(home, &pk.name);
         if recorded.is_empty() {
@@ -180,8 +183,8 @@ pub(crate) fn refresh_linked_packs(home: &Path) {
             match refresh_store(home, &pk.name, false) {
                 Ok(store) => {
                     for root in &live {
-                        if let Err(e) = link_pack(root, &store, &pk.name, false) {
-                            ui::warn(&format!("pack `{}` link failed in {}: {}", pk.name, root.display(), e));
+                        if let Err(e) = deploy_project(root, &store, &pk.name, false) {
+                            ui::warn(&format!("pack `{}` refresh failed in {}: {}", pk.name, root.display(), e));
                         }
                     }
                 }
@@ -192,8 +195,6 @@ pub(crate) fn refresh_linked_packs(home: &Path) {
             ui::warn(&format!("pack `{}` project record not saved: {}", pk.name, e));
         }
     }
-    #[cfg(not(unix))]
-    let _ = home;
 }
 
 fn store_dir(home: &Path, name: &str) -> PathBuf {
@@ -347,7 +348,6 @@ fn link_pack(root: &Path, store: &Path, name: &str, force: bool) -> Result<()> {
     }
     let stale = remove_stale_links(&omp, store);
     let _ = std::fs::remove_file(&lock_path);
-    exclude_links_from_git(root, name);
 
     ui::ok(&format!(
         "pack `{}` → {} link(s) created, {} unchanged, {} stale removed → {}",
@@ -430,10 +430,10 @@ fn remove_stale_links(omp: &Path, store: &Path) -> usize {
     removed
 }
 
-/// Keep the machine-local links out of git: a managed block in the clone's
-/// `info/exclude` (never committed) lists every pack entry under `.omp/`.
-#[cfg(unix)]
-fn exclude_links_from_git(root: &Path, name: &str) {
+/// Keep the machine-local pack out of git (symlinks into one user's store, or a
+/// generated copy off unix): a managed block in the clone's `info/exclude`
+/// (never committed) lists every pack entry under `.omp/` plus the copy lock.
+fn exclude_pack_from_git(root: &Path, name: &str) {
     let Ok(out) = std::process::Command::new("git")
         .arg("-C")
         .arg(root)
@@ -453,7 +453,8 @@ fn exclude_links_from_git(root: &Path, name: &str) {
     }
     let exclude = PathBuf::from(exclude);
     let exclude = if exclude.is_absolute() { exclude } else { root.join(exclude) };
-    let body: Vec<String> = pack_entries(name).iter().map(|e| format!("/{}.omp/{}", prefix, e)).collect();
+    let mut body: Vec<String> = pack_entries(name).iter().map(|e| format!("/{}.omp/{}", prefix, e)).collect();
+    body.push(format!("/{}.omp/pack-{}.lock", prefix, name));
     let _ = crate::verbs::harness::memory::upsert_block(
         &exclude,
         &format!("# >>> ckit pack {} (machine-local symlinks) >>>", name),

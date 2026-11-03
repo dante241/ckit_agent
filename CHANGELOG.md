@@ -12,6 +12,9 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Fixed
+- **Windows: project packs refresh on `ckit up` too.** Windows has no unprivileged symlinks, so a project pack stays a copy there; it is now recorded like a linked one, so `ckit .` stops re-copying it on every launch, and `ckit up` / `harness init` re-copy every recorded project from the refreshed store (locally edited files kept unless `--force`). The copied entries and `.omp/pack-<name>.lock` go into the clone's `.git/info/exclude` on every platform.
+
 ## [0.1.47] - 2026-11-03
 
 ### Changed
