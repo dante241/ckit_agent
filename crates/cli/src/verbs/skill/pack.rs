@@ -340,6 +340,7 @@ fn link_pack(root: &Path, store: &Path, name: &str, force: bool) -> Result<()> {
     }
     let stale = remove_stale_links(&omp, store);
     let _ = std::fs::remove_file(&lock_path);
+    exclude_links_from_git(root, name);
 
     ui::ok(&format!(
         "pack `{}` → {} link(s) created, {} unchanged, {} stale removed → {}",
@@ -420,6 +421,38 @@ fn remove_stale_links(omp: &Path, store: &Path) -> usize {
         }
     }
     removed
+}
+
+/// Keep the machine-local links out of git: a managed block in the clone's
+/// `info/exclude` (never committed) lists every pack entry under `.omp/`.
+#[cfg(unix)]
+fn exclude_links_from_git(root: &Path, name: &str) {
+    let Ok(out) = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--show-prefix", "--git-path", "info/exclude"])
+        .output()
+    else {
+        return;
+    };
+    if !out.status.success() {
+        return;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut lines = stdout.lines();
+    let (prefix, exclude) = (lines.next().unwrap_or("").trim(), lines.next().unwrap_or("").trim());
+    if exclude.is_empty() {
+        return;
+    }
+    let exclude = PathBuf::from(exclude);
+    let exclude = if exclude.is_absolute() { exclude } else { root.join(exclude) };
+    let body: Vec<String> = pack_entries(name).iter().map(|e| format!("/{}.omp/{}", prefix, e)).collect();
+    let _ = crate::verbs::harness::memory::upsert_block(
+        &exclude,
+        &format!("# >>> ckit pack {} (machine-local symlinks) >>>", name),
+        &format!("# <<< ckit pack {} <<<", name),
+        &body.join("\n"),
+    );
 }
 
 /// Registry `src` prefix of a `--global` pack. Distinct from the project-manifest
@@ -695,6 +728,27 @@ mod tests {
         assert!(root.join(".omp/skills/review-pr/SKILL.md").is_file());
         assert!(!root.join(".omp/pack-vtiger-php.lock").exists());
         assert_eq!(read_projects(&home, "vtiger-php"), vec![root.canonicalize().unwrap()]);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pack_links_stay_out_of_git_even_in_a_subdirectory_project() {
+        let home = temp_home("gitx");
+        let repo = home.join("repo");
+        let root = repo.join("app");
+        std::fs::create_dir_all(&root).unwrap();
+        let git = |args: &[&str]| std::process::Command::new("git").arg("-C").arg(&repo).args(args).output().unwrap();
+        assert!(git(&["init", "-q"]).status.success());
+        std::fs::write(root.join("keep.txt"), "x").unwrap();
+
+        install_pack(&home, &root, "vtiger-php", false).unwrap();
+        install_pack(&home, &root, "vtiger-php", false).unwrap();
+        let status = String::from_utf8(git(&["status", "--porcelain", "--untracked-files=all"]).stdout).unwrap();
+        assert_eq!(status.trim(), "?? app/keep.txt");
+        let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
+        assert_eq!(exclude.matches("# >>> ckit pack vtiger-php").count(), 1);
+        assert!(exclude.contains("/app/.omp/skills/field\n"));
         let _ = std::fs::remove_dir_all(&home);
     }
 
