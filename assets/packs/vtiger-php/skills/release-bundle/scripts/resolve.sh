@@ -36,9 +36,12 @@ done
 source ./lib.sh
 export CLASSIFIED RELEASE_BASE NOISE_RE
 PY="$PWD/resolve_hunks.py"
+# Last real run: its conflicts_manual[] decides which MRs belong to each conflicted ticket
+BUNDLE_LAST=$(ls -1 "$STATE_DIR"/bundle-result-*.json 2>/dev/null | sort | tail -1)
+export BUNDLE_LAST
 
 if [ -z "$TICKET" ]; then
-    LAST=$(ls -1 "$STATE_DIR"/bundle-result-*.json 2>/dev/null | sort | tail -1)
+    LAST="$BUNDLE_LAST"
     [ -n "$LAST" ] || abort "chưa có bundle-result-*.json (chạy run.sh trước)"
     echo "Ticket conflict theo thứ tự pick ($(basename "$LAST")):"
     python3 "$PY" list "$LAST" | while IFS=$'\t' read -r t iids author; do

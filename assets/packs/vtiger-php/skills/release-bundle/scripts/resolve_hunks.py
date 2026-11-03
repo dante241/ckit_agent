@@ -94,8 +94,17 @@ def mr_sha(mr):
 
 
 def ticket_mrs(ticket):
+    """MRs of the ticket in merge order: the run's own grouping (bundle-result conflicts_manual) when the
+    ticket is there — a multi-ticket MR belongs to the ticket the bundle filed it under — else classified."""
     data = json.load(open(os.environ['CLASSIFIED']))
-    mrs = [m for m in data.get('ready', []) if ticket in (m.get('ticket_ids') or [m.get('ticket_id')])]
+    ready = data.get('ready', [])
+    bundle = os.environ.get('BUNDLE_LAST', '')
+    if bundle and os.path.exists(bundle):
+        for c in json.load(open(bundle)).get('conflicts_manual', []):
+            if str(c.get('ticket')) == ticket:
+                iids = set(c.get('iids') or [c['iid']])
+                return sorted((m for m in ready if m['iid'] in iids), key=lambda m: m.get('merged_at') or '')
+    mrs = [m for m in ready if ticket in (m.get('ticket_ids') or [m.get('ticket_id')])]
     return sorted(mrs, key=lambda m: m.get('merged_at') or '')
 
 
