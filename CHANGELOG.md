@@ -18,6 +18,9 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
   - Missing methods/properties/signatures are looked up in the owning class and its parents (`X@anonymous` → `X`). The report then names the master commit that added the code, flags code that belongs to the ticket's own MR (a pending T3 hunk), and marks untyped receivers (`object`) for a manual check.
   - `--check` reruns the checks.
   - `--merge` merges `--no-ff` into the month branch and labels the MRs `Đã release` + milestone. It refuses if the branch changed since the last check, or if new PHPStan errors remain (unless `--force`).
+  - Two known PHPStan artefacts are marked "bỏ qua" and do not block `--merge`:
+    - wrong arity reported on a PHP builtin, because a library defines a function with the same name (e.g. `html_entity_decode`);
+    - an unknown non-namespaced class that already existed on release before the pick (legacy files loaded by `require`, e.g. `PearDatabase` in new files).
 
 ### Fixed
 - **Windows: project packs refresh on `ckit up` too.** Windows has no unprivileged symlinks, so a project pack stays a copy there; it is now recorded like a linked one, so `ckit .` stops re-copying it on every launch, and `ckit up` / `harness init` re-copy every recorded project from the refreshed store (locally edited files kept unless `--force`). The copied entries and `.omp/pack-<name>.lock` go into the clone's `.git/info/exclude` on every platform.

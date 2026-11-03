@@ -68,7 +68,7 @@ check() {
     ./phpstan-check.sh "$base" "$head" "$OUT/phpstan.json"
     python3 "$PY" report "$OUT" "$OUT/phpstan.json" > "$REPORT" || abort "lỗi khi viết report"
     echo "Report: $REPORT"
-    jq -r '"T2 cần đọc: \(.T2) · T3 chưa áp: \(.T3) · PHPStan lỗi mới: \(.phpstan)\(if .phpstan_skipped then " (PHPStan chưa chạy)" else "" end)"' "$OUT/check.json"
+    jq -r '"T2 cần đọc: \(.T2) · T3 chưa áp: \(.T3) · PHPStan lỗi mới cần xử lý: \(.phpstan)\(if (.phpstan_ignored // 0) > 0 then " (+\(.phpstan_ignored) PHPStan nhầm, bỏ qua)" else "" end)\(if .phpstan_skipped then " (PHPStan chưa chạy)" else "" end)"' "$OUT/check.json"
 }
 
 case "$MODE" in

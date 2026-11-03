@@ -238,7 +238,7 @@ def cmd_pick(ticket, wt, out_dir):
 SYMBOL_PATTERNS = [
     (re.compile(r'undefined (?:static )?method (\S+)::(\w+)\(\)'), 'method'),
     (re.compile(r'Call to static method \w+\(\) on an unknown class ([\w\\]+)'), 'class'),
-    (re.compile(r'(?:Instantiated class|Class|unknown class|extends unknown class|implements unknown interface|has invalid type) ([\w\\]+)'), 'class'),
+    (re.compile(r'(?:Caught class|Instantiated class|Class|unknown class|extends unknown class|implements unknown interface|has invalid (?:return )?type) ([\w\\]+)'), 'class'),
     (re.compile(r'undefined function ([\w\\]+)\(\)'), 'function'),
     (re.compile(r'[Mm]ethod (\S+)::(\w+)\(\) invoked with'), 'signature'),
     (re.compile(r'Function ([\w\\]+) invoked with'), 'fsignature'),
@@ -327,6 +327,30 @@ def lookup(wt, sym):
     return info
 
 
+def builtin_arity(name):
+    """(required, total) parameter counts of a PHP builtin function, or None."""
+    code = (f'$f="{name}"; if (!function_exists($f)) exit; $r=new ReflectionFunction($f);'
+            ' if ($r->isInternal()) echo $r->getNumberOfRequiredParameters()," ",$r->getNumberOfParameters();')
+    p = subprocess.run(['php', '-r', code], capture_output=True, text=True)
+    parts = p.stdout.split()
+    return (int(parts[0]), int(parts[1])) if len(parts) == 2 else None
+
+
+def known_noise(wt, base_sha, sym, msg):
+    """Why an error is a PHPStan artefact of this setup rather than missing code, or ''."""
+    if sym['kind'] == 'fsignature' and '\\' not in sym['full']:
+        arity, n = builtin_arity(sym['name']), re.search(r'invoked with (\d+) parameter', msg)
+        if arity and n and arity[0] <= int(n.group(1)) <= arity[1]:
+            return (f"`{sym['name']}` là hàm builtin PHP nhận {arity[0]}–{arity[1]} tham số; PHPStan lấy chữ ký "
+                    "của hàm cùng tên trong thư viện")
+    if sym['kind'] == 'class' and '\\' not in sym['full']:
+        grep_args, _ = definition('class', sym['name'])
+        if git('grep', '-q', *grep_args, base_sha, '--', '*.php', '*.inc', cwd=wt).returncode == 0:
+            return (f"class `{sym['full']}` đã có trên release trước khi pick (file legacy nạp bằng require), "
+                    "PHPStan chỉ báo ở file mới")
+    return ''
+
+
 def psr4_prefixes(wt, rev):
     """Namespace prefixes composer really loads at <rev>: present in BOTH autoload_psr4.php and the
     $prefixDirsPsr4 map of autoload_static.php (the one autoload_real.php uses on PHP >= 5.6)."""
@@ -390,6 +414,7 @@ def cmd_report(out_dir, phpstan_path):
     if ps.get('skipped'):
         out.append(f"PHPStan chưa chạy: {ps['skipped']}")
     branch_pfx, master_pfx = psr4_prefixes(wt, 'HEAD'), psr4_prefixes(wt, 'origin/master')
+    ignored = 0
     groups = {}
     for e in errs:
         sym = symbol_of(e['message'])
@@ -415,6 +440,11 @@ def cmd_report(out_dir, phpstan_path):
         label_sym = f"{sym['owner']}::{sym['full']}" if sym['owner'] else sym['full']
         out.append(f"- **{sym['kind']} `{label_sym}`** — {len(errs_k)} lỗi [{errs_k[0].get('identifier', '')}] ở {where}{by}")
         out.append(f"  - vd: {errs_k[0]['message']}")
+        noise = known_noise(wt, res['base_sha'], sym, errs_k[0]['message'])
+        if noise:
+            out.append(f"  - **bỏ qua (PHPStan nhầm):** {noise}")
+            ignored += len(errs_k)
+            continue
         info = lookup(wt, sym)
         if info.get('untyped'):
             out.append(f"  - PHPStan không biết kiểu biến (`{info['owner']}`) → kiểm tay đối tượng gọi `{info['name']}`")
@@ -442,6 +472,8 @@ def cmd_report(out_dir, phpstan_path):
                 out.append(f"  - code `{info['name']}` vào master ở: {info['origin'] or 'không tìm thấy'} → code thiếu, mang sang hoặc hỏi")
     if not errs and not ps.get('skipped'):
         out.append('_Không có_')
+    if ignored:
+        out += ['', f"→ {ignored}/{len(errs)} lỗi là PHPStan nhầm (đánh dấu bỏ qua); còn {len(errs) - ignored} lỗi cần xử lý."]
 
     out += ['', '## Bước tiếp', '',
             '1. Đọc T2; xử lý từng T3 trong worktree: áp tay đúng dòng của MR (file `.rej`), hoặc bỏ nếu code đó không có trên release. '
@@ -452,8 +484,8 @@ def cmd_report(out_dir, phpstan_path):
             f"3. Chạy lại kiểm tra: `resolve.sh {res['ticket']} --check`",
             f"4. Merge vào branch tháng + gắn label: `resolve.sh {res['ticket']} --merge`. Ticket resolve tay → test lại đầy đủ trên release."]
     print('\n'.join(out))
-    json.dump({'head_sha': res['head_sha'], 'T2': count['T2'], 'T3': count['T3'], 'phpstan': len(errs),
-               'phpstan_skipped': bool(ps.get('skipped'))},
+    json.dump({'head_sha': res['head_sha'], 'T2': count['T2'], 'T3': count['T3'], 'phpstan': len(errs) - ignored,
+               'phpstan_ignored': ignored, 'phpstan_skipped': bool(ps.get('skipped'))},
               open(Path(out_dir) / 'check.json', 'w'))
 
 
