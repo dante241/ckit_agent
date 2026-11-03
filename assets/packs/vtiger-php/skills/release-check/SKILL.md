@@ -1,7 +1,7 @@
 ---
 name: release-check
 disable-model-invocation: true
-description: "Scan merged MRs có label 'Dev done' hoặc 'Chờ release' + cross-check ticket status trong PMS qua script batch (không dùng MCP ticket_detail). Transition label 'Dev done' → 'Chờ release' cho MR ready. Auto-rollback 'Chờ release' → 'Dev done' khi ticket bị reopen. Sinh report JSON + markdown."
+description: "Scan merged MRs có label 'Dev done' hoặc 'Chờ release' + cross-check ticket status trong PMS qua script batch (không dùng MCP ticket_detail). Transition label 'Dev done' → 'Chờ release' cho MR ready. Auto-rollback 'Chờ release' → 'Dev done' khi ticket bị reopen. Xem trước ticket nào pick sạch / conflict lên branch release. Sinh report JSON + markdown."
 allowed-tools: Bash(bash .omp/skills/release-check/scripts/*), Bash(glab mr *), Bash(jq*), Bash(cat*), Bash(head*), Read, Write
 ---
 
@@ -16,10 +16,12 @@ allowed-tools: Bash(bash .omp/skills/release-check/scripts/*), Bash(glab mr *), 
 ## Usage
 
 ```
-/release-check                # Default: full pipeline, label ready MRs
-/release-check --dry-run      # Skip label step
+/release-check                     # Default: full pipeline, label ready MRs, xem trước pick
+/release-check --dry-run           # Skip label step
 /release-check --since 2026-04-20  # Filter MRs merged after date
-/release-check --limit 10     # Cap MRs processed
+/release-check --limit 10          # Cap MRs processed
+/release-check --month 10.2026     # Tháng release dùng cho phần xem trước (branch release-core-10.2026)
+/release-check --no-preview        # Bỏ phần xem trước pick
 ```
 
 **One-time setup:** PMS credentials phải có trong shell env. Source từ MCP config:
@@ -58,6 +60,7 @@ Script pipeline:
 5. Transition labels (skip nếu `--dry-run`):
    - Ready mới → `+Chờ release -Dev done`
    - **Regressed** → `+Dev done -Chờ release` (rollback khi ticket đã reopen/quay về Testing)
+6. **Xem trước pick** (skip với `--no-preview`): gọi `release-bundle/scripts/run.sh --preview` — cherry-pick thử từng ticket ready trên worktree tạm của `release-core-MM.YYYY` (không đổi branch/GitLab), nối kết quả vào cuối `report-<DATE>.md`: ticket pick sạch, ticket conflict (file + lệnh bàn giao), ticket đang chờ MR `pick/<ticket>`. Chi tiết: `release-bundle/references/pick-logic.md`.
 
 ## Classification matrix
 
@@ -95,7 +98,7 @@ Report: agents/release-queue/report-2026-04-23.md
 JSON:   agents/release-queue/classified-2026-04-23.json
 ```
 
-AI: truyền y nguyên terminal summary + gợi ý next step (`/release-bundle`).
+AI: truyền y nguyên terminal summary + tóm tắt phần **Xem trước pick release** cuối report (ticket nào pick sạch, ticket nào conflict + tác giả cần resolve) + gợi ý next step (`/release-bundle --month MM.YYYY`).
 
 ## Rules
 
@@ -107,7 +110,7 @@ AI: truyền y nguyên terminal summary + gợi ý next step (`/release-bundle`)
 | Script role | Batch fetch, classify, transition label (cả promote + rollback) |
 | Credentials | KHÔNG bao giờ hardcode. Reuse PMS MCP env vars qua `source-pms-env.sh` |
 | Ready statuses | `Wait Close` và `Closed` (title case, exact) |
-| Ticket regex | `#(\d{3,})` — match ticket_no trong MR title |
+| Ticket regex | `#(\d{3,})` — lấy **mọi** ticket_no trong MR title. MR chỉ `ready` khi mọi ticket đều `Wait Close`/`Closed`; ticket chưa xong ghi ở `blocking_tickets` và `ticket_status` (vd `Closed (chưa xong: #27291 Testing)`). Ticket đầu dùng để nhóm MR khi pick |
 | Label promote | `glab mr update <iid> --label "Chờ release" --unlabel "Dev done"` — idempotent (skip nếu MR đã có `Chờ release`) |
 | Label rollback | `glab mr update <iid> --label "Dev done" --unlabel "Chờ release"` — áp dụng cho `regressed[]` |
 | Fallback | Nếu `--dry-run` → script skip cả promote lẫn rollback |

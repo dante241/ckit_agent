@@ -12,6 +12,15 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.45] - 2026-11-03
+
+### Added
+- **vtiger-php pack: `release-bundle` skill + `/release-bundle` and `/release-check` commands.** Cherry-picks Closed tickets (whole ticket or nothing) from `master` onto `release-core-MM.YYYY`, created from branch `release` of onlinecrm/vtiger (one-repo layout, default) in a worktree `<parent>/vtiger_release`; per-line compare vs master + PHPStan before/after missing-symbol check; labels `Đã release` / `Conflict cherry-pick` + milestone; `--handoff` opens `pick/<ticket>` MRs whose instructions set `merge.conflictStyle diff3` before picking and print `git show <sha> -m --first-parent` per MR. `verify-resolves.sh` re-checks every pick on the month branch patch-vs-patch against its master commit (✓ / ● hand resolve / ✗ unverified commit) and flags "⚠ NGHI XOÁ CODE CỦA !X" when a resolve removes lines another pick added. `sync-release.sh` mirrors a release tag into onlinecrm/vtiger_release (`<parent>/vtiger_release_mirror`, refuses a wrong origin). Paths derive from the repo the command runs in (`VTIGER_ROOT` override).
+
+### Fixed
+- **vtiger-php pack: `release-check` regains its pick preview and multi-ticket MRs.** The pack still shipped the older skill, so `skill update --force` wiped the local version: `--month MM.YYYY` / `--no-preview`, Step 6 that appends the `/release-bundle --preview` result ("Xem trước pick release") to the report, and MRs whose title names several tickets being ready only when every ticket is (`ticket_ids`). Restored version reproduces the 2026-11-02 classification byte-for-byte.
+- **vtiger-php pack: `gitlab-mr-delta-rereview` no longer leaves a local branch per re-reviewed MR.** It fetched into the bare `mr/<N>` destination, which creates `refs/heads/mr/<N>`; it now uses `refs/remotes/mr/<N>` like `php-gate.sh`.
+
 ## [0.1.44] - 2026-11-03
 
 ### Changed

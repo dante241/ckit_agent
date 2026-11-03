@@ -2,13 +2,14 @@
 # run.sh — Orchestrate release-check pipeline
 #
 # Usage:
-#   run.sh [--dry-run] [--since YYYY-MM-DD] [--limit N] [--output-dir DIR]
+#   run.sh [--dry-run] [--since YYYY-MM-DD] [--limit N] [--output-dir DIR] [--month MM.YYYY] [--no-preview]
 #
 # Outputs:
 #   <OUTPUT_DIR>/mrs-slim-<DATE>.json
 #   <OUTPUT_DIR>/status-<DATE>.tsv
 #   <OUTPUT_DIR>/classified-<DATE>.json
-#   <OUTPUT_DIR>/report-<DATE>.md
+#   <OUTPUT_DIR>/report-<DATE>.md       (ends with the pick preview of /release-bundle)
+#   <OUTPUT_DIR>/preview-<DATE>.{json,md}
 
 set -euo pipefail
 
@@ -17,6 +18,8 @@ OUTPUT_DIR="agents/release-queue"
 DRY_RUN=0
 SINCE=""
 LIMIT=""
+PREVIEW=1
+BUNDLE_DIR="$SCRIPT_DIR/../../release-bundle/scripts"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -24,6 +27,8 @@ while [[ $# -gt 0 ]]; do
         --since) SINCE="$2"; shift 2 ;;
         --limit) LIMIT="$2"; shift 2 ;;
         --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
+        --month) export RELEASE_MONTH="$2"; shift 2 ;;
+        --no-preview) PREVIEW=0; shift ;;
         *) echo "Unknown flag: $1" >&2; exit 2 ;;
     esac
 done
@@ -85,5 +90,19 @@ else
     fi
 fi
 
+# ── Step 6: Pick preview (simulated on a throwaway worktree of vtiger_release) ──
+# Tells per ready ticket whether it picks cleanly or conflicts, before /release-bundle runs.
+REPORT="$OUTPUT_DIR/report-$TODAY.md"
+if [[ "$PREVIEW" -eq 1 ]] && [[ "$(jq '.ready | length' "$CLASSIFIED")" -gt 0 ]]; then
+    echo "" >&2
+    echo "Preview pick lên release (worktree tạm, không đổi branch)..." >&2
+    if RELEASE_STATE_DIR="$(cd "$OUTPUT_DIR" && pwd)" RELEASE_CLASSIFIED="$(cd "$OUTPUT_DIR" && pwd)/classified-$TODAY.json" \
+        bash "$BUNDLE_DIR/run.sh" --preview >&2; then
+        { echo ""; awk '/^```/ {fence = !fence} !fence && /^#/ {$0 = "#" $0} {print}' "$OUTPUT_DIR/preview-$TODAY.md"; } >> "$REPORT"
+    else
+        echo "⚠️  Preview lỗi — report không có phần xem trước" >&2
+    fi
+fi
+
 echo "" >&2
-echo "Done. Next: /release-bundle" >&2
+echo "Done. Report: $REPORT — next: /release-bundle" >&2

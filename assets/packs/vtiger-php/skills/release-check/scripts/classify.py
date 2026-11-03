@@ -29,9 +29,9 @@ READY_STATUSES = {"Closed", "Wait Close"}
 PMS_BASE_URL = os.environ.get("PMS_BASE_URL", "").rstrip("/")
 
 
-def extract_ticket(title: str) -> str | None:
-    m = TICKET_RE.search(title)
-    return m.group(1) if m else None
+def extract_tickets(title: str) -> list[str]:
+    """Every ticket id in the title, in order, without duplicates."""
+    return list(dict.fromkeys(TICKET_RE.findall(title)))
 
 
 def load_statuses(path: Path) -> dict[str, dict]:
@@ -66,12 +66,14 @@ def pms_link(record_id: str, ticket_id: str) -> str:
 def classify(mrs: list[dict], statuses: dict[str, dict]) -> dict:
     ready, testing, regressed, no_ticket, not_found = [], [], [], [], []
     for mr in mrs:
-        tid = extract_ticket(mr["title"])
+        tids = extract_tickets(mr["title"])
+        tid = tids[0] if tids else None
         labels = mr.get("labels") or []
         has_cho_release = "Chờ release" in labels
         entry = {
             "iid": mr["iid"],
             "ticket_id": tid,
+            "ticket_ids": tids,
             "title": mr["title"],
             "author": mr["author"],
             "merged_at": mr["merged_at"],
@@ -95,11 +97,16 @@ def classify(mrs: list[dict], statuses: dict[str, dict]) -> dict:
         entry["ticket_label"] = info["label"]
         entry["ticket_categories"] = info.get("categories", "")
         entry["ticket_assignee"] = info.get("assignee", "")
-        is_ready_status = info["status"] in READY_STATUSES
-        if is_ready_status:
+        # An MR covering several tickets ships all of them: it is ready only when every ticket is ready
+        blocking = [t for t in tids if (statuses.get(t) or {}).get("status") not in READY_STATUSES]
+        if blocking:
+            entry["blocking_tickets"] = [f"#{t} {(statuses.get(t) or {}).get('status', 'UNQUERIED')}" for t in blocking]
+            if tid not in blocking:
+                entry["ticket_status"] = f"{info['status']} (chưa xong: {', '.join(entry['blocking_tickets'])})"
+        if not blocking:
             ready.append(entry)
         elif has_cho_release:
-            # Previously promoted to Chờ release but ticket no longer ready — rollback signal
+            # Previously promoted to Chờ release but a ticket is no longer ready — rollback signal
             regressed.append(entry)
         else:
             testing.append(entry)

@@ -127,4 +127,8 @@ glab mr update <iid> --label "Dev done" --unlabel "Chờ release"
 
 `report-<DATE>.md` do `render_markdown()` trong classify.py sinh (bảng theo 5 bucket, ticket link sang PMS khi có `PMS_BASE_URL` + record id, ma trận theo author). Đọc hàm đó khi cần đổi format — không duy trì template riêng ở đây.
 
-**Next step:** Chạy `/release-bundle` để cherry-pick các MR ready (label `Chờ release`) sang `vtiger_release`.
+## §7. Preview pick (Step 6 của `run.sh`, tắt bằng `--no-preview`)
+
+Sau classify, `run.sh` gọi `release-bundle/scripts/run.sh --preview` với `RELEASE_STATE_DIR` = output dir và `RELEASE_CLASSIFIED` = file vừa sinh. Preview cherry-pick thử từng ticket ready trên worktree tạm của branch release (không đổi branch, không đổi GitLab) và nối `preview-<DATE>.md` vào cuối `report-<DATE>.md`: ticket pick sạch, ticket conflict kèm lệnh bàn giao, ticket đang chờ MR `pick/<ticket>`. Logic: `release-bundle/references/pick-logic.md`.
+
+**Next step:** Chạy `/release-bundle` để cherry-pick các ticket ready (label `Chờ release`) sang `vtiger_release`.
