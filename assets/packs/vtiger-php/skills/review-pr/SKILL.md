@@ -270,7 +270,7 @@ Audit code quality theo `cloudgo-development-rules.md` và mọi rule trong `$RU
 - **Dead code**: Không commented-out code, unused variables, unused imports
 - **DRY**: Không logic trùng lặp — phải extract thành shared methods
 - **Null coalescing**: Dùng `??` thay vì verbose `isset()` checks
-- **Modification tracking**: Comment `// Added by` / `// Modified by` với blank line trước
+- **Modification tracking**: theo `rule://php-conventions` § Modification Tracking — hàm mới / viết lại gần cả hàm của người khác → dòng `Added by` / `Modified by` đầu docblock (không `@`, không `// End`); sửa vài dòng trong hàm người khác → `// Modified by` … `// End <Name>` với blank line trước
 - **File locations**: Kiểm tra CSS/JS/TPL đúng thư mục theo convention table
 - **Constants**: Dùng class constants thay vì magic strings/numbers
 - **Error handling**: try/catch cho external calls, `error_log()` cho errors

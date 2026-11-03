@@ -197,11 +197,13 @@ _(filled in Step 8)_
 
 1. **Edit the minimum number of files** — fix the root cause, don't refactor surroundings
 2. Follow `cloudgo-development-rules.md` conventions strictly
-3. Add modification tracking comment per `rule://php-conventions` (ownership-based, English, NO ticket number):
+3. Add modification tracking comment per `rule://php-conventions` (ownership-based, English, NO ticket number). A few lines changed inside someone else's function:
    ```php
    // Modified by <Name> on YYYY-MM-DD - <reason>
+   ...
+   // End <Name>
    ```
-   Editing a function you wrote → no comment; new function in someone else's class → `// Added by <Name> on YYYY-MM-DD - <reason>`. Close named blocks with `// End <Name>`.
+   Editing a function you wrote → no comment. New function in someone else's class, or rewriting most of their function → plain line `Added by` / `Modified by <Name> on YYYY-MM-DD - <reason>` at the top of the function's docblock (no `@`, no `// End`).
 
 ### Mandatory Checks (after each file)
 

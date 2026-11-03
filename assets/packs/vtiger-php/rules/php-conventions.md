@@ -225,7 +225,7 @@ if (empty($adsAccountRecord) || !$adsAccountRecord instanceof CPAdvertisingAccou
 if ($sourceCampaign && $sourceCampaign instanceof Campaigns_Record_Model) { /* ... */ }
 ```
 
-## Modification Tracking Comments (ownership-based, decided 2026-07-07 — supersedes 2026-07-03 ticket-ID rule)
+## Modification Tracking Comments (ownership-based, decided 2026-07-07; attribution placement decided 2026-11-03)
 
 **No ticket numbers in comments, ever** (default — the 2026-07-03 "ticket ID required" rule is reversed). `/feature` (GSD) workflow always follows this. Other workflows (`/cook`, `/fix`) may still require a ticket ID per their own command/skill — check there first.
 
@@ -234,28 +234,46 @@ Which comment to write depends on **whose class/function you're touching** and *
 | Situation | Comment |
 |---|---|
 | New function, class you (the file's `@author`) own | Plain 1-line description of what it does. No `Added by <name>`. |
-| New function, class owned by someone else | `// Added by <Name> on <DATE> - <REASON>` |
-| Editing an existing function someone else originally wrote | `// Modified by <Name> on <DATE> - <REASON>` |
+| New function, class owned by someone else | First line of the function's docblock: `Added by <Name> on <DATE> - <REASON>`. No `// End`. |
+| Rewriting most of an existing function someone else wrote (body and/or signature) | First line of the function's docblock: `Modified by <Name> on <DATE> - <REASON>`. No `// End`. |
+| Changing a few lines inside a function someone else wrote | `// Modified by <Name> on <DATE> - <REASON>` right above the changed lines, closed by `// End <Name>`. |
 | Editing an existing function **you** originally wrote | No comment at all — not even a summary line. |
+
+**Docblock attribution.** The line is plain text, NEVER an `@` tag (`@author` belongs to the file header): PHPStan only reads `@` tags, so the line is a description and `@param`/`@return` stay checked. It goes above any other description and the tags; a function with no docblock gets one (`/** Added by … */`). A later attribution on the same function adds its own line under the existing ones. The docblock covers the whole function, so there is no `// End` marker.
 
 "Owner" of a class = the file's `@author`/`Author:` header. "Originally wrote a function" = check `git blame`/`git log` on that function if the file has multiple contributors — don't assume file-level ownership extends to every function in a multi-author file.
 
 **No `@author`/`Author:` header = no defined owner.** Do NOT assume you own an unheadered file. Determine who wrote the touched function via `git blame`/`git log` and attribute accordingly (`Added by` for a new function, `Modified by` for editing someone else's). Only skip attribution when blame confirms the function is yours. When adding an `@author`/`Author:` header is warranted (brand-new file), you become the owner.
 
-Close attribution blocks with `// End <Name>` (only when the block has a name to close — own-class new functions and own-function edits have no block to close).
+Close `//` attribution blocks with `// End <Name>` (docblock attributions, own-class new functions and own-function edits have no block to close).
 
 Do not insert a visual spacer between an attribution end marker and the structural block close it belongs to. Example: `// End <Name>` immediately followed by `}` stays adjacent; add blank lines only between logical statements/sections, not before a closing delimiter.
 
 **Comment language: English.** ALL code comments MUST be written in English — the attribution `<REASON>`, docblocks (`/** ... */`, `@param`/`@return` descriptions), and inline `//` comments alike. Existing Vietnamese comments are legacy: when you touch a comment, rewrite it in English. New comments are English only.
 
-**Comment length + intent.** Each comment block is **at most 2 lines**. Comment the function's actual meaning/behaviour/invariant — NOT decisions, tradeoffs, or negotiation from the chat/discussion (no "user chose X", "we decided Y", plan/phase/ticket refs). If the reason isn't self-evident from the code, state the invariant, not the conversation.
+**Comment length + intent.** Each comment block is **at most 2 lines** (in a docblock: attribution + description lines, `@` tags not counted). Comment the function's actual meaning/behaviour/invariant — NOT decisions, tradeoffs, or negotiation from the chat/discussion (no "user chose X", "we decided Y", plan/phase/ticket refs). If the reason isn't self-evident from the code, state the invariant, not the conversation.
 
 ```php
-// Modified by Vu Mai on 2025-04-28 - support filter by modules
-public function getFilteredData(array $modules = []): array {
-    // Implementation
+/**
+ * Added by Tung Nguyen on 2026-11-03 - employee and project ids are spliced into the detail SQL: integers only
+ * @param array<string, mixed> $params report filter
+ * @return array<string, mixed>
+ */
+public function getDetailFilter(array $params): array {
+    // Implementation — new function in Vu Mai's class
 }
-// End Vu Mai
+
+public function getFilteredData(array $modules = []): array {
+    $sql = $this->getBaseQuery();
+
+    // Modified by Tung Nguyen on 2026-11-03 - support filter by modules
+    if (!empty($modules)) {
+        $sql .= ' AND setype IN (' . generateQuestionMarks($modules) . ')';
+    }
+    // End Tung Nguyen
+
+    return $this->fetchRows($sql, $modules);
+}
 
 // Get all active social campaign ids
 public function getActiveSocialCampaignIds(): array {
