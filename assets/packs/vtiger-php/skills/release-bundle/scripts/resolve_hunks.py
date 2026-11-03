@@ -238,23 +238,42 @@ def cmd_pick(ticket, wt, out_dir):
 SYMBOL_PATTERNS = [
     (re.compile(r'undefined (?:static )?method (\S+)::(\w+)\(\)'), 'method'),
     (re.compile(r'Call to static method \w+\(\) on an unknown class ([\w\\]+)'), 'class'),
-    (re.compile(r'(?:Instantiated class|Class|unknown class|extends unknown class|implements unknown interface) ([\w\\]+)'), 'class'),
+    (re.compile(r'(?:Instantiated class|Class|unknown class|extends unknown class|implements unknown interface|has invalid type) ([\w\\]+)'), 'class'),
     (re.compile(r'undefined function ([\w\\]+)\(\)'), 'function'),
-    (re.compile(r'Method (\S+)::(\w+)\(\) invoked with'), 'signature'),
+    (re.compile(r'[Mm]ethod (\S+)::(\w+)\(\) invoked with'), 'signature'),
     (re.compile(r'Function ([\w\\]+) invoked with'), 'fsignature'),
     (re.compile(r'Constant (\w+) not found'), 'constant'),
     (re.compile(r'undefined (?:static )?property (\S+)::\$(\w+)'), 'property'),
 ]
+MEMBER_KINDS = ('method', 'signature', 'property')
 
 
 def symbol_of(msg):
-    """(kind, short name for grep, full name for display) of the symbol an error is about."""
+    """{kind, name (short), full, owner (class of a member; 'X@anonymous/...' -> X)} or {}."""
     for rx, kind in SYMBOL_PATTERNS:
         m = rx.search(msg)
         if m:
             full = m.group(m.lastindex)
-            return kind, full.split('\\')[-1], full
-    return None, None, None
+            owner = m.group(1).split('@', 1)[0] if kind in MEMBER_KINDS else ''
+            return {'kind': kind, 'name': full.split('\\')[-1], 'full': full, 'owner': owner}
+    return {}
+
+
+def class_files(wt, rev, cls):
+    """Files declaring <cls> and its parents (extends chain) at <rev>."""
+    files, seen = [], set()
+    while cls and cls not in seen and len(files) < 8:
+        seen.add(cls)
+        short = cls.split('\\')[-1]
+        hits = git('grep', '-nE', rf'^[[:space:]]*((abstract|final)[[:space:]]+)*(class|interface|trait)[[:space:]]+{short}([^A-Za-z0-9_]|$)',
+                   rev, '--', '*.php', '*.inc', cwd=wt).stdout.splitlines()
+        if not hits:
+            break
+        _, path, _, text = hits[0].split(':', 3)
+        files.append(path)
+        parent = re.search(r'extends\s+([\\\w]+)', text)
+        cls = parent.group(1) if parent else ''
+    return files
 
 
 def definition(kind, name):
@@ -262,27 +281,69 @@ def definition(kind, name):
     if kind in ('method', 'function', 'signature', 'fsignature'):
         return ['-F', f'function {name}('], f'function {name}('
     if kind == 'class':
-        return ['-E', rf'(class|interface|trait) {name}([^A-Za-z0-9_]|$)'], f'class {name}'
+        return ['-E', rf'(class|interface|trait)[[:space:]]+{name}([^A-Za-z0-9_]|$)'], f'class {name}'
     if kind == 'property':
         return ['-E', rf'(public|protected|private|var)[^;=(]*\${name}([^A-Za-z0-9_]|$)'], f'${name}'
     return ['-F', name], name
 
 
-def lookup(wt, err):
-    """Where the missing symbol lives: defined on the pick branch already, and which master commit added it."""
-    kind, name, _ = symbol_of(err['message'])
-    if not kind:
-        return {}
+def lookup(wt, sym):
+    """Definition of the symbol on the pick branch (in the owner class chain for members) and the
+    master commit that first added it there."""
+    kind, name = sym['kind'], sym['name']
+    owner = sym['owner']
+    if owner in ('object', 'mixed', 'static', 'self'):
+        return {'kind': kind, 'name': name, 'owner': owner, 'untyped': True, 'on_branch': [], 'origin': '', 'elsewhere': ''}
     grep_args, needle = definition(kind, name)
-    on_branch = git('grep', '-n', *grep_args, 'HEAD', '--', '*.php', '*.inc', cwd=wt).stdout.splitlines()
-    info = {'kind': kind, 'name': name, 'on_branch': [l.split(':', 1)[1] for l in on_branch[:3]]}
-    log = git('log', '-S', needle, '--format=%h %ad %s', '--date=short', 'origin/master', '--', '*.php', '*.inc',
-              cwd=wt).stdout.strip().splitlines()
-    info['origin'] = log[-1] if log else ''
+    anywhere = ['*.php', '*.inc']
+    branch_paths = master_paths = anywhere
+    info = {'kind': kind, 'name': name, 'owner': owner, 'elsewhere': ''}
+    if owner:
+        branch_paths = class_files(wt, 'HEAD', owner)
+        master_paths = class_files(wt, 'origin/master', owner) or anywhere
+        info['owner_missing'] = not branch_paths
+
+    def search(b_paths, m_paths):
+        hits = git('grep', '-n', *grep_args, 'HEAD', '--', *b_paths, cwd=wt).stdout.splitlines() if b_paths else []
+        log = git('log', '-S', needle, '--format=%h %ad %s', '--date=short', 'origin/master', '--', *m_paths,
+                  cwd=wt).stdout.strip().splitlines()
+        return [l.split(':', 1)[1] for l in hits[:3]], (log[-1] if log else '')
+
+    info['on_branch'], info['origin'] = search(branch_paths, master_paths)
+    if owner and not info['on_branch'] and not info['origin']:
+        # Not in the class chain on master either: PHPStan typed a base class, the method lives in a subclass
+        hits, origin = search(anywhere, anywhere)
+        info['elsewhere'] = hits[0].split(':', 1)[0] if hits else ''
+        info['origin'] = origin
     if kind in ('signature', 'fsignature'):
-        master = git('grep', '-n', *grep_args, 'origin/master', '--', '*.php', '*.inc', cwd=wt).stdout.splitlines()
+        master = git('grep', '-n', *grep_args, 'origin/master', '--', *master_paths, cwd=wt).stdout.splitlines()
         info['master_def'] = [l.split(':', 1)[1] for l in master[:3]]
+        if info['master_def']:
+            # Origin of the master signature itself (not of the first version of the function)
+            sig = info['master_def'][0].split(':', 2)[-1].strip()
+            log = git('log', '-S', sig, '--format=%h %ad %s', '--date=short', 'origin/master', '--', *master_paths,
+                      cwd=wt).stdout.strip().splitlines()
+            info['origin'] = log[-1] if log else info['origin']
     return info
+
+
+def psr4_prefixes(wt, rev):
+    """Namespace prefixes composer really loads at <rev>: present in BOTH autoload_psr4.php and the
+    $prefixDirsPsr4 map of autoload_static.php (the one autoload_real.php uses on PHP >= 5.6)."""
+    def keys(text):
+        return {p.replace('\\\\', '\\') for p in re.findall(r"^\s*'([^']+)'\s*=>", text, re.M)}
+    psr4 = keys(git('show', f'{rev}:vendor/composer/autoload_psr4.php', cwd=wt).stdout)
+    static = git('show', f'{rev}:vendor/composer/autoload_static.php', cwd=wt).stdout
+    m = re.search(r'\$prefixDirsPsr4 = array \((.*?)\n    \);', static, re.S)
+    return sorted(psr4 & keys(m.group(1)) if m else psr4)
+
+
+def unloadable_prefix(cls, branch_prefixes, master_prefixes):
+    """Master's PSR-4 prefix of a namespaced class when the branch has no prefix covering it."""
+    if '\\' not in cls or any(cls.startswith(p) for p in branch_prefixes):
+        return ''
+    hits = sorted((p for p in master_prefixes if cls.startswith(p)), key=len, reverse=True)
+    return hits[0] if hits else cls.rsplit('\\', 1)[0] + '\\'
 
 
 def cmd_report(out_dir, phpstan_path):
@@ -328,30 +389,49 @@ def cmd_report(out_dir, phpstan_path):
     out += ['', f"## PHPStan trước/sau trên `{res['branch']}` ({len(errs)} lỗi mới)", '']
     if ps.get('skipped'):
         out.append(f"PHPStan chưa chạy: {ps['skipped']}")
+    branch_pfx, master_pfx = psr4_prefixes(wt, 'HEAD'), psr4_prefixes(wt, 'origin/master')
     groups = {}
     for e in errs:
-        kind, _, full = symbol_of(e['message'])
-        key = (kind, full) if kind else (None, re.sub(r'\d+', 'N', e['message']))
-        groups.setdefault(key, []).append(e)
-    for (kind, what), items in sorted(groups.items(), key=lambda kv: -len(kv[1])):
-        mrs = sorted({file_mr[e['file']] for e in items if e['file'] in file_mr})
-        where = ', '.join(f"`{e['file']}:{e['line']}`" for e in items[:3]) + (f" … (+{len(items) - 3})" if len(items) > 3 else '')
-        head = f"- **{kind} `{what}`**" if kind else f"- {items[0]['message']}"
-        out.append(f"{head} — {len(items)} lỗi [{items[0].get('identifier', '')}] ở {where}"
-                   + (f" — do MR {' '.join(f'!{i}' for i in mrs)}" if mrs else ''))
-        if kind:
-            out.append(f"  - vd: {items[0]['message']}")
-        info = lookup(wt, items[0])
-        if not info:
+        sym = symbol_of(e['message'])
+        pfx = unloadable_prefix(sym['full'], branch_pfx, master_pfx) if sym.get('kind') == 'class' else ''
+        key = ('autoload', pfx) if pfx else ((sym['kind'], sym['owner'], sym['full']) if sym else (None, '', re.sub(r'\d+', 'N', e['message'])))
+        groups.setdefault(key, []).append((e, sym))
+    for key, items in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+        errs_k = [e for e, _ in items]
+        sym = items[0][1]
+        mrs = sorted({file_mr[e['file']] for e in errs_k if e['file'] in file_mr})
+        where = ', '.join(f"`{e['file']}:{e['line']}`" for e in errs_k[:3]) + (f" … (+{len(errs_k) - 3})" if len(errs_k) > 3 else '')
+        by = f" — do MR {' '.join(f'!{i}' for i in mrs)}" if mrs else ''
+        if key[0] == 'autoload':
+            classes = sorted({s['full'] for _, s in items})
+            out.append(f"- **namespace `{key[1]}` chưa đăng ký autoload trên branch** — {len(errs_k)} lỗi, {len(classes)} class "
+                       f"(vd `{classes[0]}`) ở {where}{by}")
+            out.append("  - class có file nhưng release không nạp được → fatal trên release. Xử lý T3 composer "
+                       "(`composer.json` autoload + `composer dump-autoload`), rồi `--check`")
+            continue
+        if not sym:
+            out.append(f"- {errs_k[0]['message']} — {len(errs_k)} lỗi [{errs_k[0].get('identifier', '')}] ở {where}{by}")
+            continue
+        label_sym = f"{sym['owner']}::{sym['full']}" if sym['owner'] else sym['full']
+        out.append(f"- **{sym['kind']} `{label_sym}`** — {len(errs_k)} lỗi [{errs_k[0].get('identifier', '')}] ở {where}{by}")
+        out.append(f"  - vd: {errs_k[0]['message']}")
+        info = lookup(wt, sym)
+        if info.get('untyped'):
+            out.append(f"  - PHPStan không biết kiểu biến (`{info['owner']}`) → kiểm tay đối tượng gọi `{info['name']}`")
             continue
         defined = info['on_branch'][0].strip()[:110] if info['on_branch'] else ''
+        if info.get('owner_missing'):
+            out.append(f"  - class `{info['owner']}` không có trên branch")
         if info['kind'] in ('signature', 'fsignature'):
             out.append(f"  - chữ ký trên branch: `{defined or '?'}` · master: `{(info.get('master_def') or ['?'])[0].strip()[:110]}`")
         elif defined and info['kind'] == 'class':
-            out.append(f"  - có định nghĩa trên branch (`{defined}`) nhưng không nạp được → kiểm autoload (composer PSR-4/classmap) hoặc require")
+            out.append(f"  - có định nghĩa trên branch (`{defined}`) nhưng không nạp được → kiểm autoload (composer classmap) hoặc require")
         elif defined:
-            out.append(f"  - có định nghĩa trên branch (`{defined}`) → kiểm tay: PHPStan có thể suy sai kiểu biến")
-        if not defined or info['kind'] in ('signature', 'fsignature'):
+            out.append(f"  - có định nghĩa trong class trên branch (`{defined}`) → kiểm tay: PHPStan có thể suy sai kiểu biến")
+        elif info['elsewhere']:
+            out.append(f"  - không có trong chuỗi class `{info['owner']}`, nhưng có ở `{info['elsewhere']}` trên branch "
+                       "→ PHPStan suy kiểu class cha; kiểm tay biến có đúng là class đó không")
+        if (not defined and not info['elsewhere']) or info['kind'] in ('signature', 'fsignature'):
             src = info['origin'].split(' ', 1)[0] if info['origin'] else ''
             own = [m['iid'] for m in res['mrs'] if src and m.get('sha')
                    and git('merge-base', '--is-ancestor', src, m['sha'], cwd=wt).returncode == 0
