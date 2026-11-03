@@ -12,6 +12,12 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Changed
+- **vtiger-php pack: review-pr merges without squash and keeps the source branch.** `merge-and-labels.md`, the SKILL rules table and `gitlab-mr-delta-rereview` first set the MR's own `squash=false remove_source_branch=false` via the API, then merge (probed on GitLab 13.6.7: `squash=false` passed only to the merge call is ignored and a squash-ticked MR still gets squashed; bare `glab mr merge` follows each MR's checkboxes). Squashing broke the second fix MR from the same ticket branch and gave the release cherry-pick a different SHA; the branch stays until the ticket is released.
+
+### Added
+- **vtiger-php pack: review-pr Step 2.7 "Release pickability".** New `scripts/release-pick-preview.sh` builds the would-be master merge in memory and replays its first-parent change onto `origin/release` with `git merge-tree` (read-only, no worktree). The review comment shows `CLEAN` / `NOISE-ONLY` / `CONFLICT (files + latest master commit touching each)` / `SKIP`; it is a warning only and never blocks the merge.
+
 ## [0.1.43] - 2026-11-02
 
 ### Changed

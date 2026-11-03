@@ -85,6 +85,7 @@ Quy tắc:
 - `[x|!|-]` PHPStan domains (nếu MR đổi `domains/`): <N lỗi / 10 lỗi có sẵn>
 - File ngoài phạm vi gate (review tay): <danh sách | "Không có">
 - Rule đã áp dụng: <danh sách rule `<name>.md` trong `$RULES_CONTEXT`>
+- `[x|!|-]` Release pickability (dự báo, KHÔNG chặn merge — `$PICK_RESULT` Step 2.7): <`CLEAN` | `NOISE-ONLY` | `CONFLICT (N file)`: liệt kê file + lý do + commit master gần nhất | `SKIP (<lý do>)`>
 
 `[-]` chỉ khi MR không đổi file PHP (`GATE: SKIP`). Gate FAIL → MR KHÔNG được merge.
 

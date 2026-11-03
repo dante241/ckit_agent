@@ -28,7 +28,7 @@ glab mr update <MR_NUMBER> --repo $REPO --label "Cần Fix"
 
 **Nếu đủ điều kiện:**
 
-1. Squash commit message = `MR: ` + tên MR gốc trên GitLab:
+1. Merge commit message = `MR: ` + tên MR gốc trên GitLab:
    - Format: `MR: <Tên MR gốc>`
    - Ví dụ:
      - Tên MR: `[Campaigns] Request #21766: Individual Zalo, Telegram`
@@ -38,14 +38,18 @@ glab mr update <MR_NUMBER> --repo $REPO --label "Cần Fix"
      - Tên MR: `[CORE] #19396: Release UI/UX CxDay 2025`
        → Commit: `MR: [CORE] #19396: Release UI/UX CxDay 2025`
 
-2. Merge the MR (squash + xoá source branch). Với `--squash`, message của squash commit đi qua `--squash-message` (`--message` là message của merge commit):
+2. Merge the MR — merge commit thường, **KHÔNG squash, KHÔNG xoá source branch** (quy trình release `docs/release-process.md` §4: MR fix sau test commit tiếp trên chính nhánh ticket; squash làm MR fix thứ 2 conflict khi vào master). GitLab lấy cài đặt riêng của từng MR (checkbox squash của author, "Delete source branch" mặc định tick khi tạo MR trên UI). Đã probe trên 13.6.7: `squash=false` truyền ở lệnh merge bị bỏ qua (MR squash=true vẫn bị squash) → PHẢI update MR trước rồi mới merge:
    ```bash
-   glab mr merge <MR_NUMBER> --repo $REPO --squash --squash-message "<MERGE_COMMIT_TITLE>" --remove-source-branch --yes
+   # (a) tắt cài đặt riêng của MR TRƯỚC — trên GitLab 13.6 tham số squash=false ở lệnh merge bị BỎ QUA
+   glab api -X PUT "projects/onlinecrm%2Fvtiger/merge_requests/<MR_NUMBER>" -F squash=false -F remove_source_branch=false
+   # (b) merge
+   glab api -X PUT "projects/onlinecrm%2Fvtiger/merge_requests/<MR_NUMBER>/merge" \
+     -F squash=false -F should_remove_source_branch=false -f merge_commit_message="<MERGE_COMMIT_TITLE>"
    ```
 
 3. Confirm merge succeeded and report URL.
 
-**BẮT BUỘC:** Luôn dùng `--remove-source-branch` khi merge để tự động xoá branch nguồn sau merge. Tránh để branch cũ tồn đọng trên remote.
+**BẮT BUỘC:** KHÔNG dùng `--squash` và KHÔNG dùng `--remove-source-branch`. Nhánh ticket được dọn khi ticket đã release (label `Đã release`), không dọn lúc merge vào master.
 
 **Nếu có lỗi CRITICAL/HIGH/PERFORMANCE:**
 - KHÔNG merge

@@ -19,7 +19,7 @@ GitLab: dùng `glab` CLI (không có GitLab MCP được mount). PMS: dùng `xd:
 | Get diff | `glab mr diff <ID>` |
 | List MRs | `glab mr list` |
 | Post comment | `glab mr comment <ID>` |
-| Merge MR | `glab mr merge <ID>` |
+| Merge MR | 2 bước API (PUT MR `squash=false remove_source_branch=false` → PUT `/merge`) — xem `references/merge-and-labels.md` bước 2; KHÔNG `glab mr merge` trần |
 | List comments | `glab mr view <ID> --comments` / `glab api .../notes` |
 
 ## Usage
@@ -117,6 +117,15 @@ Script dựng worktree tạm = `origin/<TARGET>` + merge MR (phân tích đúng 
 - File "Outside PHPStan gate" (vtlib, libraries, Webforms…) → agent Step 3 review kỹ bằng tay + probe runtime; ghi rõ trong comment.
 - Setup error (exit 2: thiếu `tools/vendor`, `utils.php8.php`, php@8.3) → DỪNG review, báo user sửa môi trường. KHÔNG post "PASS" khi gate chưa chạy.
 - Lưu nguyên output gate → `$GATE_RESULT`, truyền cho Step 3 agents và đưa vào comment (mục "Gate tự động").
+
+### Step 2.7: Release pickability (dự báo, KHÔNG chặn merge)
+
+```bash
+PICK=.omp/skills/review-pr/scripts/release-pick-preview.sh; [ -f "$PICK" ] || PICK="$HOME/.omp/skills/review-pr/scripts/release-pick-preview.sh"
+bash "$PICK" <MR_NUMBER> <TARGET_BRANCH>
+```
+
+Chỉ đọc (`git merge-tree`, không worktree/branch): dựng commit master sẽ có sau khi merge MR, rồi thử áp đúng thay đổi first-parent đó lên `origin/release` như `/release-bundle` sẽ làm. Dòng cuối: `PICK: CLEAN` | `PICK: NOISE-ONLY` | `PICK: CONFLICT (<n> files)` | `PICK: SKIP (<why>)`. Lưu output → `$PICK_RESULT`, đưa vào comment (mục "Gate tự động"). `CONFLICT` không phải finding và không chặn merge — chỉ báo sớm cho author ticket nào trên master mà release còn thiếu (gợi ý ghi `Phụ thuộc: #...` / tách helper thành MR riêng theo `docs/release-process.md` §5).
 
 ### Step 2.5: Business Logic Extraction (BẮT BUỘC)
 
@@ -372,7 +381,7 @@ Comment format chuẩn (2 template: có lỗi / clean): đọc [references/comme
 
 ### Step 6.5 → 7.5: Label, merge, update PMS
 
-Đọc [references/merge-and-labels.md](references/merge-and-labels.md) — gán label kết quả (Dev done / có lỗi), merge decision (--squash --remove-source-branch khi PASS), update PMS ticket sau merge.
+Đọc [references/merge-and-labels.md](references/merge-and-labels.md) — gán label kết quả (Dev done / có lỗi), merge decision (merge commit thường, KHÔNG squash, GIỮ source branch khi PASS), update PMS ticket sau merge.
 
 ## Severity Levels
 
@@ -420,8 +429,8 @@ Do NOT flag these:
 | **Ask user khi có blocker** | Có CRITICAL/HIGH/PERFORMANCE → trình kết quả + `ask` trước khi post |
 | **Post always** | Always post comment, even if clean (trừ khi `--dry-run`) |
 | **Merge convention** | `[Category] #Ticket: Description` format |
-| **Squash merge** | Use `--squash --yes` when merging |
-| **Remove source branch** | Always add `--remove-source-branch` khi merge — xoá branch nguồn để tránh tồn đọng |
+| **Không squash** | Merge commit thường: PUT MR `squash=false remove_source_branch=false` TRƯỚC, rồi merge API (`merge-and-labels.md` bước 2) — `glab mr merge` trần / `squash=false` chỉ ở lệnh merge đều theo cài đặt từng MR trên GitLab 13.6, CẤM squash — squash làm MR fix thứ 2 cùng nhánh conflict và lệch SHA khi cherry-pick lên release (`docs/release-process.md` §4) |
+| **Giữ source branch** | CẤM `--remove-source-branch` — nhánh ticket còn dùng cho MR fix sau test; dọn khi ticket đã `Đã release` |
 | **No auto-merge on issues** | CRITICAL/HIGH/PERFORMANCE blocks merge |
 | **Performance blocks merge** | Mọi lỗi do Agent 1 (Performance review) phát hiện đều block auto-merge, bất kể severity. PERFORMANCE là tiêu chí chặn độc lập với scale CRITICAL/HIGH/MEDIUM/LOW. |
 | **Flags override default** | `--no-merge` = post nhưng không merge; `--dry-run` = chỉ in, không làm gì |
