@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.46] - 2026-11-03
+
 ### Changed
 - **Quota and Telegram status share one line under the editor.** `gw-quota.ts` and `ckit-telegram.ts` now draw into one `belowEditor` widget `ckit-footline` (`Quota 4h ━━─── 40% · Day ━━─── 47%   ● TG @bot · ckit`; either part alone when the other has nothing to show) instead of the quota widget plus a status-bar chunk. Both redraw it after `/new` / `/resume`, which drop every widget.
 - **Quota meter drawn with `━─` instead of `▰▱`.** SF Mono has `━─` and Ghostty draws them as sprites; `▰▱` come from a fallback font (Menlo) that Ghostty rescales into a ladder.
