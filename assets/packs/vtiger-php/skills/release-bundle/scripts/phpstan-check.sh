@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # phpstan-check.sh <base> <head> <out.json> [result.json]
 #
-# Missing-symbol check for a pick run on vtiger_release: runs PHPStan (vtiger's config, WITHOUT its
-# baselines) on the PHP files changed between <base> and <head>, once on each side, and reports only
-# function/method/class "not found" errors that exist after the picks but not before. Errors that
-# already exist on the release branch cancel out, so vtiger's baselines are not needed.
+# Missing-code check for a pick run on vtiger_release: runs PHPStan (vtiger's config, WITHOUT its
+# baselines) on the PHP files changed between <base> and <head>, once on each side, and reports the
+# errors of $IDS (symbol not found, wrong argument count, parse error) that exist after the picks but
+# not before. Errors that already exist on the release branch cancel out, so vtiger's baselines are
+# not needed. A parse error makes PHPStan's result incomplete, so it is always reported, never hidden.
 #
 # vtiger_release has no tools/: both sides run in throwaway worktrees that borrow vtiger's
 # tools/phpstan + tools/vendor and the decoded ionCube sources (include/utils/*.php8.php).
@@ -22,7 +23,7 @@ HEAD_REV="$2"
 OUT="$3"
 RESULT="${4:-}"
 VT="$VTIGER_ROOT"
-IDS='^(function|method|staticMethod|class|classConstant)\.notFound$'
+IDS='^((function|method|staticMethod|class|classConstant|constant|property|staticProperty)\.notFound|arguments\.count|phpstan\.parse)$'
 
 skip() {
     jq -n --arg why "$1" '{errors: [], skipped: $why}' > "$OUT"
@@ -108,8 +109,9 @@ jq -n --slurpfile b /tmp/release-phpstan-base.json --slurpfile h /tmp/release-ph
 def errs(doc): [doc.files | to_entries[] | (.key | sub("^.*?/release-phpstan\\.[^/]+/"; "")) as $f
     | .value.messages[] | select((.identifier // "") | test($ids)) | {file: $f, line, message, identifier}];
 (errs($b[0]) | map("\(.file)|\(.message)")) as $before
-| {errors: [errs($h[0])[] | select(("\(.file)|\(.message)") as $k | $before | index($k) | not)
-    | . + {mr: (.file as $f | ([$map[] | select(.files | index($f)) | .iid] | last))}]}' > "$OUT"
+| {errors: ([errs($h[0])[] | select(("\(.file)|\(.message)") as $k | $before | index($k) | not)]
+        + [($h[0].errors // [])[] | {file: "(phpstan)", line: 0, message: ., identifier: "phpstan.internal"}])
+    | map(. + {mr: (.file as $f | ([$map[] | select(.files | index($f)) | .iid] | last))})}' > "$OUT"
 
 N=$(jq '.errors | length' "$OUT")
-echo "PHPStan: $N lỗi thiếu function/method/class mới sau khi pick → $OUT"
+echo "PHPStan: $N lỗi mới sau khi pick (thiếu symbol / sai số tham số / lỗi cú pháp) → $OUT"

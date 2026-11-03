@@ -12,8 +12,12 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Added
+- **vtiger-php `/release-bundle`: `resolve.sh` lets the release person resolve a conflicted ticket hunk by hunk.** It builds `pick/<ticket>` in its own worktree from the month branch, cherry-picks the ticket's MRs in merge order, and for each conflicted file reapplies only the MR's own hunks onto the release copy. A hunk that fits with full context is kept (T1). One that fits only with `-C1` is kept if it lands in the same function/selector/array as on master, and listed for review (T2). The rest are saved as `.rej` with the reason (T3); so are files missing on release and `composer.lock`/`vendor/`. Every MR keeps its `-x` marker commit, so hand fixes go in as `--fixup`. The report runs PHPStan before/after and groups errors by symbol: already defined on the branch (autoload or type inference) or the master commit that added it. `--check` reruns the checks; `--merge` merges `--no-ff` into the month branch and labels the MRs `Đã release` + milestone. It refuses if the branch changed since the last check or new PHPStan errors remain (unless `--force`).
+
 ### Fixed
 - **Windows: project packs refresh on `ckit up` too.** Windows has no unprivileged symlinks, so a project pack stays a copy there; it is now recorded like a linked one, so `ckit .` stops re-copying it on every launch, and `ckit up` / `harness init` re-copy every recorded project from the refreshed store (locally edited files kept unless `--force`). The copied entries and `.omp/pack-<name>.lock` go into the clone's `.git/info/exclude` on every platform.
+- **vtiger-php `/release-bundle` PHPStan check missed broken code.** A parse error made PHPStan's result incomplete, and the check reported 0 new errors. Wrong argument counts and missing constants/properties were not reported at all. Both are reported now.
 - **vtiger-php `/release-bundle` aborted "glab chưa auth" from the shared pack store.** Its scripts run from their own directory, which is now outside any git repo, so `glab` checked every configured host (an unauthenticated `gitlab.com` failed the auth check) and `gitlab-update.sh`'s `glab api` calls would have gone to the wrong host. `lib.sh` now exports `GITLAB_HOST` taken from the vtiger `origin` remote (an existing `GITLAB_HOST` wins).
 
 ## [0.1.47] - 2026-11-03

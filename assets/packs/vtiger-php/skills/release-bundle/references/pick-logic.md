@@ -74,10 +74,26 @@ Dừng ở conflict thật đầu tiên, giữ các MR đã pick của ticket tr
 
 ## §6. PHPStan trước/sau (`phpstan-check.sh <base> <head> <out> [result]`)
 
-`vtiger_release` không có `tools/` và baseline của vtiger không áp được lên release. Script tạo 2 worktree tạm (`base_sha`, `head_sha`), mượn `vtiger/tools/phpstan` + `tools/vendor` + file ionCube đã decode (`include/utils/*.php8.php`), dùng config vtiger **bỏ baseline**, phân tích các file PHP đổi trong vùng PHPStan của vtiger. Chỉ giữ `function|method|staticMethod|class|classConstant.notFound` xuất hiện ở bản sau mà bản trước không có (khoá = file + message, không theo số dòng) → lỗi có sẵn trên release tự triệt tiêu. Thiếu `tools/vendor` hay PHPStan lỗi → ghi `skipped`, không chặn run.
+`vtiger_release` không có `tools/` và baseline của vtiger không áp được lên release. Script tạo 2 worktree tạm (`base_sha`, `head_sha`), mượn `vtiger/tools/phpstan` + `tools/vendor` + file ionCube đã decode (`include/utils/*.php8.php`), dùng config vtiger **bỏ baseline**, phân tích các file PHP đổi trong vùng PHPStan của vtiger. Giữ các lỗi `*.notFound` (function/method/staticMethod/class/classConstant/constant/property/staticProperty), `arguments.count` và `phpstan.parse` xuất hiện ở bản sau mà bản trước không có (khoá = file + message, không theo số dòng) → lỗi có sẵn trên release tự triệt tiêu. Lỗi cú pháp làm kết quả PHPStan không đầy đủ nên luôn được báo (trước đây bị nuốt thành 0 lỗi); lỗi chung của PHPStan ghi `phpstan.internal`. Thiếu `tools/vendor` hay PHPStan lỗi → ghi `skipped`, không chặn run.
 
-Không thấy lời gọi động kiểu vtiger (`getInstance($name)`, `$obj->$method()`, tên action/view) — test trên môi trường release vẫn bắt buộc.
+Không thấy lời gọi động kiểu vtiger (`getInstance($name)`, `$obj->$method()`, tên action/view) và không kiểm được số tham số khi PHPStan không suy ra kiểu biến (vd `Vtiger_Cache_Connector_Redis::getInstance()->flushPicklistData(...)`) — test trên môi trường release vẫn bắt buộc.
 
 ## §7. Report (`report.sh`)
 
 `bundle-report-<today>.md` (hoặc `preview-<today>.md`): ticket pick được (ghi chú lệch/file không phát hành), ticket conflict + hướng dẫn, ticket chờ dev, **danh sách test trên release**: bắt buộc test lại (ticket có `mismatch > 0`), sửa trước khi test (lỗi PHPStan mới, kèm MR gây ra), smoke test (phần còn lại).
+
+## §8. Resolve theo hunk (`resolve.sh`, `resolve_hunks.py`)
+
+Dành cho người release xử lý ticket conflict, mỗi lần một ticket, theo thứ tự `resolve.sh` (không đối số) liệt kê từ `bundle-result-*.json` mới nhất.
+
+1. `resolve.sh <ticket>` tạo `pick/<ticket>` từ branch tháng (hoặc `--base <ref>`, vd `pick/<ticket trước>` chưa merge) trong worktree `<cha của vtiger>/vtiger-pick-<ticket>`, bật `merge.conflictStyle diff3`.
+2. MR của ticket lấy từ `ready[]` của classified, xếp theo `merged_at`. MR đã có marker trong `origin/release..HEAD` → bỏ qua. Mỗi MR: `cherry-pick -x --no-commit -Xignore-all-space` (`-m 1` nếu là merge commit). File không conflict giữ kết quả merge 3 bên của git.
+3. File conflict:
+   - path không phát hành → bản release;
+   - `DU` (release không có file) → bỏ, T3 kèm patch cả file;
+   - `UD` (MR xoá file release còn) → giữ release, T3;
+   - `composer.lock` / `vendor/` → giữ release, T3 "chạy lại composer";
+   - còn lại: lấy bản release, áp từng hunk của `git diff <sha>^1 <sha> -- <file>`: T1 `git apply` đủ ngữ cảnh; T2 `-C1` và header `@@` của hunk vừa áp (diff worktree↔index) chứa đúng header của hunk master; T3 phần còn lại → hoàn file, ghi `resolve-<ticket>/<iid>/<file>.rej` + lý do theo dòng `-` của hunk so với file release (`lệch ngữ cảnh` = mọi dòng `-` có trên release; `sửa code release chưa có` = không dòng nào có; `chỉ thêm, mất chỗ neo` = hunk không có dòng `-`; `một phần`).
+4. Mỗi MR được commit với message gốc + `(cherry picked from commit <sha>)`, kể cả khi chỉ có T3 (commit rỗng) → sửa tay đi vào `git commit --fixup` rồi `rebase -i --autosquash`, nên `verify-resolves.sh` so được patch của MR.
+5. PHPStan trước/sau (§6) trên `base_sha..HEAD` của `pick/<ticket>`; report gom lỗi theo symbol: định nghĩa đã có trên branch (class → kiểm autoload; method → PHPStan suy sai kiểu), hoặc commit master đầu tiên chứa định nghĩa (`git log -S`) — nếu commit đó thuộc chính một MR của ticket thì code nằm trong hunk T3 chưa áp.
+6. `--check` chạy lại bước 5 (worktree phải sạch). `--merge`: chặn khi `pick/<ticket>` đổi sau lần kiểm tra cuối, hoặc còn lỗi PHPStan mới (trừ `--force`); `merge --no-ff` vào branch tháng (TARGET phải đứng ở branch tháng, sạch), gắn `Đã release` + milestone, gỡ `Chờ release` / `Conflict cherry-pick` cho mọi MR của ticket (`--no-gitlab` để bỏ), gỡ worktree, giữ branch.

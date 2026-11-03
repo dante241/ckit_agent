@@ -1,7 +1,7 @@
 ---
 name: release-bundle
 disable-model-invocation: true
-description: "Cherry-pick các ticket ready (từ /release-check) lên branch release-core-MM.YYYY tạo từ branch `release` của onlinecrm/vtiger (layout single — 1 repo), theo nhóm ticket (cả ticket hoặc không gì). Tự xử lý conflict ở file không phát hành, so sánh code master↔release, PHPStan kiểm tra thiếu function/method/class, ticket conflict → bàn giao cho dev (--handoff). Gắn `Đã release` + milestone. Không push branch release."
+description: "Cherry-pick các ticket ready (từ /release-check) lên branch release-core-MM.YYYY tạo từ branch `release` của onlinecrm/vtiger (layout single — 1 repo), theo nhóm ticket (cả ticket hoặc không gì). Tự xử lý conflict ở file không phát hành, so sánh code master↔release, PHPStan kiểm tra thiếu function/method/class/sai số tham số. Ticket conflict: người release resolve theo hunk bằng resolve.sh (chỉ mang dòng MR đổi, T1/T2/T3), hoặc bàn giao dev (--handoff). Gắn `Đã release` + milestone. Không push branch release."
 allowed-tools: Bash(bash .omp/skills/release-bundle/scripts/*), Bash(git *), Bash(jq*), Bash(cat *), Bash(glab *), Read, Write, Ask
 ---
 
@@ -21,6 +21,10 @@ bash $S/run.sh skip 235,242                  # bỏ ticket của các MR này (v
 bash $S/run.sh --no-gitlab                   # pick local, chưa đổi label (chạy ./gitlab-update.sh sau)
 bash $S/run.sh --no-phpstan                  # bỏ bước PHPStan
 bash $S/run.sh --pause-on-conflict           # legacy: dừng ở conflict, resolve tay rồi ./resume.sh
+bash $S/resolve.sh                           # liệt kê ticket conflict theo thứ tự pick + trạng thái
+bash $S/resolve.sh 26403                     # người release resolve ticket theo hunk trên pick/26403
+bash $S/resolve.sh 26403 --check             # sau khi sửa tay trên pick/26403: PHPStan + report lại
+bash $S/resolve.sh 26403 --merge             # merge --no-ff vào branch tháng + label Đã release
 bash $S/verify-resolves.sh              # SAU khi mọi MR pick/* merge: từng pick trên branch tháng
                                         # so patch-vs-patch với commit master gốc (qua marker -x);
                                         # lệch = code mất khi resolve tay → exit 1, liệt kê dòng MẤT/THÊM
@@ -50,6 +54,20 @@ bash $S/verify-resolves.sh              # SAU khi mọi MR pick/* merge: từng 
 | 2 | `phpstan-check.sh` | PHPStan trước/sau trên worktree tạm, chỉ lỗi thiếu function/method/class **mới** |
 | 3 | `gitlab-update.sh` | Milestone, label `Đã release` / `Conflict cherry-pick` (`references/gitlab-update.md`) |
 | 4 | `report.sh` | `bundle-report-<today>.md` + danh sách test trên release |
+| Sau run | `resolve.sh <ticket>` | Người release resolve từng ticket conflict theo hunk (mục dưới) |
+
+### Resolve theo hunk (`resolve.sh`, `resolve_hunks.py`)
+
+Chỉ mang **dòng MR đổi** (`git diff <sha>^1 <sha>`) sang release. Làm từng ticket theo thứ tự `resolve.sh` liệt kê, trên `pick/<ticket>` (worktree `<cha>/vtiger-pick-<ticket>`, tạo từ branch tháng hoặc `--base <ref>`). MR pick sạch thì giữ nguyên. File conflict: lấy lại bản release rồi áp từng hunk của MR:
+
+| Tầng | Điều kiện | Xử lý |
+|---|---|---|
+| T1 | Áp được với đủ ngữ cảnh | Giữ |
+| T2 | Chỉ áp được với `-C1` và rơi vào **cùng scope** (header `@@` function/selector/mảng) như trên master | Giữ, report liệt kê để đọc lại |
+| T3 | Còn lại (không khớp, hoặc `-C1` rơi vào scope khác), file release không có, `composer.lock`/`vendor/`, file nhị phân, MR xoá file | Không áp; hunk lưu `.rej` + lý do (lệch ngữ cảnh / chỉ thêm mất chỗ neo / sửa code release chưa có / một phần) |
+
+Mỗi MR luôn có commit mang marker `-x` (kể cả khi chỉ có T3): sửa tay T3 bằng `git commit --fixup <commit>` rồi autosquash. Sau đó PHPStan trước/sau trên `pick/<ticket>`, report gom lỗi theo symbol, chỉ ra symbol đã có trên branch (suy sai kiểu / autoload) hay commit master đã thêm nó (code thiếu cần mang sang — thuộc ticket chưa release hoặc không mang được thì hỏi). `--merge` chặn khi branch đổi sau lần `--check` cuối hoặc còn lỗi PHPStan mới (trừ `--force`). Report: `resolve-<ticket>/report.md`.
+
 
 ### Kết quả từng ticket
 

@@ -36,6 +36,8 @@ def tickets: .picked | group_by(.ticket);
    (if (.handoff_mr // "") != "" then "MR bàn giao: \(.handoff_mr)" else empty end),
    "",
    (.instructions // "Conflict ở MR \(mr(.iid)): \(.files | join(", "))"),
+   "",
+   "Người release resolve theo hunk: `resolve.sh \(.ticket)` (report `resolve-\(.ticket)/report.md`).",
    "")
  end),
 "",
@@ -49,7 +51,7 @@ def tickets: .picked | group_by(.ticket);
 "",
 (if ($mm | length) == 0 then "- _Không có_" else ($mm[] | "- #\(.) — xem dòng lệch trong `compare-*/<iid>.diff`") end),
 "",
-"**Sửa trước khi test** (PHPStan: lời gọi tới function/method/class không có trên release):",
+"**Sửa trước khi test** (PHPStan: thiếu function/method/class, sai số tham số, lỗi cú pháp so với release):",
 "",
 (if ($errs | length) == 0 then "- _Không có_" + (if $ps[0].skipped then " (PHPStan chưa chạy: \($ps[0].skipped))" else "" end)
  else ($errs[] | "- `\(.file):\(.line)` \(.message)" + (if .mr then " — do MR !\(.mr)" else "" end)) end),
