@@ -176,7 +176,7 @@ pub(crate) fn add_skill(
             let root = project_root.as_ref().ok_or_else(|| {
                 anyhow!("`pack:{}` must be run inside a project (needs a root for .omp/skills + .omp/rules)", name)
             })?;
-            install_pack(root, &name, force)?;
+            install_pack(&env.home, root, &name, force)?;
             let manifest = root.join("agents/skills.toml");
             let mut reg = discover::read_registry(&manifest);
             reg.insert(name.clone(), discover::SkillEntry {
@@ -187,7 +187,7 @@ pub(crate) fn add_skill(
             discover::write_registry(&manifest, &reg)?;
             inject_agents_md(&env.home, root)?;
             ui::info(&crate::brand::render(&format!(
-                "pack installed; refresh later with `8sync skill update {}`. omp picks up .omp/skills + .omp/rules next `omp --continue`.",
+                "pack linked from the shared store; `8sync up` refreshes it in every linked project (`8sync skill update {}` on demand). New omp sessions pick it up.",
                 name
             )));
             return Ok(());

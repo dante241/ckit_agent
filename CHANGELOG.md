@@ -12,6 +12,11 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Changed
+- **Project packs are symlinks into one shared store.** `skill add pack:<name>` / `skill update <name>` write the pack once to `~/.config/ckit/packs/<name>/` and make every pack entry in the project's `.omp/` (`RULES.md`, `rules/<f>`, `commands/<f>`, `agents/<f>`, `skills/<dir>`) a symlink into it. The project is recorded in `~/.config/ckit/packs/<name>.projects`; `ckit up` (via `harness global`), `harness` and `harness up` refresh the store once and re-link every recorded project, so a release reaches every vtiger repo without running `skill update` in each. New pack entries get a link, retired ones lose theirs; a recorded project that is gone or no longer lists the pack in `agents/skills.toml` is dropped. `harness` / `harness up` also link a fresh clone that lists the pack.
+- Converting an existing copy-mode install: a file/dir still equal to the store copy or to its `.omp/pack-<name>.lock` hash becomes a link; a locally edited one is kept as a real file and listed. `--force` moves it to `.omp/removed/pack-<name>-<ts>/` and links. Edits made through a link land in the store and are kept by later refreshes unless `--force`. The project lock is no longer written.
+- **Attribution for new or rewritten functions goes in the docblock** (vtiger-php pack: `php-conventions`, `javascript-rules`, `fix`, `review-pr`). A plain `Added by` / `Modified by <Name> on <DATE> - <REASON>` line opens the function's docblock, with no `// End`; a few changed lines inside someone else's function keep `// Modified by …` + `// End <Name>`.
+
 ## [0.1.46] - 2026-11-03
 
 ### Changed

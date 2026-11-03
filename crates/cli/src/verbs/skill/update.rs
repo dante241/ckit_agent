@@ -170,7 +170,7 @@ pub(crate) fn update_skills(
             ui::warn(&format!("pack `{}` is project-local — run inside the project to update", pname));
             continue;
         };
-        match install_pack(root, pname, force) {
+        match install_pack(&env.home, root, pname, force) {
             Ok(_) => {
                 matched = true;
                 updated += 1;

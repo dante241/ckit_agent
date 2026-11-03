@@ -49,6 +49,7 @@ pub(crate) fn harness_init(env: &env_detect::Env, _force: bool) -> Result<()> {
     p.step("deploy bundled skills (codegraph · karpathy · ponytail · assp · impeccable · taste · …)");
     deploy::install_bundled_global(env)?;
     crate::verbs::skill::pack::refresh_global_packs(&env.home, &crate::brand::config_dir(&env.home).join("skills.toml"));
+    crate::verbs::skill::pack::refresh_linked_packs(&env.home);
 
     // 3. codegraph binary (auto curl installer if missing).
     p.step("ensure codegraph binary");
@@ -93,9 +94,10 @@ pub(crate) fn harness_init(env: &env_detect::Env, _force: bool) -> Result<()> {
             deploy::ensure_skill_layout(&d);
         }
 
-        // Domain skill+rule packs (e.g. vtiger-php) install and update only via
-        // their own verb; harness just points at the ones this project lacks.
+        // Domain skill+rule packs (e.g. vtiger-php): link the ones agents/skills.toml
+        // lists (a fresh clone has the row but no .omp/), point at the rest.
         p.step("domain packs (installed via `skill add pack:<name>`)");
+        crate::verbs::skill::pack::link_listed_packs(&env.home, &root);
         for pk in discover_packs() {
             if !is_pack_installed(&root, &pk.name) {
                 let cmd = crate::brand::render(&format!("8sync skill add pack:{}", pk.name)).into_owned();

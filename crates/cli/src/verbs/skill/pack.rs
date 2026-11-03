@@ -3,9 +3,11 @@
 //! A pack bundles a project-type's SKILL.md set (e.g. VTiger/PHP: `action`,
 //! `field`, `database`, …) together with its `.omp/rules/*.md` convention
 //! files, so a new project of that type gets both in one `skill add pack:<name>`.
-//! Project-local by default; `--global` installs it into `~/.omp` for machines
-//! that work on that project type almost exclusively (its always-on rules then
-//! load in every omp session, in every repo).
+//! Project-local by default: every pack file lives once in a shared store
+//! (`~/.config/<ns>/packs/<name>/`) and each project's `.omp/` holds symlinks
+//! into it, so `8sync up` refreshes every linked project at once. `--global`
+//! installs a copy into `~/.omp` for machines that work on that project type
+//! almost exclusively (its always-on rules then load in every omp session).
 use anyhow::Result;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -69,6 +71,8 @@ pub(crate) enum PackScope<'a> {
     Project(&'a Path),
     /// `~/.omp/skills/<sub>` + `~/.omp/agent/{rules,commands,agents,RULES.md}`
     Global(&'a Path),
+    /// Shared store `<packs dir>/<name>/`, laid out like the pack root.
+    Store(&'a Path),
 }
 
 impl PackScope<'_> {
@@ -80,6 +84,7 @@ impl PackScope<'_> {
                 Some(skill) => home.join(".omp/skills").join(skill),
                 None => home.join(".omp/agent").join(rel),
             },
+            PackScope::Store(dir) => dir.join(rel),
         }
     }
 
@@ -87,21 +92,327 @@ impl PackScope<'_> {
         match self {
             PackScope::Project(root) => root.join(".omp").join(format!("pack-{}.lock", name)),
             PackScope::Global(home) => home.join(".omp/agent").join(format!("pack-{}.lock", name)),
+            PackScope::Store(dir) => dir.with_file_name(format!("{}.lock", name)),
         }
     }
 }
 
-/// Deploy pack `name` into the project's `.omp/`: skills (`skills/<sub>`), rule
-/// files (`rules/`), slash commands (`commands/`), agents (`agents/`) and the always-apply `RULES.md`.
-/// Domain convention (PHP/VTiger, …) is scoped to a matching project by default.
+/// Install pack `name` into a project: refresh the shared store, then make every
+/// top-level pack entry under `<root>/.omp/` (`RULES.md`, `rules/<f>`,
+/// `commands/<f>`, `agents/<f>`, `skills/<dir>`) a symlink into it, and record
+/// the project so `8sync up` re-links it after a release.
 ///
-/// `.omp` is usually untracked, so a local edit must never be lost silently:
-/// `.omp/pack-<name>.lock` records the hash of every file as installed. A file
-/// is overwritten only while it still has that hash; an edited (or never
-/// recorded) file is kept unless `force`, which saves it as `<file>.bak` first.
-/// Errors only if the pack doesn't exist under `assets/packs/`.
-pub(crate) fn install_pack(root: &Path, name: &str, force: bool) -> Result<()> {
-    install_pack_in(&PackScope::Project(root), name, force)
+/// `.omp` is usually untracked, so a local edit must never be lost silently: a
+/// real file/dir (copy-mode install) is replaced only while every file in it
+/// equals the store copy or still has the hash in `.omp/pack-<name>.lock`; an
+/// edited one is kept unless `force`, which moves it to `.omp/removed/` first.
+/// Edits made through a link land in the store and are kept by later refreshes
+/// unless `force`. Errors only if the pack doesn't exist under `assets/packs/`.
+pub(crate) fn install_pack(home: &Path, root: &Path, name: &str, force: bool) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let store = refresh_store(home, name, force)?;
+        link_pack(root, &store, name, force)?;
+        record_project(home, name, root)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = home;
+        install_pack_in(&PackScope::Project(root), name, force)
+    }
+}
+
+/// Link every pack this project lists in `agents/skills.toml` that is not linked
+/// yet: a fresh clone (row, no `.omp/`) or a copy-mode install. Cheap no-op once
+/// the project is recorded and every entry is present, so `8sync .` can run it
+/// on each launch. Local edits are kept.
+pub(crate) fn link_listed_packs(home: &Path, root: &Path) {
+    for pk in discover_packs() {
+        if !is_pack_installed(root, &pk.name) || is_linked(home, root, &pk.name) {
+            continue;
+        }
+        if let Err(e) = install_pack(home, root, &pk.name, false) {
+            ui::warn(&format!("pack `{}` install failed: {}", pk.name, e));
+        }
+    }
+}
+
+/// Recorded for `name`, every pack entry present under `.omp/`, every link resolving.
+fn is_linked(home: &Path, root: &Path, name: &str) -> bool {
+    let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    if !read_projects(home, name).contains(&canonical) {
+        return false;
+    }
+    let omp = root.join(".omp");
+    pack_entries(name).iter().all(|e| {
+        let path = omp.join(e);
+        std::fs::symlink_metadata(&path).is_ok_and(|m| !m.file_type().is_symlink() || path.exists())
+    })
+}
+
+/// `8sync up` / harness passes: refresh each linked pack's store once, then
+/// re-link every recorded project (new pack entries get a link, removed ones
+/// lose theirs). A recorded project that is gone or no longer lists the pack in
+/// `agents/skills.toml` is dropped from the record.
+pub(crate) fn refresh_linked_packs(home: &Path) {
+    #[cfg(unix)]
+    for pk in discover_packs() {
+        let recorded = read_projects(home, &pk.name);
+        if recorded.is_empty() {
+            continue;
+        }
+        let live: Vec<PathBuf> = recorded.into_iter().filter(|r| is_pack_installed(r, &pk.name)).collect();
+        if !live.is_empty() {
+            match refresh_store(home, &pk.name, false) {
+                Ok(store) => {
+                    for root in &live {
+                        if let Err(e) = link_pack(root, &store, &pk.name, false) {
+                            ui::warn(&format!("pack `{}` link failed in {}: {}", pk.name, root.display(), e));
+                        }
+                    }
+                }
+                Err(e) => ui::warn(&format!("pack `{}` store refresh failed: {}", pk.name, e)),
+            }
+        }
+        if let Err(e) = write_projects(home, &pk.name, &live) {
+            ui::warn(&format!("pack `{}` project record not saved: {}", pk.name, e));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = home;
+}
+
+fn store_dir(home: &Path, name: &str) -> PathBuf {
+    crate::brand::config_dir(home).join("packs").join(name)
+}
+
+fn projects_file(home: &Path, name: &str) -> PathBuf {
+    crate::brand::config_dir(home).join("packs").join(format!("{}.projects", name))
+}
+
+fn read_projects(home: &Path, name: &str) -> Vec<PathBuf> {
+    std::fs::read_to_string(projects_file(home, name))
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(PathBuf::from)
+        .collect()
+}
+
+fn write_projects(home: &Path, name: &str, roots: &[PathBuf]) -> Result<()> {
+    let path = projects_file(home, name);
+    if let Some(p) = path.parent() {
+        std::fs::create_dir_all(p)?;
+    }
+    let body: String = roots.iter().map(|r| format!("{}\n", r.display())).collect();
+    std::fs::write(path, body)?;
+    Ok(())
+}
+
+fn record_project(home: &Path, name: &str, root: &Path) -> Result<()> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let mut roots = read_projects(home, name);
+    if !roots.contains(&root) {
+        roots.push(root);
+        roots.sort();
+    }
+    write_projects(home, name, &roots)
+}
+
+/// Pack files an install deploys, relative to the pack root.
+fn pack_rels(name: &str) -> Vec<String> {
+    let prefix = format!("packs/{}/", name);
+    assets::iter_under(&prefix)
+        .iter()
+        .filter_map(|p| p.strip_prefix(&prefix).map(String::from))
+        .filter(|rel| rel == "RULES.md" || ["skills/", "rules/", "commands/", "agents/"].iter().any(|d| rel.starts_with(d)))
+        .collect()
+}
+
+/// Top-level entries a project links: `RULES.md`, `<kind>/<file>` or `skills/<dir>`.
+fn pack_entries(name: &str) -> Vec<String> {
+    let mut entries: Vec<String> = pack_rels(name)
+        .iter()
+        .map(|rel| {
+            let mut parts = rel.splitn(3, '/');
+            match (parts.next(), parts.next()) {
+                (Some(kind), Some(item)) => format!("{}/{}", kind, item),
+                _ => rel.clone(),
+            }
+        })
+        .collect();
+    entries.sort();
+    entries.dedup();
+    entries
+}
+
+/// Refresh the shared store (store edits kept unless `force`), then delete store
+/// files the pack no longer ships while they are still unedited.
+fn refresh_store(home: &Path, name: &str, force: bool) -> Result<PathBuf> {
+    let dir = store_dir(home, name);
+    let scope = PackScope::Store(&dir);
+    install_pack_in(&scope, name, force)?;
+    let shipped: std::collections::BTreeSet<String> = pack_rels(name).into_iter().collect();
+    let lock_path = scope.lock_path(name);
+    let mut lock = read_lock(&lock_path);
+    lock.retain(|rel, hash| {
+        if shipped.contains(rel) {
+            return true;
+        }
+        let target = dir.join(rel);
+        match std::fs::read_to_string(&target) {
+            Ok(cur) if fnv1a(&cur) == *hash => {
+                let _ = std::fs::remove_file(&target);
+                let mut parent = target.parent();
+                while let Some(p) = parent {
+                    if p == dir || std::fs::remove_dir(p).is_err() {
+                        break;
+                    }
+                    parent = p.parent();
+                }
+                false
+            }
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    });
+    write_lock(&lock_path, &lock)?;
+    Ok(dir)
+}
+
+/// Point every pack entry under `<root>/.omp/` at the store; drop links whose
+/// store target is gone.
+#[cfg(unix)]
+fn link_pack(root: &Path, store: &Path, name: &str, force: bool) -> Result<()> {
+    let omp = root.join(".omp");
+    let lock_path = PackScope::Project(root).lock_path(name);
+    let lock = read_lock(&lock_path);
+    let backup_dir = omp.join("removed").join(format!(
+        "pack-{}-{}",
+        name,
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    ));
+    let (mut linked, mut unchanged) = (0usize, 0usize);
+    let (mut kept, mut moved): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+    for entry in pack_entries(name) {
+        let src = store.join(&entry);
+        let dst = omp.join(&entry);
+        match std::fs::symlink_metadata(&dst) {
+            Ok(m) if m.file_type().is_symlink() => {
+                if std::fs::read_link(&dst).is_ok_and(|t| t == src) {
+                    unchanged += 1;
+                    continue;
+                }
+                std::fs::remove_file(&dst)?;
+            }
+            Ok(m) => {
+                if !is_pristine(&dst, &src, &entry, &lock) {
+                    if !force {
+                        kept.push(entry);
+                        continue;
+                    }
+                    let backup = backup_dir.join(&entry);
+                    if let Some(p) = backup.parent() {
+                        std::fs::create_dir_all(p)?;
+                    }
+                    std::fs::rename(&dst, &backup)?;
+                    moved.push(entry.clone());
+                } else if m.is_dir() {
+                    std::fs::remove_dir_all(&dst)?;
+                } else {
+                    std::fs::remove_file(&dst)?;
+                }
+            }
+            Err(_) => {}
+        }
+        if let Some(p) = dst.parent() {
+            std::fs::create_dir_all(p)?;
+        }
+        std::os::unix::fs::symlink(&src, &dst)?;
+        linked += 1;
+    }
+    let stale = remove_stale_links(&omp, store);
+    let _ = std::fs::remove_file(&lock_path);
+
+    ui::ok(&format!(
+        "pack `{}` → {} link(s) created, {} unchanged, {} stale removed → {}",
+        name, linked, unchanged, stale, omp.display()
+    ));
+    if !moved.is_empty() {
+        ui::warn(&format!("{} locally edited entr(ies) moved to {}:", moved.len(), backup_dir.display()));
+        for entry in &moved {
+            ui::info(&format!("  {}", entry));
+        }
+    }
+    if !kept.is_empty() {
+        ui::warn(&format!(
+            "{} locally edited entr(ies) kept as real files, not linked (rerun with --force to move them to .omp/removed/ and link):",
+            kept.len()
+        ));
+        for entry in &kept {
+            ui::info(&format!("  {}", omp.join(entry).display()));
+        }
+    }
+    Ok(())
+}
+
+/// A real file/dir may be replaced by a link when every file in it equals the
+/// store copy or still has the hash recorded at copy-install time.
+#[cfg(unix)]
+fn is_pristine(dst: &Path, src: &Path, entry: &str, lock: &BTreeMap<String, String>) -> bool {
+    let file_ok = |path: &Path, store_copy: &Path, rel: &str| -> bool {
+        let Ok(cur) = std::fs::read_to_string(path) else {
+            return false;
+        };
+        std::fs::read_to_string(store_copy).is_ok_and(|s| s == cur) || lock.get(rel).is_some_and(|h| *h == fnv1a(&cur))
+    };
+    if !dst.is_dir() {
+        return file_ok(dst, src, entry);
+    }
+    let mut stack = vec![dst.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(read) = std::fs::read_dir(&dir) else {
+            return false;
+        };
+        for item in read.flatten() {
+            let path = item.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if item.file_name() == ".DS_Store" {
+                continue;
+            }
+            let Ok(sub) = path.strip_prefix(dst) else {
+                return false;
+            };
+            if !file_ok(&path, &src.join(sub), &format!("{}/{}", entry, sub.to_string_lossy())) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Remove links into `store` whose target no longer exists. Returns the count.
+#[cfg(unix)]
+fn remove_stale_links(omp: &Path, store: &Path) -> usize {
+    let mut removed = 0usize;
+    for dir in [omp.to_path_buf(), omp.join("rules"), omp.join("commands"), omp.join("agents"), omp.join("skills")] {
+        let Ok(read) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for item in read.flatten() {
+            let path = item.path();
+            let Ok(target) = std::fs::read_link(&path) else {
+                continue;
+            };
+            if target.starts_with(store) && !target.exists() && std::fs::remove_file(&path).is_ok() {
+                removed += 1;
+            }
+        }
+    }
+    removed
 }
 
 /// Registry `src` prefix of a `--global` pack. Distinct from the project-manifest
@@ -181,25 +492,20 @@ fn prune_empty_parents(path: &Path, home: &Path) {
 }
 
 fn install_pack_in(scope: &PackScope, name: &str, force: bool) -> Result<()> {
-    let pack_prefix = format!("packs/{}/", name);
-    let files: Vec<String> = assets::iter_under(&pack_prefix)
-        .into_iter()
-        .filter(|p| {
-            let rel = &p[pack_prefix.len()..];
-            rel == "RULES.md" || ["skills/", "rules/", "commands/", "agents/"].iter().any(|d| rel.starts_with(d))
-        })
-        .collect();
+    let files = pack_rels(name);
     if files.is_empty() {
         anyhow::bail!("no bundled pack `{}` (assets/packs/{}/ not found)", name, name);
     }
 
     let lock_path = scope.lock_path(name);
+    if let Some(p) = lock_path.parent() {
+        std::fs::create_dir_all(p)?;
+    }
     let mut lock = read_lock(&lock_path);
     let (mut written, mut unchanged) = (0usize, 0usize);
     let mut kept: Vec<String> = Vec::new();
-    for asset in &files {
-        let rel = &asset[pack_prefix.len()..];
-        let Some(body) = assets::read(asset) else {
+    for rel in &files {
+        let Some(body) = assets::read(&format!("packs/{}/{}", name, rel)) else {
             continue;
         };
         let body = if rel.ends_with(".md") || rel.ends_with(".txt") { crate::brand::render(&body).into_owned() } else { body };
@@ -233,6 +539,7 @@ fn install_pack_in(scope: &PackScope, name: &str, force: bool) -> Result<()> {
     let place = match scope {
         PackScope::Project(root) => root.join(".omp").display().to_string(),
         PackScope::Global(home) => format!("{} + {}", home.join(".omp/skills").display(), home.join(".omp/agent").display()),
+        PackScope::Store(dir) => format!("store {}", dir.display()),
     };
     ui::ok(&format!("pack `{}` → {} file(s) written, {} unchanged → {}", name, written, unchanged, place));
     if !kept.is_empty() {
@@ -363,6 +670,110 @@ mod tests {
         assert!(!home.join(".omp/skills/field").exists());
         assert_eq!(std::fs::read_to_string(&edited).unwrap(), "local edit");
         assert!(home.join(".omp/skills").is_dir());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn project_install_links_every_entry_into_the_shared_store() {
+        let home = temp_home("link");
+        let root = home.join("repo");
+        std::fs::create_dir_all(&root).unwrap();
+        install_pack(&home, &root, "vtiger-php", false).unwrap();
+
+        let store = store_dir(&home, "vtiger-php");
+        for entry in ["rules/php-conventions.md", "skills/review-pr", "commands/review-pr.md", "RULES.md"] {
+            assert_eq!(std::fs::read_link(root.join(".omp").join(entry)).unwrap(), store.join(entry), "{}", entry);
+        }
+        assert!(root.join(".omp/skills/review-pr/SKILL.md").is_file());
+        assert!(!root.join(".omp/pack-vtiger-php.lock").exists());
+        assert_eq!(read_projects(&home, "vtiger-php"), vec![root.canonicalize().unwrap()]);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_install_becomes_links_but_local_edits_stay_unless_forced() {
+        let home = temp_home("convert");
+        let root = home.join("repo");
+        install_pack_in(&PackScope::Project(&root), "vtiger-php", false).unwrap();
+        let rule = root.join(".omp/rules/php83.md");
+        std::fs::write(&rule, "local edit").unwrap();
+        std::fs::write(root.join(".omp/skills/field/notes.md"), "mine").unwrap();
+
+        install_pack(&home, &root, "vtiger-php", false).unwrap();
+        assert!(std::fs::read_link(root.join(".omp/rules/php-conventions.md")).is_ok());
+        assert!(std::fs::symlink_metadata(&rule).unwrap().is_file());
+        assert_eq!(std::fs::read_to_string(&rule).unwrap(), "local edit");
+        assert!(std::fs::symlink_metadata(root.join(".omp/skills/field")).unwrap().is_dir());
+
+        install_pack(&home, &root, "vtiger-php", true).unwrap();
+        assert!(std::fs::read_link(&rule).is_ok());
+        assert!(std::fs::read_link(root.join(".omp/skills/field")).is_ok());
+        let backup = std::fs::read_dir(root.join(".omp/removed")).unwrap().flatten().next().unwrap().path();
+        assert_eq!(std::fs::read_to_string(backup.join("rules/php83.md")).unwrap(), "local edit");
+        assert_eq!(std::fs::read_to_string(backup.join("skills/field/notes.md")).unwrap(), "mine");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refresh_relinks_listed_projects_and_drops_stale_links_and_unlisted_projects() {
+        let home = temp_home("relink");
+        let (root, other) = (home.join("repo"), home.join("other"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        install_pack(&home, &root, "vtiger-php", false).unwrap();
+        install_pack(&home, &other, "vtiger-php", false).unwrap();
+        std::fs::create_dir_all(root.join("agents")).unwrap();
+        std::fs::write(root.join("agents/skills.toml"), "[vtiger-php]\nsrc = \"pack:vtiger-php\"\n").unwrap();
+
+        let store = store_dir(&home, "vtiger-php");
+        let rule = root.join(".omp/rules/php83.md");
+        std::fs::remove_file(&rule).unwrap();
+        let retired = root.join(".omp/rules/retired.md");
+        std::os::unix::fs::symlink(store.join("rules/retired.md"), &retired).unwrap();
+
+        refresh_linked_packs(&home);
+        assert_eq!(std::fs::read_link(&rule).unwrap(), store.join("rules/php83.md"));
+        assert!(std::fs::symlink_metadata(&retired).is_err());
+        assert_eq!(read_projects(&home, "vtiger-php"), vec![root.canonicalize().unwrap()]);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn store_refresh_drops_retired_files_but_keeps_edited_ones() {
+        let home = temp_home("prune");
+        let dir = refresh_store(&home, "vtiger-php", false).unwrap();
+        let lock_path = PackScope::Store(&dir).lock_path("vtiger-php");
+        std::fs::write(dir.join("rules/retired.md"), "old").unwrap();
+        std::fs::write(dir.join("rules/edited-retired.md"), "edited").unwrap();
+        let mut lock = read_lock(&lock_path);
+        lock.insert("rules/retired.md".to_string(), fnv1a("old"));
+        lock.insert("rules/edited-retired.md".to_string(), fnv1a("original"));
+        write_lock(&lock_path, &lock).unwrap();
+
+        refresh_store(&home, "vtiger-php", false).unwrap();
+        assert!(!dir.join("rules/retired.md").exists());
+        assert_eq!(std::fs::read_to_string(dir.join("rules/edited-retired.md")).unwrap(), "edited");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn listed_pack_in_a_fresh_clone_gets_linked_and_unlisted_repo_stays_untouched() {
+        let home = temp_home("clone");
+        let (clone, plain) = (home.join("clone"), home.join("plain"));
+        std::fs::create_dir_all(clone.join("agents")).unwrap();
+        std::fs::create_dir_all(&plain).unwrap();
+        std::fs::write(clone.join("agents/skills.toml"), "[vtiger-php]\nsrc = \"pack:vtiger-php\"\n").unwrap();
+
+        link_listed_packs(&home, &clone);
+        link_listed_packs(&home, &plain);
+        assert!(std::fs::read_link(clone.join(".omp/rules/php83.md")).is_ok());
+        assert!(is_linked(&home, &clone, "vtiger-php"));
+        assert!(!plain.join(".omp").exists());
+        assert_eq!(read_projects(&home, "vtiger-php"), vec![clone.canonicalize().unwrap()]);
         let _ = std::fs::remove_dir_all(&home);
     }
 }

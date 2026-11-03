@@ -339,5 +339,7 @@ Session memory được omp tự quản (retain/recall/auto-compact). Không c�
     if let Err(e) = skill::inject_subfolder_indexes(root) {
         ui::warn(&format!("could not inject sub-folder skill indexes: {}", e));
     }
+    // A fresh clone / copy-mode install of a listed pack gets its .omp links.
+    skill::pack::link_listed_packs(&env.home, root);
     Ok(())
 }
