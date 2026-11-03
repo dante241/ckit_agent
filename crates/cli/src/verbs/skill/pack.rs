@@ -123,12 +123,17 @@ pub(crate) fn install_pack(home: &Path, root: &Path, name: &str, force: bool) ->
 }
 
 /// Link every pack this project lists in `agents/skills.toml` that is not linked
-/// yet: a fresh clone (row, no `.omp/`) or a copy-mode install. Cheap no-op once
-/// the project is recorded and every entry is present, so `8sync .` can run it
-/// on each launch. Local edits are kept.
+/// yet: a fresh clone (row, no `.omp/`) or a copy-mode install. Once linked it
+/// only re-asserts the git exclude block (the repo may have been `git init`ed
+/// after linking), so `8sync .` can run it on each launch. Local edits are kept.
 pub(crate) fn link_listed_packs(home: &Path, root: &Path) {
     for pk in discover_packs() {
-        if !is_pack_installed(root, &pk.name) || is_linked(home, root, &pk.name) {
+        if !is_pack_installed(root, &pk.name) {
+            continue;
+        }
+        if is_linked(home, root, &pk.name) {
+            #[cfg(unix)]
+            exclude_links_from_git(root, &pk.name);
             continue;
         }
         if let Err(e) = install_pack(home, root, &pk.name, false) {
@@ -749,6 +754,23 @@ mod tests {
         let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
         assert_eq!(exclude.matches("# >>> ckit pack vtiger-php").count(), 1);
         assert!(exclude.contains("/app/.omp/skills/field\n"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn repo_initialised_after_linking_gets_its_exclude_on_the_next_launch() {
+        let home = temp_home("gitlate");
+        let root = home.join("repo");
+        std::fs::create_dir_all(root.join("agents")).unwrap();
+        std::fs::write(root.join("agents/skills.toml"), "[vtiger-php]\nsrc = \"pack:vtiger-php\"\n").unwrap();
+        install_pack(&home, &root, "vtiger-php", false).unwrap();
+
+        let git = |args: &[&str]| std::process::Command::new("git").arg("-C").arg(&root).args(args).output().unwrap();
+        assert!(git(&["init", "-q"]).status.success());
+        link_listed_packs(&home, &root);
+        let status = String::from_utf8(git(&["status", "--porcelain", "--untracked-files=all"]).stdout).unwrap();
+        assert_eq!(status.trim(), "?? agents/skills.toml");
         let _ = std::fs::remove_dir_all(&home);
     }
 
