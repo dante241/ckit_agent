@@ -1,5 +1,5 @@
-// gw-quota — omp/pi extension: show the active provider's usage quota on its
-// own line under the editor via ctx.ui.setWidget(placement:"belowEditor").
+// gw-quota — omp/pi extension: show the active provider's usage quota under
+// the editor (belowEditor widget), on one line with ckit-telegram's status.
 //
 // Two sources, picked from ctx.model.provider:
 //
@@ -10,12 +10,12 @@
 //    percentages for the refilling per-key bucket (`used_percent` over
 //    `window_seconds`) and the calendar day (`daily_used_percent`) — the
 //    bucket refills continuously, so no reset clock is shown:
-//    `Quota 4h ▰▰▱▱▱ 40% · Day ▰▰▱▱▱ 47%`.
+//    `Quota 4h ━━─── 40% · Day ━━─── 47%`.
 // 2. `anthropic` with a Claude subscription (OAuth login): run omp's own
 //    `omp usage --provider anthropic --json` (the extension ctx exposes no
 //    usage API) and show every window it reports, incl. model-scoped weekly
 //    buckets the built-in `usage` status-line segment drops:
-//    `Claude 5h ▰▱▱▱▱ 2% 4h52m · 7d Fable ▱▱▱▱▱ 0% 16h`. These windows roll
+//    `Claude 5h ━──── 2% 4h52m · 7d Fable ───── 0% 16h`. These windows roll
 //    over, so each carries its reset countdown. An API-key `anthropic` login
 //    yields no report → hidden.
 //
@@ -28,7 +28,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 
-const STATUS_KEY = "gw-quota";
+const LINE = "ckit-footline"; // widget shared with ckit-telegram.ts
 const REFRESH_MS = 180_000; // poll at most once every 3 minutes
 
 export interface ProviderConf {
@@ -244,11 +244,11 @@ function levelSgr(pct: number, exceeded: boolean): string {
   return "92";
 }
 
-// 5-cell meter (▰ filled in the level color, ▱ empty dim-grey) — reads
-// unmistakably as a colored "quota gauge"; clamped so >100% shows a full bar.
+// 5-cell meter (━ filled in the level color, ─ empty dim-grey). Box-drawing, not ▰▱: SF Mono has ━─ and Ghostty
+// draws them as sprites, while ▰▱ come from a fallback font (Menlo) that Ghostty rescales into a ladder.
 function bar(pct: number, sgr: string): string {
   const filled = Math.max(0, Math.min(5, Math.round(pct / 20)));
-  return paint(sgr, "▰".repeat(filled)) + paint("90", "▱".repeat(5 - filled));
+  return paint(sgr, "━".repeat(filled)) + paint("90", "─".repeat(5 - filled));
 }
 
 function segment(b: Budget): string {
@@ -262,17 +262,19 @@ export function statusText(title: string, bs: Budget[]): string {
   return `${title} ` + bs.map(segment).join(paint("90", " · "));
 }
 
+/** Quota and the Telegram status share one belowEditor line: widget keys are global across extensions. */
+function footline(ui: ExtensionContext["ui"], part: "quota" | "tg", text: string | undefined): void {
+  const parts: Record<string, string> = ((globalThis as any).__ckitFootline ??= {});
+  if (text) parts[part] = text;
+  else delete parts[part];
+  const line = [parts.quota, parts.tg].filter(Boolean).join("   ");
+  ui.setWidget(LINE, line ? [line] : undefined, { placement: "belowEditor" });
+}
+
 function render(ctx: ExtensionContext, title: string, bs: Budget[]): void {
   try {
-    if (bs.length === 0) {
-      ctx.ui.setWidget(STATUS_KEY, undefined); // unlimited / unknown → hide
-      return;
-    }
-    // belowEditor widget: its own line directly under the input box with NO
-    // surrounding blank-line spacer. The footer hook-status slot (setStatus)
-    // sits above omp's mandatory status→editor gap, so a quota there always
-    // looks like it has a dangling empty line under it — this avoids that.
-    ctx.ui.setWidget(STATUS_KEY, [statusText(title, bs)], { placement: "belowEditor" });
+    // belowEditor, not setStatus: the status slot sits above omp's fixed status→editor blank line.
+    footline(ctx.ui, "quota", bs.length ? statusText(title, bs) : undefined); // unlimited / unknown → hidden
   } catch {
     /* stale/torn-down context — ignore */
   }
@@ -323,12 +325,21 @@ export default function gwQuotaExtension(pi: ExtensionAPI): void {
     void tick(ctx, generation);
   });
 
+  // /new, /resume: omp dropped every widget; redraw the shared line from memory (no fetch).
+  pi.on("session_switch", async (_event, ctx) => {
+    try {
+      footline(ctx.ui, "quota", (globalThis as any).__ckitFootline?.quota);
+    } catch {
+      /* ignore */
+    }
+  });
+
   pi.on("session_shutdown", async (_event, ctx) => {
     generation++;
     clearInterval(timer);
     timer = undefined;
     try {
-      ctx.ui.setWidget(STATUS_KEY, undefined);
+      footline(ctx.ui, "quota", undefined);
     } catch {
       /* ignore */
     }

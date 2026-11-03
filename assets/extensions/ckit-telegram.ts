@@ -31,7 +31,7 @@ const OFFSET = join(RUN, "offset.json");
 const API = process.env.CKIT_TELEGRAM_API ?? "https://api.telegram.org";
 const MAX_TEXT = 3500; // plain messages (Telegram: 4096 incl. entities)
 const MAX_RICH = 32000; // rich messages (Telegram: 32768 UTF-8 characters)
-const KEY = "ckit-telegram";
+const LINE = "ckit-footline"; // belowEditor widget shared with gw-quota.ts
 // A blocked call always reaches the model as an error result (omp emits no tool_result for it): say plainly it is not one.
 const FORWARDED = "Not an error: the user is away and the question was forwarded to their Telegram. End your turn now without asking again; their answer arrives as the next user message.";
 
@@ -350,7 +350,16 @@ export default function (pi: ExtensionAPI) {
     }
     if ((out ?? "") === shown) return;
     shown = out ?? "";
-    cur.ui.setStatus(KEY, out);
+    footline(cur.ui, out);
+  }
+
+  /** The Telegram status goes on gw-quota's line (widget keys are global across extensions). */
+  function footline(ui: ExtensionContext["ui"], text: string | undefined) {
+    const parts: Record<string, string> = ((globalThis as any).__ckitFootline ??= {});
+    if (text) parts.tg = text;
+    else delete parts.tg;
+    const line = [parts.quota, parts.tg].filter(Boolean).join("   ");
+    ui.setWidget(LINE, line ? [line] : undefined, { placement: "belowEditor" });
   }
 
   function setHealth(h: Health) {
@@ -463,8 +472,8 @@ export default function (pi: ExtensionAPI) {
     held = name;
   }
 
-  /** This session's topic: the one its conversation used before (`ckit .`, /resume), else `<repo>` (`<repo> 2`… when held by
-   *  a live session or owned by another conversation). A saved topic is reopened, a missing one created. */
+  /** This session's topic: the one its conversation used before (`ckit .`, /resume), else `<repo>` (`<repo> 2`… only while
+   *  a live session holds it). A free saved topic is reopened, whichever conversation used it last; a missing one is created. */
   async function ensureTopic(cfg: Config) {
     if (!reg || !cur) return;
     topicBusy = true;
@@ -475,10 +484,6 @@ export default function (pi: ExtensionAPI) {
       let name: string | undefined;
       for (let i = 1; i <= 50 && name === undefined; i++) {
         const n = i === 1 ? base : `${base} ${i}`;
-        const t = readJson<TopicFile>(topicPath(n));
-        const mine = n === held || (i === 1 && (chosen !== undefined || n === bound));
-        // Another conversation's topic is never reopened on our own: its history is not this one's.
-        if (!mine && t?.session && t.session !== ses && (t.chat === undefined || t.chat === cfg.chat_id)) continue;
         if (claim(n)) name = n;
       }
       if (name === undefined) {
@@ -778,15 +783,24 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_switch", async (_e, ctx) => {
     cur = ctx;
     chosen = undefined;
+    shown = ""; // omp dropped every widget on the switch: redraw (quota included)
+    footer();
     const cfg = loadConfig();
     if (!reg || !cfg?.forum || cfg.chat_id === undefined) return;
-    const bound = boundName(ctx);
-    if (reg.thread !== undefined && bound === reg.name) return;
+    // A new conversation (no topic of its own yet) stays in the current topic; /resume goes to the conversation's own.
+    const next = boundName(ctx) ?? reg.name;
+    if (reg.thread !== undefined && next === reg.name) {
+      const tf = topicPath(next);
+      const saved = readJson<TopicFile>(tf);
+      if (saved) writeJson(tf, { ...saved, session: convo() } satisfies TopicFile);
+      bind(next);
+      return;
+    }
     if (reg.thread !== undefined && reg.chat === cfg.chat_id) void tg(cfg, "closeForumTopic", { chat_id: cfg.chat_id, message_thread_id: reg.thread });
     if (held !== undefined) release(held);
     held = undefined;
     reg.thread = undefined;
-    reg.name = bound ?? basename(reg.cwd);
+    reg.name = next;
     saveReg();
     topicRetryAt = 0;
     maintain();
