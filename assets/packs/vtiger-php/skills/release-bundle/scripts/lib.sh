@@ -35,6 +35,12 @@ if [ -z "$VTIGER_ROOT" ] || ! git -C "$VTIGER_ROOT" remote get-url origin 2>/dev
     exit 1
 fi
 export VTIGER_ROOT
+# Scripts run from their own dir, which may be a shared pack store outside any git repo: there glab
+# falls back to every configured host (gitlab.com included). Pin the host of the vtiger remote.
+if [ -z "${GITLAB_HOST:-}" ]; then
+    GITLAB_HOST=$(git -C "$VTIGER_ROOT" remote get-url origin | sed -E 's#^[a-z+]+://([^@/]*@)?##; s#^[^@]*@##; s#[:/].*$##')
+fi
+export GITLAB_HOST
 SOURCE_PARENT=$(dirname "$VTIGER_ROOT")
 STATE_DIR="${RELEASE_STATE_DIR:-$VTIGER_ROOT/agents/release-queue}"
 LAYOUT="${RELEASE_LAYOUT:-single}"
