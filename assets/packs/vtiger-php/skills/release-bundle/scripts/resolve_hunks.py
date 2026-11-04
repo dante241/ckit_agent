@@ -69,6 +69,46 @@ def placed_scopes(wt, path, hunk):
     return sorted({scope(h) for h in got if key and all(k in h for k in key)})
 
 
+# Nearest enclosing definition above a line: a function/method header or an array element key ('name' => array( / [).
+# The @@ header git picks is often only the class or the outer $fields = array( of a register file, too coarse to
+# tell two methods or two fields apart.
+ANCHOR = re.compile(r"^\s*(?:(?:public|protected|private|static|final|abstract)\s+)*function\s+&?\w+"
+                    r"|^\s*['\"][\w.-]+['\"]\s*=>\s*(?:array\s*\(|\[)\s*$")
+
+
+def anchor_above(lines, idx):
+    for k in range(min(idx, len(lines)) - 1, -1, -1):
+        if ANCHOR.match(lines[k]):
+            return re.sub(r'\s+', ' ', lines[k].strip())
+    return ''
+
+
+def first_change(hunk, side):
+    """0-based line index, in the old ('-') or new ('+') file, of the hunk's first changed line."""
+    m = re.match(r'@@ -(\d+)(?:,\d+)? \+(\d+)', hunk[0])
+    start = int(m.group(1) if side == '-' else m.group(2))
+    lead = 0
+    for l in hunk[1:]:
+        if l[:1] in '+-':
+            break
+        lead += 1
+    return max(start - 1, 0) + lead
+
+
+def same_anchor(wt, sha, path, hunk):
+    """The -C1 placement sits under the same function / array element as the hunk did on master."""
+    old = git('show', f'{sha}^1:{path}', cwd=wt).stdout.splitlines()
+    want = anchor_above(old, first_change(hunk, '-'))
+    if not want:
+        return True
+    key = [l for l in hunk[1:] if l[:1] == '+' and l[1:].strip()] or \
+          [l for l in hunk[1:] if l[:1] == '-' and l[1:].strip()]
+    new = (Path(wt) / path).read_text(encoding='utf-8', errors='surrogateescape').splitlines()
+    _, got = split_patch(git('diff', '-U3', '--', path, cwd=wt).stdout)
+    placed = [h for h in got if key and all(k in h for k in key)]
+    return bool(placed) and all(anchor_above(new, first_change(h, '+')) == want for h in placed)
+
+
 def reject_kind(wt, path, hunk):
     """Why a hunk does not fit: compares the lines it removes with the release file."""
     try:
@@ -126,20 +166,27 @@ def resolve_file(wt, sha, path, iid, out_dir):
                  'rej': ''}]
     for i, h in enumerate(hunks, 1):
         row = {'file': path, 'hunk': i, 'master_scope': scope(h), 'placed_scope': ''}
-        if apply_hunk(wt, head, h, None):
+        fits = apply_hunk(wt, head, h, None)
+        if fits and same_anchor(wt, sha, path, h):
             row['tier'] = 'T1'
-        elif apply_hunk(wt, head, h, 1):
+            rows.append(row)
+            git('add', '--', path, cwd=wt)
+            continue
+        if fits:
+            # A full-context fit at an offset can land on a look-alike field or method: undo, then try -C1
+            git('checkout', '--', path, cwd=wt)
+        if apply_hunk(wt, head, h, 1):
             placed = placed_scopes(wt, path, h)
             row['placed_scope'] = ' | '.join(placed)
-            if row['master_scope'] and row['master_scope'] in placed:
+            if row['master_scope'] and row['master_scope'] in placed and same_anchor(wt, sha, path, h):
                 row['tier'] = 'T2'
             else:
                 git('checkout', '--', path, cwd=wt)  # back to the index copy: hunk landed elsewhere
                 row['tier'] = 'T3'
-                row['reason'] = 'chỉ khớp -C1 nhưng nằm ở scope khác'
+                row['reason'] = 'chỉ khớp -C1 nhưng nằm ở scope khác' if not fits else 'khớp ở chỗ khác (khác hàm/phần tử mảng)'
         else:
             row['tier'] = 'T3'
-            row['reason'] = reject_kind(wt, path, h)
+            row['reason'] = reject_kind(wt, path, h) if not fits else 'khớp ở chỗ khác (khác hàm/phần tử mảng)'
         if row['tier'] == 'T3':
             rej.append('\n'.join(h))
         else:

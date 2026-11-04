@@ -52,8 +52,8 @@ bash $S/audit-month.sh                  # rồi kiểm "mất code" cả branch 
 | Phase | Script | Việc |
 |---|---|---|
 | 1 | `pick.sh` | Precondition, checkout branch, pick theo ticket (chi tiết `references/pick-logic.md`) |
-| 2 | `phpstan-check.sh` | PHPStan trước/sau trên worktree tạm, chỉ lỗi thiếu function/method/class **mới** |
-| 2b | `lint-runtime.sh` | Parse mọi file PHP đổi bằng PHP của server release (`php:7.2-cli` qua docker, đổi bằng `RELEASE_PHP_LINT_IMAGE`). Master đã lên cú pháp PHP 8.3 (typed property/const, `fn() =>`, `??=`…) — parse error trên server 7.2/7.3. Có trong report run và `resolve.sh --check`; `--merge` chặn khi còn lỗi (không `--force` được). Docker lỗi → `SKIPPED`, cần `--force` |
+| 2 | `phpstan-check.sh` | PHPStan trước/sau trên worktree tạm, chỉ lỗi thiếu function/method/class **mới**. Chạy lần lượt bản trước rồi bản sau, mỗi lần ≤ `RELEASE_PHPSTAN_PROCS` (mặc định 4) worker: hai lần song song trên ticket 1.400+ file đã làm treo máy 16 GB |
+| 2b | `lint-runtime.sh` | Parse mọi file PHP đổi bằng PHP của server release (`php:7.2-cli` qua docker, đổi bằng `RELEASE_PHP_LINT_IMAGE`; hoặc binary local `RELEASE_PHP_LINT_BIN`, vd `/opt/homebrew/opt/php@8.3/bin/php`, khi docker không chạy). Master đã lên cú pháp PHP 8.3 (typed property/const, `fn() =>`, `??=`…) — parse error trên server 7.2/7.3. Có trong report run và `resolve.sh --check`; `--merge` chặn khi còn lỗi (không `--force` được). Docker lỗi → `SKIPPED`, cần `--force`. Đợt có #27245 (server lên 8.3): lint bằng 8.3 |
 | 3 | `gitlab-update.sh` | Milestone, label `Đã release` / `Conflict cherry-pick` (`references/gitlab-update.md`) |
 | 4 | `report.sh` | `bundle-report-<today>.md` + danh sách test trên release |
 | Sau run | `resolve.sh <ticket>` | Người release resolve từng ticket conflict theo hunk (mục dưới) |
@@ -65,9 +65,9 @@ Chỉ mang **dòng MR đổi** (`git diff <sha>^1 <sha>`) sang release. Làm t�
 
 | Tầng | Điều kiện | Xử lý |
 |---|---|---|
-| T1 | Áp được với đủ ngữ cảnh | Giữ |
-| T2 | Chỉ áp được với `-C1` và rơi vào **cùng scope** (header `@@` function/selector/mảng) như trên master | Giữ, report liệt kê để đọc lại |
-| T3 | Còn lại (không khớp, hoặc `-C1` rơi vào scope khác), file release không có, `composer.lock`/`vendor/`, file nhị phân, MR xoá file | Không áp; hunk lưu `.rej` + lý do (lệch ngữ cảnh / chỉ thêm mất chỗ neo / sửa code release chưa có / một phần) |
+| T1 | Áp được với đủ ngữ cảnh **và** nằm dưới cùng hàm / phần tử mảng (`'field' => array(`) như trên master | Giữ |
+| T2 | Chỉ áp được với `-C1`, cùng header `@@` **và** cùng hàm / phần tử mảng như trên master | Giữ, report liệt kê để đọc lại |
+| T3 | Còn lại (không khớp; `-C1` rơi vào scope khác; khớp đủ ngữ cảnh nhưng ở hàm/phần tử khác — file lặp cấu trúc như `BlocksAndFieldsRegister.php`), file release không có, `composer.lock`/`vendor/`, file nhị phân, MR xoá file | Không áp; hunk lưu `.rej` + lý do (lệch ngữ cảnh / chỉ thêm mất chỗ neo / sửa code release chưa có / một phần / khớp ở chỗ khác) |
 
 Mỗi MR luôn có commit mang marker `-x` (kể cả khi chỉ có T3): sửa tay T3 bằng `git commit --fixup <commit>` rồi autosquash. Sau đó PHPStan trước/sau trên `pick/<ticket>`, report gom lỗi theo symbol, chỉ ra symbol đã có trên branch (suy sai kiểu / autoload) hay commit master đã thêm nó (code thiếu cần mang sang — thuộc ticket chưa release hoặc không mang được thì hỏi). `--merge` chặn khi branch đổi sau lần `--check` cuối hoặc còn lỗi PHPStan mới (trừ `--force`). Report: `resolve-<ticket>/report.md`.
 
@@ -87,6 +87,8 @@ Mỗi MR luôn có commit mang marker `-x` (kể cả khi chỉ có T3): sửa t
 | MR `Chờ release` mới xuất hiện sau lần chạy bundle | Trước khi chốt đợt: `/release-check --month MM.YYYY --dry-run --no-preview` (không đổi label) rồi `run.sh ... skip <MR phụ thuộc>` | #27390, #1537342 sót tới cuối đợt |
 | MR ghi **ID record PMS** thay số ticket (`#1537342`) → `ticket_not_found` | `pms_retrieve HelpDesk <id>` → `ticket_no` + trạng thái. Closed thì pick tay đúng kỷ luật: `git worktree add -b pick/<ticket> ... <branch tháng>`, `cherry-pick -x -m 1` theo thứ tự merge, so patch, lint 7.2, `merge --no-ff`, gắn `Đã release` + milestone | !414 !448 = #26166 |
 | Kết luận "không mất code" | Chạy `audit-month.sh` và đọc từng dòng; chỉ coi dòng là "đã bị thay" khi MR **sau, cùng đợt, cùng file** xoá nó; dòng chung (`}`, `return;`) là bằng chứng yếu — nói rõ giới hạn khi báo user | Đếm "master cũng không còn" là thay thế → sai |
+| Ticket nâng runtime PHP (#27245 lên 8.3) | Code release lệch master (~2.800 file) chưa từng được sửa cho PHP 8 → kiểm **cả cây**, không chỉ diff: (1) `php -l` 8.3 mọi file phát hành gồm `vendor/`; (2) PHPStan cả cây bằng config master (baseline master), ≤ 2 worker, rồi đọc lỗi ngoài baseline: hằng chữ trần `$a[key]` (Error trên 8), override sai chữ ký (fatal khi nạp class), nơi gọi chỉ có trên release của hàm MR đổi chữ ký; (3) mỗi T3 bỏ phải có lý do khác "release không có code" — tìm bản tương đương trên release và sửa cùng kiểu (`html_entity_decode` cờ, `count` null, `fopen` false, `mb_convert_encoding` ValueError…) | #27245: `MailScanner`/`MailBox` hằng trần, `SalesAndRevenueByProductReportHandler` override, `IntegrationApiUtils::_setAuthSession` thiếu tham số |
+| Sửa file bằng script | Giữ nguyên xuống dòng: đọc/ghi `open(newline='')`, KHÔNG `Path.read_text()` (đổi CRLF→LF cả file). Trước commit `git diff --numstat` không được có file đổi toàn bộ dòng | Script tạm đổi CRLF 2 file (3.685 dòng) ở #27245, phải khôi phục |
 
 ### Kết quả từng ticket
 

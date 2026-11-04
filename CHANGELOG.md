@@ -32,6 +32,9 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
     - for `verify-resolves` false alarms, check `--ignore-cr-at-eol` / `-w`;
     - before closing the batch, look for MRs labelled `Chờ release` after the bundle run;
     - an MR titled with a PMS record id instead of the ticket number has to be looked up and picked by hand.
+  - `resolve.sh` now keeps a hunk (T1 or T2) only when it lands under the same function or array element (`'field' => array(`) as on master. In files that repeat the same structure (`BlocksAndFieldsRegister.php`), a full-context fit at an offset used to change `typeofdata` of the wrong field, and the `@@` header (the outer `$fields = array(`) could not tell fields apart. Such hunks are now T3 "khớp ở chỗ khác".
+  - `phpstan-check.sh` runs the before and after analyses one after the other with at most `RELEASE_PHPSTAN_PROCS` (default 4) workers. Running both at once on a 1,400-file ticket froze a 16 GB machine.
+  - `lint-runtime.sh` takes a local PHP binary through `RELEASE_PHP_LINT_BIN` when docker is not available.
 
 ### Fixed
 - **Windows: project packs refresh on `ckit up` too.** Windows has no unprivileged symlinks, so a project pack stays a copy there; it is now recorded like a linked one, so `ckit .` stops re-copying it on every launch, and `ckit up` / `harness init` re-copy every recorded project from the refreshed store (locally edited files kept unless `--force`). The copied entries and `.omp/pack-<name>.lock` go into the clone's `.git/info/exclude` on every platform.
