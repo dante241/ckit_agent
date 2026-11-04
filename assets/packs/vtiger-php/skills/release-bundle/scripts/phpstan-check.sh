@@ -61,7 +61,9 @@ prepare_side() {
     ln -s "$VT/tools/vendor" "$wt/tools/vendor"
     # vtiger's config minus its baselines, with a private result cache per side
     sed '/^includes:/,/^[[:space:]]*$/d' "$VT/tools/phpstan/phpstan.neon.dist" \
-        | awk -v tmp="$wt/.phpstan-tmp" '{print} /^parameters:/{print "    tmpDir: " tmp}' > "$wt/tools/phpstan/release-check.neon"
+        | awk -v tmp="$wt/.phpstan-tmp" -v procs="${RELEASE_PHPSTAN_PROCS:-4}" \
+            '{print} /^parameters:/{print "    tmpDir: " tmp; print "    parallel:"; print "        maximumNumberOfProcesses: " procs}' \
+        > "$wt/tools/phpstan/release-check.neon"
     for f in "$VT"/include/utils/*.php[78].php "$VT"/include/EntryPoints/*.php[78].php; do
         [ -f "$f" ] && [ ! -e "$wt/${f#"$VT"/}" ] && cp "$f" "$wt/${f#"$VT"/}"
     done
@@ -86,12 +88,11 @@ WTS+=("$WT_BASE")
 WT_HEAD=$(prepare_side "$HEAD_REV") || skip "không tạo được worktree cho $HEAD_REV"
 WTS+=("$WT_HEAD")
 
-analyse_side "$WT_BASE" /tmp/release-phpstan-base.json &
-P1=$!
-analyse_side "$WT_HEAD" /tmp/release-phpstan-head.json &
-P2=$!
-wait $P1 || skip "PHPStan lỗi khi chạy bản trước ($(head -c 300 /tmp/release-phpstan-base.json.err 2>/dev/null))"
-wait $P2 || skip "PHPStan lỗi khi chạy bản sau ($(head -c 300 /tmp/release-phpstan-head.json.err 2>/dev/null))"
+# One side at a time with capped workers: two parallel runs over a large ticket (1,400+ files) exhausted RAM
+analyse_side "$WT_BASE" /tmp/release-phpstan-base.json \
+    || skip "PHPStan lỗi khi chạy bản trước ($(head -c 300 /tmp/release-phpstan-base.json.err 2>/dev/null))"
+analyse_side "$WT_HEAD" /tmp/release-phpstan-head.json \
+    || skip "PHPStan lỗi khi chạy bản sau ($(head -c 300 /tmp/release-phpstan-head.json.err 2>/dev/null))"
 
 # file → MR map from the pick result (files each picked MR changed on vtiger)
 MAP="[]"
