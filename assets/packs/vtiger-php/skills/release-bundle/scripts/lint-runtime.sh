@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # lint-runtime.sh <checkout> <base> <head> <out.txt> — parse every runtime PHP file changed in <base>..<head>
-# with the PHP version release core runs on (default image php:7.2-cli, override RELEASE_PHP_LINT_IMAGE).
-# Master moved to PHP 8.3 syntax; release servers still run 7.2/7.3, where typed properties, `fn() =>`,
-# `??=` and array spread are parse errors. <out.txt>: one "file: error" line per failure; first line
+# with the PHP version release core runs on (default image php:8.3-cli, override RELEASE_PHP_LINT_IMAGE or
+# RELEASE_PHP_LINT_BIN). Release core runs PHP 8.3 from the 10.2026 release (#27245); a branch for an older
+# release server lints with php:7.2-cli. <out.txt>: one "file: error" line per failure; first line
 # "SKIPPED: <why>" when no runtime is available. Exit 0 always; callers read the file.
 
 set -uo pipefail
 DIR="$(cd "$1" && pwd)" BASE="$2" HEAD_REV="$3" OUT="$4"
-IMAGE="${RELEASE_PHP_LINT_IMAGE:-php:7.2-cli}"
+IMAGE="${RELEASE_PHP_LINT_IMAGE:-php:8.3-cli}"
 
 FILES=$(git -C "$DIR" diff --name-only --diff-filter=AM "$BASE" "$HEAD_REV" -- '*.php' '*.inc' '*.service' \
     | grep -vE '^(agents|docs|tools|\.omp|\.claude)/|/tests/' || true)

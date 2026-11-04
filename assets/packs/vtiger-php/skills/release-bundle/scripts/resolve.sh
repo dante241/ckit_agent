@@ -69,7 +69,7 @@ check() {
     jq --arg h "$head" '.head_sha = $h' "$OUT/result.json" > "$OUT/result.json.tmp" && mv "$OUT/result.json.tmp" "$OUT/result.json"
     echo "→ PHPStan $base..$head"
     ./phpstan-check.sh "$base" "$head" "$OUT/phpstan.json"
-    echo "→ Parse thử bằng PHP của release (${RELEASE_PHP_LINT_IMAGE:-php:7.2-cli})"
+    echo "→ Parse thử bằng PHP của release (${RELEASE_PHP_LINT_BIN:-${RELEASE_PHP_LINT_IMAGE:-php:8.3-cli}})"
     ./lint-runtime.sh "$WT" "$base" "$head" "$OUT/lint.txt"
     python3 "$PY" report "$OUT" "$OUT/phpstan.json" > "$REPORT" || abort "lỗi khi viết report"
     echo "Report: $REPORT"

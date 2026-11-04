@@ -77,7 +77,7 @@ fi
 
 LINT_OUT="$STATE_DIR/lint-$TODAY.txt"
 echo ""
-echo "=== Phase 2b: cú pháp trên PHP của release (${RELEASE_PHP_LINT_IMAGE:-php:7.2-cli}) ==="
+echo "=== Phase 2b: cú pháp trên PHP của release (${RELEASE_PHP_LINT_BIN:-${RELEASE_PHP_LINT_IMAGE:-php:8.3-cli}}) ==="
 ./lint-runtime.sh "$TARGET" "$(jq -r '.base_sha' "$BUNDLE_RESULT")" "$(jq -r '.head_sha' "$BUNDLE_RESULT")" "$LINT_OUT"
 echo "Lỗi cú pháp: $(grep -vc '^SKIPPED:' "$LINT_OUT" 2>/dev/null || echo 0) file$(grep -q '^SKIPPED:' "$LINT_OUT" && echo " — $(head -1 "$LINT_OUT")")"
 
