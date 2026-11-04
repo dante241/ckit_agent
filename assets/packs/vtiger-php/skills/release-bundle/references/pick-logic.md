@@ -87,7 +87,7 @@ Không thấy lời gọi động kiểu vtiger (`getInstance($name)`, `$obj->$m
 Dành cho người release xử lý ticket conflict, mỗi lần một ticket, theo thứ tự `resolve.sh` (không đối số) liệt kê từ `bundle-result-*.json` mới nhất.
 
 1. `resolve.sh <ticket>` tạo `pick/<ticket>` từ branch tháng (hoặc `--base <ref>`, vd `pick/<ticket trước>` chưa merge) trong worktree `<cha của vtiger>/vtiger-pick-<ticket>`, bật `merge.conflictStyle diff3`.
-2. MR của ticket lấy từ `ready[]` của classified, xếp theo `merged_at`. MR đã có marker trong `origin/release..HEAD` → bỏ qua. Mỗi MR: `cherry-pick -x --no-commit -Xignore-all-space` (`-m 1` nếu là merge commit). File không conflict giữ kết quả merge 3 bên của git.
+2. MR của ticket lấy từ `conflicts_manual[].iids` của `bundle-result-*.json` chạy thật mới nhất (MR ghi nhiều ticket chỉ pick một lần, theo ticket bundle đã xếp), xếp theo `merged_at`. MR đã có marker trong `origin/release..HEAD` → bỏ qua. Mỗi MR: `cherry-pick -x --no-commit -Xignore-all-space` (`-m 1` nếu là merge commit). File không conflict giữ kết quả merge 3 bên của git.
 3. File conflict:
    - path không phát hành → bản release;
    - `DU` (release không có file) → bỏ, T3 kèm patch cả file;
