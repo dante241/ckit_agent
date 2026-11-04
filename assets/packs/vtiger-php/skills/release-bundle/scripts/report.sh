@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# report.sh <result.json> [phpstan.json] — render the markdown report of a pick run (real or preview) to stdout.
+# report.sh <result.json> [phpstan.json] [lint.txt] — render the markdown report of a pick run (real or preview) to stdout.
 # Sections: tickets picked, tickets in conflict (with hand-off instructions), tickets waiting on a hand-off MR,
 # and the test list for the release environment.
 
 set -uo pipefail
 RESULT="$1"
 PHPSTAN="${2:-}"
+LINT="${3:-}"
 
-jq -r --slurpfile ps <( [ -n "$PHPSTAN" ] && [ -f "$PHPSTAN" ] && cat "$PHPSTAN" || echo '{"errors":[]}' ) '
+jq -r --slurpfile ps <( [ -n "$PHPSTAN" ] && [ -f "$PHPSTAN" ] && cat "$PHPSTAN" || echo '{"errors":[]}' ) \
+    --rawfile lint <( [ -n "$LINT" ] && [ -f "$LINT" ] && cat "$LINT" || printf '' ) '
 def mr(i): "!\(i)";
 def tickets: .picked | group_by(.ticket);
 ($ps[0].errors // []) as $errs
+| ($lint | split("\n") | map(select(length > 0))) as $lintl
 | ([ .picked[] | select(.mismatch > 0) | .ticket ] | unique) as $mm
 | (if .preview then "# Xem trước pick release — \(.today)" else "# Release bundle — \(.today)" end),
 "",
@@ -55,6 +58,12 @@ def tickets: .picked | group_by(.ticket);
 "",
 (if ($errs | length) == 0 then "- _Không có_" + (if $ps[0].skipped then " (PHPStan chưa chạy: \($ps[0].skipped))" else "" end)
  else ($errs[] | "- `\(.file):\(.line)` \(.message)" + (if .mr then " — do MR !\(.mr)" else "" end)) end),
+"",
+"**Sửa trước khi test** (lỗi cú pháp trên PHP của server release — typed property, `fn() =>`, `??=`… của master PHP 8.3):",
+"",
+(if ($lintl | length) == 0 then "- _Không có_"
+ elif ($lintl[0] | startswith("SKIPPED:")) then "- _Chưa chạy_: \($lintl[0][9:])"
+ else ($lintl[] | "- `\(.)`") end),
 "",
 "**Smoke test**: các ticket còn lại trong bảng ✅.",
 "",

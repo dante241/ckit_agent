@@ -55,6 +55,7 @@ bash $S/verify-resolves.sh              # SAU khi mọi MR pick/* merge: từng 
 | 3 | `gitlab-update.sh` | Milestone, label `Đã release` / `Conflict cherry-pick` (`references/gitlab-update.md`) |
 | 4 | `report.sh` | `bundle-report-<today>.md` + danh sách test trên release |
 | Sau run | `resolve.sh <ticket>` | Người release resolve từng ticket conflict theo hunk (mục dưới) |
+| 2b | `lint-runtime.sh` | Parse mọi file PHP đổi bằng PHP của server release (`php:7.2-cli` qua docker, đổi bằng `RELEASE_PHP_LINT_IMAGE`). Master đã lên cú pháp PHP 8.3 (typed property, `fn() =>`, `??=`…) — parse error trên server 7.2/7.3. Có trong report run và `resolve.sh --check`; `--merge` chặn khi còn lỗi (không `--force` được) |
 
 ### Resolve theo hunk (`resolve.sh`, `resolve_hunks.py`)
 

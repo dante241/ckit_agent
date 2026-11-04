@@ -75,6 +75,12 @@ else
     echo "PHPStan: bỏ qua"
 fi
 
+LINT_OUT="$STATE_DIR/lint-$TODAY.txt"
+echo ""
+echo "=== Phase 2b: cú pháp trên PHP của release (${RELEASE_PHP_LINT_IMAGE:-php:7.2-cli}) ==="
+./lint-runtime.sh "$TARGET" "$(jq -r '.base_sha' "$BUNDLE_RESULT")" "$(jq -r '.head_sha' "$BUNDLE_RESULT")" "$LINT_OUT"
+echo "Lỗi cú pháp: $(grep -vc '^SKIPPED:' "$LINT_OUT" 2>/dev/null || echo 0) file$(grep -q '^SKIPPED:' "$LINT_OUT" && echo " — $(head -1 "$LINT_OUT")")"
+
 echo ""
 echo "=== Phase 3: GitLab label/milestone ==="
 if [ "$GITLAB" -eq 1 ]; then
@@ -82,7 +88,7 @@ if [ "$GITLAB" -eq 1 ]; then
 else
     echo "Bỏ qua (--no-gitlab) — sau này chạy ./gitlab-update.sh để gắn label"
 fi
-./report.sh "$BUNDLE_RESULT" "$PHPSTAN_OUT" > "$BUNDLE_REPORT"
+./report.sh "$BUNDLE_RESULT" "$PHPSTAN_OUT" "$LINT_OUT" > "$BUNDLE_REPORT"
 
 cd "$TARGET"
 cat <<EOF

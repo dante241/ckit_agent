@@ -484,6 +484,20 @@ def cmd_report(out_dir, phpstan_path):
     if ignored:
         out += ['', f"→ {ignored}/{len(errs)} lỗi là PHPStan nhầm (đánh dấu bỏ qua); còn {len(errs) - ignored} lỗi cần xử lý."]
 
+    # Parse check with the PHP that release core runs (lint-runtime.sh): master moved to 8.3 syntax
+    lint_path = Path(out_dir) / 'lint.txt'
+    lint_lines = [l for l in lint_path.read_text().splitlines() if l.strip()] if lint_path.exists() else []
+    lint_skipped = bool(lint_lines) and lint_lines[0].startswith('SKIPPED:')
+    lint_errs = [] if lint_skipped else lint_lines
+    out += ['', f"## Cú pháp trên PHP của release ({len(lint_errs)} file lỗi)", '']
+    if lint_skipped or not lint_path.exists():
+        out.append(f"Chưa chạy: {lint_lines[0][9:] if lint_skipped else 'chưa có lint.txt'}")
+    elif lint_errs:
+        out += [f"- `{l}`" for l in lint_errs]
+        out.append('  - sửa trên pick (vd typed property → `/** @var T */` + property không kiểu, `fn() =>` → `function () use ()`, `??=` → `$a = $a ?? b`)')
+    else:
+        out.append('_Không có_')
+
     out += ['', '## Bước tiếp', '',
             '1. Đọc T2; xử lý từng T3 trong worktree: áp tay đúng dòng của MR (file `.rej`), hoặc bỏ nếu code đó không có trên release. '
             'Lưu thành `git commit --fixup <commit trên pick của MR>` để dòng resolve nằm trong commit có marker của MR.',
@@ -494,7 +508,8 @@ def cmd_report(out_dir, phpstan_path):
             f"4. Merge vào branch tháng + gắn label: `resolve.sh {res['ticket']} --merge`. Ticket resolve tay → test lại đầy đủ trên release."]
     print('\n'.join(out))
     json.dump({'head_sha': res['head_sha'], 'T2': count['T2'], 'T3': count['T3'], 'phpstan': len(errs) - ignored,
-               'phpstan_ignored': ignored, 'phpstan_skipped': bool(ps.get('skipped'))},
+               'phpstan_ignored': ignored, 'phpstan_skipped': bool(ps.get('skipped')),
+               'lint': len(lint_errs), 'lint_skipped': lint_skipped or not lint_path.exists()},
               open(Path(out_dir) / 'check.json', 'w'))
 
 

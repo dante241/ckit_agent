@@ -69,9 +69,11 @@ check() {
     jq --arg h "$head" '.head_sha = $h' "$OUT/result.json" > "$OUT/result.json.tmp" && mv "$OUT/result.json.tmp" "$OUT/result.json"
     echo "→ PHPStan $base..$head"
     ./phpstan-check.sh "$base" "$head" "$OUT/phpstan.json"
+    echo "→ Parse thử bằng PHP của release (${RELEASE_PHP_LINT_IMAGE:-php:7.2-cli})"
+    ./lint-runtime.sh "$WT" "$base" "$head" "$OUT/lint.txt"
     python3 "$PY" report "$OUT" "$OUT/phpstan.json" > "$REPORT" || abort "lỗi khi viết report"
     echo "Report: $REPORT"
-    jq -r '"T2 cần đọc: \(.T2) · T3 chưa áp: \(.T3) · PHPStan lỗi mới cần xử lý: \(.phpstan)\(if (.phpstan_ignored // 0) > 0 then " (+\(.phpstan_ignored) PHPStan nhầm, bỏ qua)" else "" end)\(if .phpstan_skipped then " (PHPStan chưa chạy)" else "" end)"' "$OUT/check.json"
+    jq -r '"T2 cần đọc: \(.T2) · T3 chưa áp: \(.T3) · PHPStan lỗi mới cần xử lý: \(.phpstan)\(if (.phpstan_ignored // 0) > 0 then " (+\(.phpstan_ignored) PHPStan nhầm, bỏ qua)" else "" end)\(if .phpstan_skipped then " (PHPStan chưa chạy)" else "" end) · lỗi cú pháp PHP release: \(.lint)\(if .lint_skipped then " (chưa chạy)" else "" end)"' "$OUT/check.json"
 }
 
 case "$MODE" in
@@ -99,7 +101,12 @@ case "$MODE" in
         [ -f "$OUT/check.json" ] || abort "chưa kiểm tra — chạy: resolve.sh $TICKET --check"
         TIP=$(git -C "$TARGET" rev-parse "$PB") || abort "không thấy $PB"
         [ "$(jq -r .head_sha "$OUT/check.json")" = "$TIP" ] || abort "$PB đã đổi sau lần kiểm tra cuối — chạy: resolve.sh $TICKET --check"
-        T3=$(jq .T3 "$OUT/check.json"); NPS=$(jq .phpstan "$OUT/check.json")
+        T3=$(jq .T3 "$OUT/check.json"); NPS=$(jq .phpstan "$OUT/check.json"); NLINT=$(jq '.lint // 0' "$OUT/check.json")
+        if [ "$NLINT" -gt 0 ]; then
+            abort "còn $NLINT file lỗi cú pháp trên PHP của release ($REPORT) — sửa trên $PB (không có --force cho lỗi này)"
+        fi
+        [ "$(jq -r '.lint_skipped // false' "$OUT/check.json")" = true ] && [ "$FORCE" -eq 0 ] \
+            && abort "chưa parse thử bằng PHP của release (thiếu docker image) — cài image hoặc --force"
         if [ "$NPS" -gt 0 ] && [ "$FORCE" -eq 0 ]; then
             abort "còn $NPS lỗi PHPStan mới ($REPORT) — sửa trên $PB hoặc --force nếu đã xác nhận là dương tính giả"
         fi

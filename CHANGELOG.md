@@ -21,6 +21,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
   - Two known PHPStan artefacts are marked "bỏ qua" and do not block `--merge`:
     - wrong arity reported on a PHP builtin, because a library defines a function with the same name (e.g. `html_entity_decode`);
     - an unknown non-namespaced class that already existed on release before the pick (legacy files loaded by `require`, e.g. `PearDatabase` in new files).
+  - New `lint-runtime.sh` parses every changed PHP file with the PHP the release servers run (`php:7.2-cli` in docker, override `RELEASE_PHP_LINT_IMAGE`). Master moved to PHP 8.3 syntax, and a typed property picked from it is a parse error on 7.2/7.3. `run.sh` lists failures under "Sửa trước khi test", and `resolve.sh --check` reports them. `--merge` refuses while any remain, and `--force` does not override this.
+  - A ticket's MRs come from the bundle's `conflicts_manual[].iids`, so an MR that lists several tickets is picked once, under the ticket the bundle filed it with.
 
 ### Fixed
 - **Windows: project packs refresh on `ckit up` too.** Windows has no unprivileged symlinks, so a project pack stays a copy there; it is now recorded like a linked one, so `ckit .` stops re-copying it on every launch, and `ckit up` / `harness init` re-copy every recorded project from the refreshed store (locally edited files kept unless `--force`). The copied entries and `.omp/pack-<name>.lock` go into the clone's `.git/info/exclude` on every platform.
