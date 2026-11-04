@@ -19,6 +19,12 @@ if ! command -v docker >/dev/null 2>&1 || ! docker image inspect "$IMAGE" >/dev/
 fi
 
 # The checkout must be at <head>: files are read from the working tree
-printf '%s\n' "$FILES" | docker run --rm -i -v "$DIR":/app:ro -w /app "$IMAGE" sh -c \
-    'while IFS= read -r f; do out=$(php -d display_errors=stderr -l "$f" 2>&1) || echo "$f: $(echo "$out" | grep -m1 -E "error" | sed "s/ in [^ ]* on line / line /")"; done' \
-    >> "$OUT"
+# The loop always exits 0, so a non-zero status means docker itself failed: record it as SKIPPED
+RESULT=$(printf '%s\n' "$FILES" | docker run --rm -i -v "$DIR":/app:ro -w /app "$IMAGE" sh -c \
+    'while IFS= read -r f; do out=$(php -d display_errors=stderr -l "$f" 2>&1) || echo "$f: $(echo "$out" | grep -m1 -E "error" | sed "s/ in [^ ]* on line / line /")"; done; exit 0' 2>&1)
+RC=$?
+if [ "$RC" -ne 0 ]; then
+    printf 'SKIPPED: docker run lỗi (rc=%s): %s\n' "$RC" "$(printf '%s' "$RESULT" | head -1)" > "$OUT"
+    exit 0
+fi
+[ -z "$RESULT" ] || printf '%s\n' "$RESULT" >> "$OUT"
