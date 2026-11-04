@@ -28,6 +28,7 @@ bash $S/resolve.sh 26403 --merge             # merge --no-ff vào branch tháng 
 bash $S/verify-resolves.sh              # SAU khi mọi MR pick/* merge: từng pick trên branch tháng
                                         # so patch-vs-patch với commit master gốc (qua marker -x);
                                         # lệch = code mất khi resolve tay → exit 1, liệt kê dòng MẤT/THÊM
+bash $S/audit-month.sh                  # rồi kiểm "mất code" cả branch theo từng file (3 chiều, mục dưới)
 ```
 
 - `--month MM.YYYY`: tháng release (branch + milestone). **Luôn truyền khi release qua đầu tháng mới**; mặc định = tháng hiện tại.
@@ -52,10 +53,11 @@ bash $S/verify-resolves.sh              # SAU khi mọi MR pick/* merge: từng 
 |---|---|---|
 | 1 | `pick.sh` | Precondition, checkout branch, pick theo ticket (chi tiết `references/pick-logic.md`) |
 | 2 | `phpstan-check.sh` | PHPStan trước/sau trên worktree tạm, chỉ lỗi thiếu function/method/class **mới** |
+| 2b | `lint-runtime.sh` | Parse mọi file PHP đổi bằng PHP của server release (`php:7.2-cli` qua docker, đổi bằng `RELEASE_PHP_LINT_IMAGE`). Master đã lên cú pháp PHP 8.3 (typed property/const, `fn() =>`, `??=`…) — parse error trên server 7.2/7.3. Có trong report run và `resolve.sh --check`; `--merge` chặn khi còn lỗi (không `--force` được). Docker lỗi → `SKIPPED`, cần `--force` |
 | 3 | `gitlab-update.sh` | Milestone, label `Đã release` / `Conflict cherry-pick` (`references/gitlab-update.md`) |
 | 4 | `report.sh` | `bundle-report-<today>.md` + danh sách test trên release |
 | Sau run | `resolve.sh <ticket>` | Người release resolve từng ticket conflict theo hunk (mục dưới) |
-| 2b | `lint-runtime.sh` | Parse mọi file PHP đổi bằng PHP của server release (`php:7.2-cli` qua docker, đổi bằng `RELEASE_PHP_LINT_IMAGE`). Master đã lên cú pháp PHP 8.3 (typed property, `fn() =>`, `??=`…) — parse error trên server 7.2/7.3. Có trong report run và `resolve.sh --check`; `--merge` chặn khi còn lỗi (không `--force` được) |
+| Trước deploy test | `verify-resolves.sh`, `audit-month.sh` | So patch từng pick; kiểm mất code cả branch |
 
 ### Resolve theo hunk (`resolve.sh`, `resolve_hunks.py`)
 
@@ -69,6 +71,22 @@ Chỉ mang **dòng MR đổi** (`git diff <sha>^1 <sha>`) sang release. Làm t�
 
 Mỗi MR luôn có commit mang marker `-x` (kể cả khi chỉ có T3): sửa tay T3 bằng `git commit --fixup <commit>` rồi autosquash. Sau đó PHPStan trước/sau trên `pick/<ticket>`, report gom lỗi theo symbol, chỉ ra symbol đã có trên branch (suy sai kiểu / autoload) hay commit master đã thêm nó (code thiếu cần mang sang — thuộc ticket chưa release hoặc không mang được thì hỏi). `--merge` chặn khi branch đổi sau lần `--check` cuối hoặc còn lỗi PHPStan mới (trừ `--force`). Report: `resolve-<ticket>/report.md`.
 
+### Tình huống khi resolve (đã gặp ở đợt 10.2026 — làm đúng ngay từ đầu)
+
+| Tình huống | Làm | Sai sót đã gặp |
+|---|---|---|
+| PHPStan/T3 cho thấy code thiếu do **helper thuần** (hàm tiện ích, không logic nghiệp vụ) | Copy nguyên văn master vào ticket/MR riêng nhắm `release`, merge, rồi `git merge --no-ff origin/release` vào branch tháng; resolve tiếp | — (#27458 helper CPMigration) |
+| Code thiếu là **logic của ticket chưa release** (vd #21103 Ticket V3) hoặc code mới viết trên nền **PHP 8.3** (#27245: typed const, `fn`, context đổi bởi commit `PHP 8.3:`) | Ticket **phụ thuộc** → gỡ `Chờ release`/`Conflict cherry-pick`, gắn `Dev done` cho mọi MR của ticket, ghi vào report. `/release-check` lần sau sẽ promote lại (classify không biết phụ thuộc) → chạy bundle với `skip <iid>` | #27290/#27293 (!454 !479), #27390 (!477 !482) |
+| MR sửa tính năng/file **release chưa từng có** (CPEcommerceIntegration, file của ticket chưa release) | Bỏ đúng hunk/file đó, giữ phần còn lại; ghi lý do trong report. `audit-month.sh` liệt kê `FILE-BỎ`/`THIẾU` để đối chiếu | — |
+| T3 composer/`vendor/` | Sửa tay: copy package từ master vào `vendor/`, thêm prefix vào `autoload_psr4.php` **và** `autoload_static.php` (`prefixLengthsPsr4` + `prefixDirsPsr4`), `composer.json`, entry trong `composer.lock` (content-hash để cũ — ghi rõ). KHÔNG `composer require`: vendor đã commit ≠ lock → bump cả vendor. Kiểm load class trên `php:7.2-cli` | — (#26929 psr/clock) |
+| Lint PHP 7.2 báo lỗi | Viết lại dòng đó cho 7.2 bằng `git commit --fixup <commit marker của MR>` trên `pick/<ticket>` **trước** `--merge` | Sửa thẳng trên branch tháng (#26103 `9396040b73`) → commit không marker, `verify-resolves` báo ✗ UNVERIFIED mãi |
+| Tìm commit để `--fixup` | `git log --format='%H %B' <base>..HEAD \| awk '/^[0-9a-f]{40} /{h=$1} /cherry picked from commit <sha12>/{print h}'`; sau autosquash `git log <base>..HEAD` không còn `fixup!` | Lấy SHA theo vị trí → fixup không gộp được |
+| Áp tay hunk T3 "lệch ngữ cảnh" lớn | So vùng pre-image master với vùng release (difflib) trước; dòng chỉ release có phải giữ hoặc là đúng dòng MR xoá; thay vùng bằng `+` của hunk chỉ khi khớp duy nhất | — |
+| Hunk chỉ thêm (log4php appender, config) | Kiểm số/ khoá chưa bị dùng trên release (`grep appender.A46`), file cuối không xuống dòng thì thêm newline | — |
+| `verify-resolves` báo `NGHI XOÁ` / lệch nhiều | Kiểm trước khi kết luận: `git diff --ignore-cr-at-eol` (đổi LF↔CRLF), `-w` (thụt lề do `-Xignore-all-space`); số dòng còn khớp patch master = báo nhầm | !440 FacebookConnector (CRLF), !460 (thụt lề) |
+| MR `Chờ release` mới xuất hiện sau lần chạy bundle | Trước khi chốt đợt: `/release-check --month MM.YYYY --dry-run --no-preview` (không đổi label) rồi `run.sh ... skip <MR phụ thuộc>` | #27390, #1537342 sót tới cuối đợt |
+| MR ghi **ID record PMS** thay số ticket (`#1537342`) → `ticket_not_found` | `pms_retrieve HelpDesk <id>` → `ticket_no` + trạng thái. Closed thì pick tay đúng kỷ luật: `git worktree add -b pick/<ticket> ... <branch tháng>`, `cherry-pick -x -m 1` theo thứ tự merge, so patch, lint 7.2, `merge --no-ff`, gắn `Đã release` + milestone | !414 !448 = #26166 |
+| Kết luận "không mất code" | Chạy `audit-month.sh` và đọc từng dòng; chỉ coi dòng là "đã bị thay" khi MR **sau, cùng đợt, cùng file** xoá nó; dòng chung (`}`, `return;`) là bằng chứng yếu — nói rõ giới hạn khi báo user | Đếm "master cũng không còn" là thay thế → sai |
 
 ### Kết quả từng ticket
 
@@ -91,7 +109,7 @@ Mỗi MR luôn có commit mang marker `-x` (kể cả khi chỉ có T3): sửa t
 | `--handoff` | Ngoại lệ duy nhất có push: chỉ push `pick/<ticket>` lên vtiger_release |
 | Idempotent | Marker `-x`; chạy lại cùng tháng chỉ pick MR mới |
 | Preview | Không bao giờ ghi branch thật, GitLab hay paused-state |
-| Kiểm tra code | So sánh vtiger↔release (`compare-*/<iid>.diff`) + PHPStan khi pick; sau khi `pick/*` merge → `verify-resolves.sh` (patch-vs-patch mọi pick trên branch, bắt resolve ẩu xoá code người khác); KHÔNG thay test trên môi trường release |
+| Kiểm tra code | So sánh vtiger↔release (`compare-*/<iid>.diff`) + PHPStan + lint PHP release khi pick; sau khi `pick/*` merge → `verify-resolves.sh` (patch-vs-patch mọi pick trên branch, bắt resolve ẩu xoá code người khác) và `audit-month.sh` (A: dòng MR thêm có lên branch; B: dòng MR xoá còn sót; C: dòng release bị xoá mà không MR nào xoá); KHÔNG thay test trên môi trường release |
 | Không `rerere` mặc định | rerere ghi cả cách resolve sai và chỉ lưu trên máy resolve |
 
 ## Trình bày cho user

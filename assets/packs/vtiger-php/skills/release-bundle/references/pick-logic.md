@@ -100,3 +100,9 @@ Dành cho người release xử lý ticket conflict, mỗi lần một ticket, t
    - **Method / property / chữ ký:** tìm trong class sở hữu và chuỗi `extends` (`X@anonymous/...` → `X`), cả trên branch lẫn master. Không có trong chuỗi nhưng có ở class khác → PHPStan suy kiểu class cha, kiểm tay. Receiver `object`/`mixed` → kiểm tay.
    - **Commit nguồn:** commit master đầu tiên chứa định nghĩa (với chữ ký: chính dòng chữ ký trên master). Commit đó thuộc một MR của ticket → code nằm trong hunk T3 chưa áp; ngược lại là code thiếu cần mang sang hoặc hỏi.
 6. `--check` chạy lại bước 5 (worktree phải sạch). `--merge`: chặn khi `pick/<ticket>` đổi sau lần kiểm tra cuối, hoặc còn lỗi PHPStan mới (trừ `--force`); `merge --no-ff` vào branch tháng (TARGET phải đứng ở branch tháng, sạch), gắn `Đã release` + milestone, gỡ `Chờ release` / `Conflict cherry-pick` cho mọi MR của ticket (`--no-gitlab` để bỏ), gỡ worktree, giữ branch.
+7. Lint PHP của server release (`lint-runtime.sh`, §2b SKILL.md) chạy cùng bước 5; lỗi → sửa bằng `--fixup` trên `pick/<ticket>`, không commit thẳng lên branch tháng (commit không marker = ✗ UNVERIFIED trong `verify-resolves.sh`).
+8. Mọi `pick/*` đã merge: `verify-resolves.sh` rồi `audit-month.sh` (`audit_month.py`). Audit đọc marker `-x` trên `origin/release..<branch>`, so theo từng file, bỏ khoảng trắng/CR:
+   - **A** dòng patch master của MR thêm vào phải có trên branch; thiếu trên cả branch lẫn master tip chỉ coi là "đã bị thay" khi một MR **sau, cùng đợt, cùng file** xoá nó. `FILE-BỎ` = MR thêm dòng vào file branch không có.
+   - **B** dòng MR xoá còn trên branch, master tip không còn và không MR nào trong đợt thêm lại = code cũ sót (method trùng, bug sống lại).
+   - **C** dòng của release bị branch xoá mà không MR nào xoá trong file đó.
+   Mỗi dòng in ra phải có lý do (bỏ có chủ đích, phần của ticket chưa release, dòng chung) trước khi báo "không mất code".
