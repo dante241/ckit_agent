@@ -29,6 +29,7 @@ bash $S/verify-resolves.sh              # SAU khi mọi MR pick/* merge: từng 
                                         # so patch-vs-patch với commit master gốc (qua marker -x);
                                         # lệch = code mất khi resolve tay → exit 1, liệt kê dòng MẤT/THÊM
 bash $S/audit-month.sh                  # rồi kiểm "mất code" cả branch theo từng file (3 chiều, mục dưới)
+bash $S/order-check.sh                  # file có MR pick ngược thứ tự merge: dựng lại theo merged_at, so với branch
 ```
 
 - `--month MM.YYYY`: tháng release (branch + milestone). **Luôn truyền khi release qua đầu tháng mới**; mặc định = tháng hiện tại.
@@ -57,7 +58,7 @@ bash $S/audit-month.sh                  # rồi kiểm "mất code" cả branch 
 | 3 | `gitlab-update.sh` | Milestone, label `Đã release` / `Conflict cherry-pick` (`references/gitlab-update.md`) |
 | 4 | `report.sh` | `bundle-report-<today>.md` + danh sách test trên release |
 | Sau run | `resolve.sh <ticket>` | Người release resolve từng ticket conflict theo hunk (mục dưới) |
-| Trước deploy test | `verify-resolves.sh`, `audit-month.sh` | So patch từng pick; kiểm mất code cả branch |
+| Trước deploy test | `verify-resolves.sh`, `audit-month.sh`, `order-check.sh` | So patch từng pick; kiểm mất code cả branch; kiểm file có MR pick ngược thứ tự merge |
 
 ### Resolve theo hunk (`resolve.sh`, `resolve_hunks.py`)
 
@@ -90,6 +91,7 @@ Mỗi MR luôn có commit mang marker `-x` (kể cả khi chỉ có T3): sửa t
 | Ticket nâng runtime PHP (#27245 lên 8.3) | Code release lệch master (~2.800 file) chưa từng được sửa cho PHP 8 → kiểm **cả cây**, không chỉ diff: (1) `php -l` 8.3 mọi file phát hành gồm `vendor/`; (2) PHPStan cả cây bằng config master (baseline master), ≤ 2 worker, rồi đọc lỗi ngoài baseline: hằng chữ trần `$a[key]` (Error trên 8), override sai chữ ký (fatal khi nạp class), nơi gọi chỉ có trên release của hàm MR đổi chữ ký; (3) mỗi T3 bỏ phải có lý do khác "release không có code" — tìm bản tương đương trên release và sửa cùng kiểu (`html_entity_decode` cờ, `count` null, `fopen` false, `mb_convert_encoding` ValueError…) | #27245: `MailScanner`/`MailBox` hằng trần, `SalesAndRevenueByProductReportHandler` override, `IntegrationApiUtils::_setAuthSession` thiếu tham số |
 | Sửa code **chỉ release có** (ngoài dòng MR đổi) trong ticket nâng runtime PHP | **Được phép** (user quyết 2026-11-05), là ngoại lệ duy nhất của quy tắc "chỉ mang dòng MR đổi": code release phải chạy được trên runtime mới. Chỉ sửa đúng loại MR đang sửa ở master (hằng chữ trần, chữ ký override, nơi gọi hàm MR đổi chữ ký, cờ `html_entity_decode`, `ValueError`/`TypeError` của builtin, `false` từ `fopen`/`glob`…); mỗi chỗ có comment attribution, đi bằng `--fixup` vào commit của MR; liệt kê đủ trong báo cáo cho user và danh sách test lại. Ticket không nâng runtime: vẫn chỉ mang dòng MR đổi, ngoài ra phải hỏi | #27245: 18 hằng chữ trần, 2 chữ ký override, 1 nơi gọi `_setAuthSession`, 9 cờ `html_entity_decode`, `mb_convert_encoding`, `fopen`, `glob`, `searchEmails`, `GeneralUtils` |
 | Sửa file bằng script | Giữ nguyên xuống dòng: đọc/ghi `open(newline='')`, KHÔNG `Path.read_text()` (đổi CRLF→LF cả file). Trước commit `git diff --numstat` không được có file đổi toàn bộ dòng | Script tạm đổi CRLF 2 file (3.685 dòng) ở #27245, phải khôi phục |
+| **Thứ tự pick** | Theo `merged_at` trên master (KHÔNG theo số MR — số MR là thứ tự tạo): patch `<sha>^1..<sha>` giả định mọi MR merge trước đã có. Trong các MR release ở đợt, pick lần lượt theo `merged_at`; ticket conflict dừng resolve tại chỗ (`--pause-on-conflict`), không dồn ra cuối. Ticket bị hoãn coi như vắng mặt — MR sau resolve trên nền release như thường; khi ticket hoãn được release ở đợt sau, nó là MR "lệch thứ tự". Sau mọi `pick/*` merge: `order-check.sh` dựng lại mỗi file có cặp pick ngược thứ tự (áp patch các MR của đợt theo `merged_at` bằng `git merge-file` từ `origin/release`) và so với branch: `SAME` xong; `CONFLICT`/`DIFF` đọc từng dòng — dòng MR xoá/đổi tên là đúng, dòng MR thêm mà branch thiếu là mất code | Đợt 10.2026: 31 cặp ngược thứ tự (ticket conflict/hoãn resolve sau, gom trọn ticket); mất guard `empty($_FILES)` của !450 trong `WebformsModel::createDocuments` vì !415 pick trước — `order-check.sh` bắt được trên branch cũ |
 
 ### Kết quả từng ticket
 
