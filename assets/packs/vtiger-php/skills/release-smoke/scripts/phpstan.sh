@@ -45,8 +45,18 @@ for e in new:
     g = re.search(r'invoked with (\d+) parameters?, (?:at least )?(\d+)', e['message'])
     if e['identifier'] == 'arguments.count' and g and int(g.group(1)) < int(g.group(2)):
         few.append(e)
+# Same on master is no excuse for a call that fatals: keep missing named symbols (master's baseline hides them)
+CONCRETE = {'function.notFound', 'staticMethod.notFound', 'classConstant.notFound', 'staticProperty.notFound'}    # class.notFound: Smarty/legacy lib noise
+few_ids = {id(e) for e in few}
+concrete = [e for e in new if (e['file'], e['message']) in on_master and id(e) not in few_ids
+            and e['identifier'] in CONCRETE and not re.search(r'\bobject\b|_Base_Model|Vtiger_(Record|Module)_Model', e['message'])]
 json.dump(rel_only, open(f'{out}/phpstan-release-only.json', 'w'), ensure_ascii=False, indent=1)
-print(f'phpstan: {len(new)} lỗi mới so với origin/release; y hệt master {len(new) - len(rel_only)}; chỉ release có {len(rel_only)}; gọi thiếu tham số {len(few)}')
-for e in rel_only + few:
-    print(f"  {e['file']}:{e['line']} [{e['identifier']}] {e['message'][:150]}")
+print(f'phpstan: {len(new)} lỗi mới so với origin/release; y hệt master {len(new) - len(rel_only)}; chỉ release có {len(rel_only)}; '
+      f'gọi thiếu tham số {len(few)}; có cả trên master nhưng là symbol cụ thể không tồn tại {len(concrete)}')
+for title, rows in (('Chỉ release có', rel_only), ('Gọi thiếu tham số (ArgumentCountError)', few),
+                    ('Có cả trên master — symbol cụ thể, cần đọc', concrete)):
+    if rows:
+        print(f'-- {title}')
+    for e in rows:
+        print(f"  {e['file']}:{e['line']} [{e['identifier']}] {e['message'][:150]}")
 EOF

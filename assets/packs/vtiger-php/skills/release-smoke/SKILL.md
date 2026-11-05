@@ -14,7 +14,7 @@ bash $S/run.sh release-core-10.2026 --keep-db          # giữ DB clone đang c�
 bash $S/run.sh release-core-10.2026 --skip phpstan,api # bỏ bước
 ```
 
-Kết quả: `agents/release-queue/smoke-<ngày>-<sha>/report.md` (lỗi PHP/nginx gom theo nhóm + URL gây lỗi + tóm tắt từng bước) và `*.json` từng bước. Site để bấm tay: `http://vtiger74.localhost:8085`, `admin` / `Relwalk#2026` (mật khẩu chỉ đặt trong DB clone).
+Kết quả: `agents/release-queue/smoke-<ngày>-<sha>/report.md` (lần chạy có `--skip`/`--keep-db` ghi `report-partial-<giờ>.md`, không đè report đầy đủ) (lỗi PHP/nginx gom theo nhóm + URL gây lỗi + tóm tắt từng bước) và `*.json` từng bước. Site để bấm tay: `http://vtiger74.localhost:8085`, `admin` / `Relwalk#2026` (mật khẩu chỉ đặt trong DB clone).
 
 ## Các bước (`run.sh`)
 
@@ -22,7 +22,7 @@ Kết quả: `agents/release-queue/smoke-<ngày>-<sha>/report.md` (lỗi PHP/ngi
 |---|---|---|---|
 | setup | `setup.sh <ref>` | Worktree detached `../vtiger-relsmoke` tại `<ref>`; copy `config.env.php` (đổi `root_directory`, `db_name`), `license.lic`, `user_privileges/*`; Redis cache db 5; `skip-worktree` 2 file config; vhost nginx `:8085` + snippet `php8.3-fpm-relsmoke.conf` | Trang login 200 |
 | db | `db.sh` | Clone DB `vtiger` → `vtiger_relsmoke`; tắt event handler trỏ file release không có, ẩn module release không có; đặt mật khẩu admin; `CPMigration up` (đếm dòng `vtiger_relatedlists`/`vtiger_field` bị xoá); QuickRepair qua `quick_repair.php` (in dòng đồng bộ kiểu cột) | Migration mới `success`; QuickRepair `OK` |
-| phpstan | `phpstan.sh` | `release-bundle/phpstan-check.sh origin/release..<ref>` rồi phân lỗi mới: y hệt `origin/master` / chỉ release có / gọi thiếu tham số | "chỉ release có" và "thiếu tham số" đều đọc hết |
+| phpstan | `phpstan.sh` | `release-bundle/phpstan-check.sh origin/release..<ref>` rồi phân lỗi mới: y hệt `origin/master` / chỉ release có / gọi thiếu tham số / **có cả trên master nhưng gọi hàm-method-hằng không tồn tại** (baseline master giấu, vd `getAddressByLongitude()`) | Đọc hết 3 nhóm sau; hàm có thể nằm trong file encode ionCube (`include/utils/utils.php`) — kiểm trước khi kết luận |
 | crawl | `crawl.py` | `data/pages.txt` 284 trang (session seed, không XHR) + `data/crawl-urls.json` 6.480 URL của crawl demo master (đăng nhập thật, ajax giữ XHR) | 0 lỗi mới so với demo, hoặc lỗi giải thích được |
 | walk | `walk.py` | Mở Detail mọi report; tạo/sửa/xoá Accounts→Contacts→HelpDesk, modal tình trạng, sửa nhanh, bình luận; Settings MailConverter/Webforms; 4 case ghi của gate master (SponsorshipCategory, CPRequest, CPLeaving, CPReportTask — SKIP nếu release không có module) | 0 FAIL |
 | export | `export.py` | Export Accounts trực tiếp; hạ ngưỡng queue trên clone → 2 lần gửi chỉ 1 dòng NEW → chạy cron `ProcessExportQueue` (tạm bỏ `run_by=Supervisor`) → Document xlsx đủ dòng; Report GetXLS | Số dòng xlsx = số record + 1 |
@@ -35,7 +35,7 @@ Ghi vào report mục "Phân loại" từng nhóm: lỗi release / lỗi cũ (c�
 
 | Hiện tượng | Nguyên nhân | Cách nhận ra |
 |---|---|---|
-| `Sorry! Attempt to access restricted file - modules/<X>/<X>.php` | DB clone (từ master) còn quan hệ/report tới module release không có | `<X>` không có trong `git ls-tree <ref> modules/` |
+| `Sorry! Attempt to access restricted file - modules/<X>/<X>.php` | DB clone (từ master) còn quan hệ/report tới module release không có | Script tự xếp "DB clone" CHỈ khi file cũng không có trên `origin/release` (hoặc `modules//.php` mà record không có / đã xoá trong clone). File `origin/release` có mà branch mất → vẫn tính lỗi |
 | Lưu record 500 `Failed opening required modules/<X>/handlers/...` | Handler của module release không có — `db.sh` đã tắt; gặp trên DB clone khác (vd `release.localhost`) thì tắt tương tự | Như trên |
 | `Incorrect DATE value: ''` (1525), alias `rank` (1064) | MySQL 8/9 local khắt khe hơn MariaDB server | `SELECT VERSION()` local; câu SQL giống master |
 | Fatal `... on null/false` khi gọi kèm XHR (`preProcess` bị bỏ) | Harness gửi `X-Requested-With` cho full page | Gọi lại không XHR → 200 |

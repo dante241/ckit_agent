@@ -42,7 +42,7 @@ def one(p):
     except Exception as e:
         code, body = 0, repr(e)
     raw = body.encode('utf-8', 'replace')
-    missing = sc.missing_module(raw)
+    missing = sc.missing_module(raw, p['url'])
     bad = (code >= 500 or code == 0 or bool(sc.FATAL_BODY.search(raw)) or (bool(sc.RESTRICTED.search(raw)) and not missing))
     row = {'url': p['url'], 'status': code, 'bad': bad, 'missing_module': missing,
            'demo_bad': bool(p.get('fatal')) or (p.get('status') or 0) >= 500}

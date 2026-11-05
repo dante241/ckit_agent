@@ -16,6 +16,8 @@ done
 skip() { [[ "$SKIP" == *",$1,"* ]]; }
 SHA=$(git -C "$VT" rev-parse --short "$REF") || exit 2
 OUT="$VT/agents/release-queue/smoke-$(date +%F)-$SHA"
+REPORT="$OUT/report.md"
+[ "$SKIP" = "," ] && [ "$KEEP_DB" = 0 ] || REPORT="$OUT/report-partial-$(date +%H%M).md"    # keep the full run's report
 mkdir -p "$OUT"
 LOG0=$(wc -c < "$PHP_LOG"); NGX0=$(wc -c < "$NGINX_LOG" 2>/dev/null || echo 0)
 step() { echo; echo "=== $1"; }
@@ -36,13 +38,13 @@ for s in crawl walk export api; do
     step "$s"; python3 "$HERE/$s.py" "$OUT" 2>&1 | grep -v -i 'RequestsDependencyWarning\|warnings.warn' | tee "$OUT/$s.txt"
 done
 step "report"
-python3 "$HERE/report_log.py" "$PHP_LOG" "$LOG0" "$NGINX_LOG" "$NGX0" "$OUT/report.md" >/dev/null
+python3 "$HERE/report_log.py" "$PHP_LOG" "$LOG0" "$NGINX_LOG" "$NGX0" "$REPORT" >/dev/null
 {
     echo; echo "## Tóm tắt từng bước"; echo
     for s in setup db phpstan crawl walk export api; do
         [ -f "$OUT/$s.txt" ] && { echo "### $s"; echo '```'; grep -vE '^\s*$' "$OUT/$s.txt" | tail -25; echo '```'; }
     done
-} >> "$OUT/report.md"
-echo "report: $OUT/report.md"
-sed -n '1,4p' "$OUT/report.md"
-grep -E '^## \[' "$OUT/report.md" | head -30
+} >> "$REPORT"
+echo "report: $REPORT"
+sed -n '1,4p' "$REPORT"
+grep -E '^## \[' "$REPORT" | head -30

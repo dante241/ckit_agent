@@ -8,9 +8,14 @@ grep -q "db_name'\] = '$DB'" config.env.php || { echo "ABORT: $WT/config.env.php
 Q=("${MYSQL[@]}" "$DB" -N -e)
 
 "${MYSQL[@]}" -e "DROP DATABASE IF EXISTS \`$DB\`; CREATE DATABASE \`$DB\` CHARACTER SET utf8mb4" || exit 2
-mysqldump -h127.0.0.1 -uroot --single-transaction --quick --routines --triggers --no-tablespaces "$SRC_DB" 2>/dev/null \
-    | "${MYSQL[@]}" "$DB" || exit 2
-echo "clone $SRC_DB → $DB: $("${Q[@]}" "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$DB'") bảng"
+set -o pipefail    # a failed dump must stop here, not leave an empty clone behind
+mysqldump -h127.0.0.1 -uroot --default-character-set=utf8mb4 --single-transaction --quick --routines --triggers --no-tablespaces "$SRC_DB" \
+    | "${MYSQL[@]}" "$DB" || { echo "ABORT: clone $SRC_DB → $DB lỗi" >&2; exit 2; }
+set +o pipefail
+count() { "${Q[@]}" "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$1'"; }
+n_src=$(count "$SRC_DB"); n_dst=$(count "$DB")
+[ "$n_dst" -ge "$n_src" ] || { echo "ABORT: clone thiếu bảng ($n_dst/$n_src)" >&2; exit 2; }
+echo "clone $SRC_DB → $DB: $n_dst bảng"
 
 # The master DB registers handlers/modules the release code does not ship: disable them in the clone,
 # otherwise every save fatals on a missing handler file (an artifact of the clone, not a release bug)

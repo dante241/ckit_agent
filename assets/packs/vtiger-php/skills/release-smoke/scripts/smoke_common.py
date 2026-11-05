@@ -15,18 +15,28 @@ FATAL_BODY = re.compile(rb'Fatal error|Uncaught |TypeError|ValueError|ArgumentCo
 RESTRICTED = re.compile(rb'Sorry! Attempt to access restricted file\.? - (modules/(\w*)/[\w.]*)')
 
 
-def missing_module(body):
-    """What vtiger's "restricted file" page points at when the file is not in the release (module the release does
-    not ship, or a record id / module name from another DB resolving to no file), else None."""
+def _on_origin_release(path):
+    return subprocess.run(['git', '-C', ROOT, 'cat-file', '-e', f'origin/release:{path}'], capture_output=True).returncode == 0
+
+
+def missing_module(body, url=''):
+    """Clone-artifact label for vtiger's "restricted file" page, else None (a real failure).
+    Artifact = the file was never on origin/release (module the release doesn't ship, module name from another DB),
+    or the URL's record is absent/deleted in the clone. A file origin/release has but the branch lost is NOT one."""
     m = RESTRICTED.search(body or b'')
     if not m:
         return None
     path, name = m.group(1).decode(), m.group(2).decode()
     if not name:
-        return '(record không có trong DB clone)'    # modules//.php: the record id belongs to another DB
-    if not os.path.isdir(f"{ROOT}/modules/{name}"):
-        return name
-    return None if os.path.isfile(f"{ROOT}/{path}") else f'({path} không có — tham số/record của DB khác)'
+        rid = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get('record', [''])[0]
+        if rid.isdigit() and sql(f'SELECT deleted FROM vtiger_crmentity WHERE crmid={rid}') == '0':
+            return None    # the record exists yet resolves to no module: a real failure
+        return '(record không có trong DB clone)'
+    if os.path.isfile(f"{ROOT}/{path}"):
+        return None
+    if _on_origin_release(path):
+        return None    # origin/release ships this file and the branch lost it
+    return name if not os.path.isdir(f"{ROOT}/modules/{name}") else f'({path} không có trên release — tham số của DB khác)'
 
 
 def sql(q):
