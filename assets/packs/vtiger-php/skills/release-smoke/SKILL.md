@@ -30,6 +30,7 @@ SMOKE_SOURCE=beta bash $S/run.sh release-core-10.2026          # dump được g
 SMOKE_SOURCE=beta bash $S/beta.sh --refetch                     # lấy dump mới
 ```
 
+- `db.sh` chặn gửi ra ngoài trên DB clone (cả `local` lẫn `beta`): SMTP trong `vtiger_systems` → `127.0.0.1:1025`, tắt workflow có task email/SMS/Zalo/ZNS/webhook/notification. Worker CPQueue (gửi FCM, sync) không chạy local. Test tay qua UI trên DB beta chỉ sau bước này.
 - Docker Desktop phải chạy (script tự `open -a Docker`). Container có `--restart unless-stopped`; Docker Desktop từng tự dừng giữa chừng → `mysqli_query(): Argument #1 ... false given` hàng loạt = DB chết, KHÔNG phải lỗi code: `docker start relsmoke-mariadb` rồi chạy lại bước đó (`--keep-db --skip …`).
 - MySQL 9 local không nạp được dump MariaDB (dòng sandbox, `DEFAULT curdate()`, TEXT có default) và client MySQL 9 không đăng nhập được MariaDB (`mysql_native_password`) → mọi lệnh SQL đi qua `docker exec … mysql` (biến `MYSQL_CMD`). KHÔNG sửa dump bằng sed để nạp vào MySQL: schema sẽ khác server.
 - Cổng nằm trong `db_server` (`127.0.0.1:3307`, `db_port` rỗng): `CPQueue_Server_Model` dựng PDO DSN chỉ từ `db_server`, tách cổng ra thì PDO nối nhầm MySQL local (`Access denied for user 'root'@'localhost'` khi lưu record).

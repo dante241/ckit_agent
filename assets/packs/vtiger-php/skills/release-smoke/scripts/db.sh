@@ -33,6 +33,12 @@ echo "tắt handler không có file: ${ids%,}"
 echo "ẩn module release không có: ${mods%,}"
 hash=$("$PHP" -r 'echo crypt($argv[1], "\$1\$ad0000000");' "$ADMIN_PASS")
 "${Q[@]}" "UPDATE vtiger_users SET user_password='$hash', crypt_type='PHP5.3MD5' WHERE id=1 AND user_name='admin'"
+# The clone carries real contacts and a live SMTP account: saves must never mail, text or call out to real people.
+# SMTP goes to a closed local port; workflows holding outbound tasks are switched off (the CPQueue worker is never started)
+"${Q[@]}" "UPDATE vtiger_systems SET server = '127.0.0.1', server_port = 1025 WHERE server_type = 'email'"
+wf=$("${Q[@]}" "SELECT GROUP_CONCAT(DISTINCT workflow_id) FROM com_vtiger_workflowtasks WHERE task REGEXP 'VTEmailTask|SMS|Zalo|ZNS|Webhook|Mautic|Notification|SendMail'")
+[ -n "$wf" ] && [ "$wf" != NULL ] && "${Q[@]}" "UPDATE com_vtiger_workflows SET status = 0 WHERE workflow_id IN ($wf)"
+echo "chặn gửi ra ngoài: SMTP → 127.0.0.1:1025, tắt workflow có task gửi tin: ${wf:-không có}"
 redis-cli -n "$REDIS_DB" flushdb >/dev/null
 
 # Deploy steps, with a before/after count for the tables the deleting migrations touch. Most migrations run inside
