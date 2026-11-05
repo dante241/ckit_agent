@@ -13,6 +13,15 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 ## [Unreleased]
 
 ### Added
+- **vtiger-php: `release-smoke` skill + `/release-smoke` command.** Re-runs the tests master was gated on for PHP 8.3, against a release branch on the local box, and groups every PHP/nginx error into one report (`agents/release-queue/smoke-<date>-<sha>/report.md`). `run.sh <ref>`:
+  - **setup:** detached worktree `../vtiger-relsmoke` with master's local config, Redis cache db 5, nginx vhost `:8085`; tracked config files set to skip-worktree.
+  - **db:** fresh clone of the dev DB; handlers and modules the release doesn't ship disabled; then `CPMigration up` (rows the deleting migrations remove are counted) and QuickRepair with its column-type sync lines.
+  - **phpstan:** `origin/release..ref`, new errors split into "same on master", "release only" and too-few-argument calls.
+  - **crawl:** 284 core pages plus the 6,480-URL php83 demo crawl. A "restricted file" page for a module or record the clone lacks is reported as a clone artifact, not a failure.
+  - **walk:** every report Detail, CRUD on Accounts → Contacts → HelpDesk, the status modal, and master's four write-gate cases.
+  - **export:** direct export, export through the queue plus the cron run (`run_by=Supervisor` is lifted for that one run), and Report GetXLS.
+  - **api:** `WebsiteApi` login, and every read action of `api/*`.
+  - Fatals are read only for the smoke worktree's own paths, so other sites writing to the same FPM log are not blamed. `--keep-db` reruns QuickRepair so the regenerated tab data and privileges match the clone.
 - **vtiger-php `/release-bundle`: `resolve.sh` lets the release person resolve a conflicted ticket hunk by hunk.** It builds `pick/<ticket>` in its own worktree from the month branch, cherry-picks the ticket's MRs in merge order, and for each conflicted file reapplies only the MR's own hunks onto the release copy. A hunk that fits with full context is kept (T1). One that fits only with `-C1` is kept if it lands in the same function/selector/array as on master, and listed for review (T2). The rest are saved as `.rej` with the reason (T3); so are files missing on release and `composer.lock`/`vendor/`. Every MR keeps its `-x` marker commit, so hand fixes go in as `--fixup`. The report runs PHPStan before/after and groups errors by symbol:
   - Classes of a namespace that composer doesn't register on the branch (`autoload_psr4.php` + `autoload_static.php`) become one autoload root cause.
   - Missing methods/properties/signatures are looked up in the owning class and its parents (`X@anonymous` → `X`). The report then names the master commit that added the code, flags code that belongs to the ticket's own MR (a pending T3 hunk), and marks untyped receivers (`object`) for a manual check.
