@@ -63,9 +63,9 @@ try:
     n = None
     if '\t' in doc:
         path, aid, name = doc.split('\t')
-        import glob
-        files = glob.glob(f'{sc.ROOT}/{path}{aid}_*')
-        n = xlsx_rows(open(files[0], 'rb').read()) if files else None
+        # exact name: a reloaded clone reuses attachment ids, so storage may hold an older "<id>_*" file
+        f = f'{sc.ROOT}/{path}{aid}_{name}'
+        n = xlsx_rows(open(f, 'rb').read()) if os.path.isfile(f) else None
     add('Cron ProcessExportQueue → Document xlsx', left == '0' and n == total + 1, f'queue còn {left}, file {n} dòng', sc.fatals_since(p))
 finally:
     sc.sql("UPDATE vtiger_config SET value='" + cfg_raw.replace("'", "''") + "' WHERE category='export_config'")
