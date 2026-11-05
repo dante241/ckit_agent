@@ -582,9 +582,8 @@ async fn api_context(State(ctx): State<Arc<Ctx>>) -> Json<serde_json::Value> {
     let (window, assumed) = model_window(&model);
     let cfg_raw = std::fs::read_to_string(home.join(".omp/agent/config.yml")).unwrap_or_default();
     let threshold_pct = parse_threshold(&cfg_raw);
-    let (used, last_compact_at, session, session_age) = match (&root, session_slug(home, root.as_deref())) {
-        (Some(_r), Some(slug)) => {
-            let dir = home.join(format!(".omp/agent/sessions/{}", slug));
+    let (used, last_compact_at, session, session_age) = match root.as_deref().and_then(|r| super::sessions::find_sessions_dir(home, r)) {
+        Some(dir) => {
             let newest = newest_session(&dir);
             let (used, last_compact) = newest.as_ref().and_then(|p| analyze_context(p)).unwrap_or((0, None));
             let session = newest.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("").to_string();
@@ -597,7 +596,7 @@ async fn api_context(State(ctx): State<Arc<Ctx>>) -> Json<serde_json::Value> {
                 .unwrap_or(0);
             (used, last_compact, session, age)
         }
-        _ => (0u64, None, String::new(), 0u64),
+        None => (0u64, None, String::new(), 0u64),
     };
     let pct = if window > 0 { used * 100 / window } else { 0 };
     let compact_at = window * threshold_pct / 100;
@@ -693,12 +692,6 @@ fn parse_token_count(s: &str) -> Option<u64> {
         return None;
     }
     Some((f * mult) as u64)
-}
-
-fn session_slug(home: &std::path::Path, root: Option<&std::path::Path>) -> Option<String> {
-    let r = root?;
-    let rel = r.strip_prefix(home).ok()?;
-    Some(format!("-{}", rel.to_string_lossy().replace('/', "-")))
 }
 
 fn newest_session(dir: &std::path::Path) -> Option<std::path::PathBuf> {
@@ -1154,7 +1147,7 @@ async fn api_models_set(
 
 // ---- Projects (omp session directories) ----
 
-/// Invert `session_slug`'s encoding (`-<rel-with-/replaced-by-->`) back to an
+/// Invert the legacy single-dash slug encoding (`-<rel-with-/replaced-by-->`) back to an
 /// absolute project path under `home`. The encoding is lossy (a literal `-` in a
 /// dir name is indistinguishable from a `/` separator), so resolve greedily
 /// against the filesystem: at each level take the longest run of `-`-joined
@@ -1208,11 +1201,9 @@ async fn api_projects(State(ctx): State<Arc<Ctx>>) -> Json<Vec<serde_json::Value
             if !dir.is_dir() {
                 continue;
             }
-            let slug = match e.file_name().to_str() {
-                Some(s) => s.to_string(),
-                None => continue,
-            };
-            let proj = match slug_to_path(home, &slug) {
+            let proj = match super::sessions::dir_cwd(&dir).or_else(|| {
+                e.file_name().to_str().and_then(|slug| slug_to_path(home, slug))
+            }) {
                 Some(p) => p,
                 None => continue,
             };
@@ -1838,7 +1829,8 @@ impl Drop for TmpDir {
 
 #[cfg(test)]
 mod tests {
-    use super::{session_slug, slug_to_path};
+    use super::slug_to_path;
+    use crate::verbs::harness::sessions::find_sessions_dir;
     use std::path::PathBuf;
 
     /// Unique scratch home under the OS temp dir; cleaned on drop.
@@ -1863,23 +1855,33 @@ mod tests {
     }
 
     #[test]
-    fn slug_roundtrip_recovers_path_with_literal_dash() {
-        let home = TmpHome::new("dash");
-        // Project dir whose name contains a literal '-' (the lossy case).
-        let root = home.mkdirs("Projects/tools/ckit");
-        let slug = session_slug(&home.0, Some(root.as_path())).unwrap();
-        assert_eq!(slug, "-Projects-tools-ckit");
-        assert_eq!(slug_to_path(&home.0, &slug), Some(root));
+    fn legacy_slug_to_path_recovers_paths() {
+        let home = TmpHome::new("legacy_slug");
+        for rel in ["foo", "a/b/c", "Projects/tools/ckit"] {
+            let root = home.mkdirs(rel);
+            let slug = format!("-{}", rel.replace('/', "-"));
+            assert_eq!(slug_to_path(&home.0, &slug), Some(root), "rel={}", rel);
+        }
     }
 
     #[test]
-    fn slug_roundtrip_simple_and_nested() {
-        let home = TmpHome::new("nested");
-        for rel in ["foo", "a/b/c"] {
-            let root = home.mkdirs(rel);
-            let slug = session_slug(&home.0, Some(root.as_path())).unwrap();
-            assert_eq!(slug_to_path(&home.0, &slug), Some(root), "rel={}", rel);
-        }
+    fn find_sessions_dir_matches_header_cwd_for_any_slug_format() {
+        let home = TmpHome::new("hdr");
+        let root = home.mkdirs("Projects/app");
+        // Slug format ckit must NOT depend on (omp 18.16 double-dash style).
+        let dir = home.mkdirs(".omp/agent/sessions/--Projects-app--");
+        let header = serde_json::json!({"type": "session", "cwd": root});
+        std::fs::write(dir.join("s.jsonl"), format!("{{\"type\":\"title\"}}\n{}\n", header)).unwrap();
+        assert_eq!(find_sessions_dir(&home.0, &root), Some(dir));
+    }
+
+    #[test]
+    fn find_sessions_dir_falls_back_to_legacy_slug_without_header() {
+        let home = TmpHome::new("legacy_dir");
+        let root = home.mkdirs("Projects/old");
+        let dir = home.mkdirs(".omp/agent/sessions/-Projects-old");
+        std::fs::write(dir.join("s.jsonl"), "{\"type\":\"message\"}\n").unwrap();
+        assert_eq!(find_sessions_dir(&home.0, &root), Some(dir));
     }
 
     #[test]

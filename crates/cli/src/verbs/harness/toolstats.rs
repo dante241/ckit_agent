@@ -19,8 +19,16 @@ pub(crate) fn harness_toolstats(env: &env_detect::Env) -> Result<()> {
     ui::header("8sync harness toolstats");
     let root = discover::detect_current_project_root()
         .context("not inside a project — cd into your repo first")?;
-    let slug = session_slug(&env.home, &root);
-    let sess_dir = env.home.join(format!(".omp/agent/sessions/{}", slug));
+    let sess_dir = match super::sessions::find_sessions_dir(&env.home, &root) {
+        Some(d) => d,
+        None => {
+            ui::warn(&format!(
+                "no omp sessions yet for this project ({}). Run omp here, then re-run.",
+                root.display()
+            ));
+            return Ok(());
+        }
+    };
 
     let db_path = root.join(".cache/ckit/toolstats.db");
     if let Some(p) = db_path.parent() {
@@ -29,13 +37,6 @@ pub(crate) fn harness_toolstats(env: &env_detect::Env) -> Result<()> {
     let conn = Connection::open(&db_path).context("open toolstats.db")?;
     init_schema(&conn)?;
 
-    if !sess_dir.is_dir() {
-        ui::warn(&format!(
-            "no omp sessions yet for this project ({}). Run omp here, then re-run.",
-            sess_dir.display()
-        ));
-        return Ok(());
-    }
     let (new_calls, n_sessions) = ingest(&conn, &sess_dir)?;
     ui::ok(&format!(
         "tracked {} call(s) from {} session(s) → {}",
@@ -44,14 +45,6 @@ pub(crate) fn harness_toolstats(env: &env_detect::Env) -> Result<()> {
         db_path.display()
     ));
     report(&conn, &root)
-}
-
-/// `~/.omp/agent/sessions/<slug>` for a project root (mirrors the web dashboard).
-fn session_slug(home: &Path, root: &Path) -> String {
-    match root.strip_prefix(home) {
-        Ok(rel) => format!("-{}", rel.to_string_lossy().replace('/', "-")),
-        Err(_) => format!("-{}", root.to_string_lossy().trim_start_matches('/').replace('/', "-")),
-    }
 }
 
 fn init_schema(conn: &Connection) -> Result<()> {

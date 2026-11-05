@@ -28,6 +28,7 @@ mod up;
 mod web;
 mod marketplace;
 pub(crate) mod knowledge;
+mod sessions;
 mod toolstats;
 
 #[derive(ClapArgs, Debug)]
