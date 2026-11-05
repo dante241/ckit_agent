@@ -38,7 +38,7 @@ iid_of() {
 
 patch_norm() { # normalized first-parent ±lines of a commit (compare_pick rules)
     git -C "$TARGET" diff -U0 "$1^1" "$1" -- . "${NOISE_PATHSPEC[@]}" 2>/dev/null \
-        | grep -vE '^(\+\+\+|---) ' | grep -E '^[+-]' | sed 's/[[:space:]]//g' | grep -vE '^[+-]$' | LC_ALL=C sort
+        | grep -vE '^(\+\+\+|---) ' | grep -E '^[+-]' | LC_ALL=C sed 's/[[:space:]]//g' | grep -vE '^[+-]$' | LC_ALL=C sort
 }
 
 TMP=$(mktemp -d /tmp/verify-resolves.XXXXXX); trap 'rm -rf "$TMP"' EXIT

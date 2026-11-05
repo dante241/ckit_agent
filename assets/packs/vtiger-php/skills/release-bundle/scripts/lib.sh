@@ -227,7 +227,7 @@ compare_pick() {
 }
 
 _norm_diff() {
-    grep -vE '^(\+\+\+|---) ' | grep -E '^[+-]' | sed 's/[[:space:]]//g' | grep -vE '^[+-]$' | LC_ALL=C sort
+    grep -vE '^(\+\+\+|---) ' | grep -E '^[+-]' | LC_ALL=C sed 's/[[:space:]]//g' | grep -vE '^[+-]$' | LC_ALL=C sort
 }
 
 # save_pause_state <current_mr_json> <picked_json_array> <conflict_files_csv> <processed_iids_csv>
