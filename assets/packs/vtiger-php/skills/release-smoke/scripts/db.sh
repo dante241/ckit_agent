@@ -35,17 +35,22 @@ hash=$("$PHP" -r 'echo crypt($argv[1], "\$1\$ad0000000");' "$ADMIN_PASS")
 "${Q[@]}" "UPDATE vtiger_users SET user_password='$hash', crypt_type='PHP5.3MD5' WHERE id=1 AND user_name='admin'"
 redis-cli -n "$REDIS_DB" flushdb >/dev/null
 
-# Deploy steps, with a before/after count for the tables the deleting migrations touch
+# Deploy steps, with a before/after count for the tables the deleting migrations touch. Most migrations run inside
+# QuickRepair (not `CPMigration up`), so effects are measured after both and the run list comes from the history table
 for t in vtiger_relatedlists vtiger_field; do
     "${Q[@]}" "DROP TABLE IF EXISTS zz_smoke_$t; CREATE TABLE zz_smoke_$t AS SELECT * FROM $t"
 done
+hist0=$("${Q[@]}" "SELECT COALESCE(MAX(id), 0) FROM vtiger_migration_history")
 echo "--- CPMigration up"
 "$PHP" -d memory_limit=2G modules/CPMigration/Main.php up 2>&1 | grep -E 'success|failed|"error"' | sed 's/Description: //'
-echo "--- xoá bởi migration: relatedlists $("${Q[@]}" "SELECT COUNT(*) FROM zz_smoke_vtiger_relatedlists b LEFT JOIN vtiger_relatedlists r USING(relation_id) WHERE r.relation_id IS NULL"), field $("${Q[@]}" "SELECT COUNT(*) FROM zz_smoke_vtiger_field b LEFT JOIN vtiger_field f USING(fieldid) WHERE f.fieldid IS NULL")"
-"${Q[@]}" "DROP TABLE zz_smoke_vtiger_relatedlists; DROP TABLE zz_smoke_vtiger_field"
 echo "--- QuickRepair"
 "$PHP" -d memory_limit=4G "$HERE/quick_repair.php" "$WT"
 rc=$?
+echo "--- migration đã chạy (vtiger_migration_history; success=1 không chứng minh mọi câu SQL bên trong chạy được — xem log PHP/SQL)"
+"${Q[@]}" "SELECT CONCAT(IF(success = 1, '  ok    ', '  FAIL  '), migration_name, IF(success = 1, '', CONCAT(' — ', LEFT(IFNULL(error_message, ''), 200)))) FROM vtiger_migration_history WHERE id > $hist0 ORDER BY id"
+echo "--- xoá bởi migration: relatedlists $("${Q[@]}" "SELECT COUNT(*) FROM zz_smoke_vtiger_relatedlists b LEFT JOIN vtiger_relatedlists r USING(relation_id) WHERE r.relation_id IS NULL"), field $("${Q[@]}" "SELECT COUNT(*) FROM zz_smoke_vtiger_field b LEFT JOIN vtiger_field f USING(fieldid) WHERE f.fieldid IS NULL")"
+"${Q[@]}" "SELECT CONCAT('    relatedlist ', t.name, ' → ', b.label) FROM zz_smoke_vtiger_relatedlists b LEFT JOIN vtiger_relatedlists r USING(relation_id) LEFT JOIN vtiger_tab t ON t.tabid = b.tabid WHERE r.relation_id IS NULL"
+"${Q[@]}" "DROP TABLE zz_smoke_vtiger_relatedlists; DROP TABLE zz_smoke_vtiger_field"
 redis-cli -n "$REDIS_DB" flushdb >/dev/null
 rm -rf cache/templates_c
 exit $rc

@@ -14,9 +14,24 @@ import smoke_common as sc
 out = sys.argv[1]
 results = {'pages': [], 'crawl': []}
 
-# 1. core pages, seeded session
+# 1. core pages, seeded session. The list carries master-DB record ids: a record the clone lacks is swapped for the
+# newest live record of that module, so Detail/Edit run on the clone's own data (beta ids differ completely)
+_newest = {}
+
+
+def live_url(u):
+    m = re.search(r'module=(\w+)&.*\brecord=(\d+)', u)
+    if not m or sc.sql(f'SELECT 1 FROM vtiger_crmentity WHERE crmid={m.group(2)} AND deleted=0'):
+        return u
+    mod = m.group(1)
+    if mod not in _newest:
+        _newest[mod] = sc.sql(f"SELECT MAX(crmid) FROM vtiger_crmentity WHERE setype='{mod}' AND deleted=0")
+    rid = _newest[mod]
+    return re.sub(r'\brecord=\d+', f'record={rid}', u) if rid and rid != 'NULL' else u
+
+
 c = sc.Client()
-for u in [l.strip() for l in open(f'{sc.DATA}/pages.txt') if l.strip()]:
+for u in [live_url(l.strip()) for l in open(f'{sc.DATA}/pages.txt') if l.strip()]:
     t = time.time()
     try:
         st, body, loc = c.req('GET', '/' + u, timeout=120)
