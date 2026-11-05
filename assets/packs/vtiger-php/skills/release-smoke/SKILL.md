@@ -35,6 +35,7 @@ Ghi vào report mục "Phân loại" từng nhóm: lỗi release / lỗi cũ (c�
 
 | Hiện tượng | Nguyên nhân | Cách nhận ra |
 |---|---|---|
+| `db.txt`: `Migration failed ... ALTER TABLE ... ADD COLUMN` (Duplicate column) | DB clone lấy từ DB dev master, cột đã có sẵn; migration dùng `ADD COLUMN` trần thay vì `addColumnIfMissing` | `information_schema.columns` của DB nguồn có cột đó + file migration đã có trên `origin/release` (không phải migration của đợt). Clone master KHÔNG chứng minh migration chạy được trên DB production: migration master đã ghi `vtiger_migration_history` thì clone bỏ qua → phải chạy thử trên server/DB clone từ production |
 | `Sorry! Attempt to access restricted file - modules/<X>/<X>.php` | DB clone (từ master) còn quan hệ/report tới module release không có | Script tự xếp "DB clone" CHỈ khi file cũng không có trên `origin/release` (hoặc `modules//.php` mà record không có / đã xoá trong clone). File `origin/release` có mà branch mất → vẫn tính lỗi |
 | Lưu record 500 `Failed opening required modules/<X>/handlers/...` | Handler của module release không có — `db.sh` đã tắt; gặp trên DB clone khác (vd `release.localhost`) thì tắt tương tự | Như trên |
 | `Incorrect DATE value: ''` (1525), alias `rank` (1064) | MySQL 8/9 local khắt khe hơn MariaDB server | `SELECT VERSION()` local; câu SQL giống master |
