@@ -16,6 +16,25 @@ bash $S/run.sh release-core-10.2026 --skip phpstan,api # bỏ bước
 
 Kết quả: `agents/release-queue/smoke-<ngày>-<sha>/report.md` (lần chạy có `--skip`/`--keep-db` ghi `report-partial-<giờ>.md`, không đè report đầy đủ) (lỗi PHP/nginx gom theo nhóm + URL gây lỗi + tóm tắt từng bước) và `*.json` từng bước. Site để bấm tay: `http://vtiger74.localhost:8085`, `admin` / `Relwalk#2026` (mật khẩu chỉ đặt trong DB clone).
 
+## Nguồn DB: `local` (mặc định) hay `beta` (khuyên dùng trước khi merge)
+
+| | `local` | `SMOKE_SOURCE=beta` |
+|---|---|---|
+| DB | clone DB dev master (`vtiger` → `vtiger_relsmoke`, MySQL local) | dump `rnd_beta` của beta.cloudpro.vn trên vm02 (host `vm02` trong `.omp/ssh.json`, chỉ đọc: `mariadb-dump --single-transaction`), nạp NGUYÊN VĂN vào container `mariadb:10.5.25` (`relsmoke-mariadb`, cổng 3307) cùng `sql_mode`/charset/`innodb_strict_mode` đọc từ server |
+| Schema | schema master: migration master đã ghi → bỏ qua; `ADD COLUMN` trần báo trùng cột | schema release thật: migration của đợt chạy như trên production |
+| Dữ liệu | dữ liệu dev, ít cấu hình (không có tax region…) | dữ liệu kiểu tenant: lỗi phụ thuộc cấu hình (tax region, charge, webform…) lộ ra |
+| Kết quả | `smoke-<ngày>-<sha>/` | `smoke-<ngày>-<sha>-beta/` |
+
+```bash
+SMOKE_SOURCE=beta bash $S/run.sh release-core-10.2026          # dump được giữ trong .cache/beta/ cả ngày
+SMOKE_SOURCE=beta bash $S/beta.sh --refetch                     # lấy dump mới
+```
+
+- Docker Desktop phải chạy (script tự `open -a Docker`). Container có `--restart unless-stopped`; Docker Desktop từng tự dừng giữa chừng → `mysqli_query(): Argument #1 ... false given` hàng loạt = DB chết, KHÔNG phải lỗi code: `docker start relsmoke-mariadb` rồi chạy lại bước đó (`--keep-db --skip …`).
+- MySQL 9 local không nạp được dump MariaDB (dòng sandbox, `DEFAULT curdate()`, TEXT có default) và client MySQL 9 không đăng nhập được MariaDB (`mysql_native_password`) → mọi lệnh SQL đi qua `docker exec … mysql` (biến `MYSQL_CMD`). KHÔNG sửa dump bằng sed để nạp vào MySQL: schema sẽ khác server.
+- Cổng nằm trong `db_server` (`127.0.0.1:3307`, `db_port` rỗng): `CPQueue_Server_Model` dựng PDO DSN chỉ từ `db_server`, tách cổng ra thì PDO nối nhầm MySQL local (`Access denied for user 'root'@'localhost'` khi lưu record).
+- URL crawl lấy từ demo master → record id của beta khác: nhiều trang "record không có" là bình thường; walk tự tìm record trong DB.
+
 ## Các bước (`run.sh`)
 
 | Bước | Script | Làm gì | Đạt khi |

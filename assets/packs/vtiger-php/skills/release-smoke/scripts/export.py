@@ -27,19 +27,26 @@ total = int(sc.sql('SELECT COUNT(*) FROM vtiger_account a JOIN vtiger_crmentity 
 base = dict(module='Accounts', source_module='Accounts', action='ExportData', viewname=cvid, mode='ExportAllData',
             selected_ids='[]', excluded_ids='[]', search_params='[]', tag_params='[]', type='xls')
 
-# A. direct export (below the queue threshold)
-p = sc.log_pos(); st, b, _ = c.req('POST', '/index.php', dict(base))
-n = xlsx_rows(b)
-add(f'Export trực tiếp Accounts ({total} record)', n == total + 1, f'HTTP {st}, xlsx {n} dòng', sc.fatals_since(p))
-
-# B. queued export
 cfg_raw = sc.sql("SELECT value FROM vtiger_config WHERE category='export_config'")
 cron = sc.sql("SELECT IFNULL(run_by,''), laststart, lastend FROM vtiger_cron_task WHERE name='ProcessExportQueue'").split('\t')
-try:
+
+
+def set_threshold(n):    # the CLONE's export_config only; restored in finally
     cfg = json.loads(cfg_raw)
-    cfg['export_in_background_when_records_num_exceeds'] = '10'
+    cfg['export_in_background_when_records_num_exceeds'] = str(n)
     sc.sql("UPDATE vtiger_config SET value='" + json.dumps(cfg).replace("'", "''") + "' WHERE category='export_config'")
     subprocess.run(['redis-cli', '-n', os.environ['REDIS_DB'], 'flushdb'], capture_output=True)
+
+
+try:
+    # A. direct export: threshold above the record count (a tenant's own threshold may be tiny)
+    set_threshold(total + 1)
+    p = sc.log_pos(); st, b, _ = c.req('POST', '/index.php', dict(base))
+    n = xlsx_rows(b)
+    add(f'Export trực tiếp Accounts ({total} record)', n == total + 1, f'HTTP {st}, xlsx {n} dòng', sc.fatals_since(p))
+
+    # B. queued export
+    set_threshold(10)
     before = int(sc.sql('SELECT COALESCE(MAX(queue_id),0) FROM vtiger_export_queue') or 0)
     p = sc.log_pos(); c.req('POST', '/index.php', dict(base)); c.req('POST', '/index.php', dict(base))
     queued = sc.sql(f"SELECT queue_id FROM vtiger_export_queue WHERE queue_id > {before} AND status='NEW'").split()
@@ -65,14 +72,20 @@ finally:
     sc.sql(f"UPDATE vtiger_cron_task SET run_by={'NULL' if not cron[0] else repr(cron[0])}, laststart={cron[1]}, lastend={cron[2]} WHERE name='ProcessExportQueue'")
     subprocess.run(['redis-cli', '-n', os.environ['REDIS_DB'], 'flushdb'], capture_output=True)
 
-# C. Report GetXLS of the largest tabular reports (export must start with the xlsx magic, no stray output)
-for rid in sc.sql("SELECT r.reportid FROM vtiger_report r WHERE r.reporttype='tabular' AND IFNULL(r.custom_handler_file,'')='' ORDER BY r.reportid LIMIT 40").split():
-    p = sc.log_pos(); st, b, _ = c.req('GET', f'/index.php?module=Reports&view=ExportReport&mode=GetXLS&record={rid}')
-    n = xlsx_rows(b)
-    f = sc.fatals_since(p)
-    if n is None and not f and st < 500:
-        continue    # report of a module the release lacks / no data: nothing exported, nothing broken
-    add(f'Report {rid} GetXLS', n is not None and not f, f'HTTP {st}, xlsx {n} dòng', f)
+# C. Report GetXLS of the largest tabular reports (export must start with the xlsx magic, no stray output);
+# the threshold is lifted so they export in the request instead of queueing
+set_threshold(10 ** 9)
+try:
+    for rid in sc.sql("SELECT r.reportid FROM vtiger_report r WHERE r.reporttype='tabular' AND IFNULL(r.custom_handler_file,'')='' ORDER BY r.reportid LIMIT 40").split():
+        p = sc.log_pos(); st, b, _ = c.req('GET', f'/index.php?module=Reports&view=ExportReport&mode=GetXLS&record={rid}')
+        n = xlsx_rows(b)
+        f = sc.fatals_since(p)
+        if n is None and not f and st < 500:
+            continue    # report of a module the release lacks / no data: nothing exported, nothing broken
+        add(f'Report {rid} GetXLS', n is not None and not f, f'HTTP {st}, xlsx {n} dòng', f)
+finally:
+    sc.sql("UPDATE vtiger_config SET value='" + cfg_raw.replace("'", "''") + "' WHERE category='export_config'")
+    subprocess.run(['redis-cli', '-n', os.environ['REDIS_DB'], 'flushdb'], capture_output=True)
 
 json.dump(rows, open(f'{out}/export.json', 'w'), ensure_ascii=False, indent=1)
 print(f"export: {len(rows)} kiểm, FAIL {sum(r['verdict'] == 'FAIL' for r in rows)}")

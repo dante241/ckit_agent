@@ -3,7 +3,7 @@
 core modules, HelpDesk status modal / inline edit / comment, Settings pages touched by the PHP 8 work,
 and the four write cases master was gated on (SponsorshipCategory, CPRequest, CPLeaving, CPReportTask).
 Records created here are deleted again; a case whose module the release lacks is reported as SKIP."""
-import json, os, re, secrets, sys
+import json, os, re, secrets, sys, time
 
 import smoke_common as sc
 
@@ -118,11 +118,12 @@ def case(name, module, fn):
 
 def c_sponsor():
     ev = first_id('vtiger_cpeventmanagement', 'cpeventmanagementid')
-    st, b, rid = save('CPSponsorshipCategory', name='smoke category', cpsponsorshipcategory_type='cash', sponsorship_value='1500000',
+    name = f'smoke category {int(time.time())}'    # a category name is unique per event
+    st, b, rid = save('CPSponsorshipCategory', name=name, cpsponsorshipcategory_type='cash', sponsorship_value='1500000',
                       expected_sponsors_number='2', related_cpeventmanagement=ev, assigned_user_id='1')
     if not rid:
         return False, f'create {st}', b
-    c.req('POST', '/index.php', dict(module='CPSponsorshipCategory', action='Save', record=rid, mode='edit', name='smoke category',
+    c.req('POST', '/index.php', dict(module='CPSponsorshipCategory', action='Save', record=rid, mode='edit', name=name,
                                      cpsponsorshipcategory_type='cash', sponsorship_value='1700000', expected_sponsors_number='2',
                                      related_cpeventmanagement=ev, assigned_user_id='1'))
     val = sql_one(f'SELECT expected_sponsorship_value FROM vtiger_cpsponsorshipcategory WHERE cpsponsorshipcategoryid={rid}')

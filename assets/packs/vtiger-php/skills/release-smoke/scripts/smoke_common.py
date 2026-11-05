@@ -40,7 +40,7 @@ def missing_module(body, url=''):
 
 
 def sql(q):
-    return subprocess.run(['mysql', '-h127.0.0.1', '-uroot', '--default-character-set=utf8mb4', DB, '-N', '-e', q],
+    return subprocess.run(os.environ['MYSQL_CMD'].split() + [DB, '-N', '-e', q],
                           capture_output=True, text=True, errors='replace').stdout.strip()
 
 

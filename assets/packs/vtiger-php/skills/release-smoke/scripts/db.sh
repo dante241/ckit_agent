@@ -4,18 +4,22 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$WT" || { echo "ABORT: chưa có worktree $WT (chạy setup.sh)" >&2; exit 2; }
 grep -q "db_name'\] = '$DB'" config.env.php || { echo "ABORT: $WT/config.env.php không trỏ DB $DB — không đụng DB khác" >&2; exit 2; }
-[ "$DB" != "$SRC_DB" ] || { echo "ABORT: DB clone trùng DB nguồn" >&2; exit 2; }
+[ "$DB" != "$SRC_DB" ] || [ "$SOURCE" = beta ] || { echo "ABORT: DB clone trùng DB nguồn" >&2; exit 2; }
 Q=("${MYSQL[@]}" "$DB" -N -e)
 
-"${MYSQL[@]}" -e "DROP DATABASE IF EXISTS \`$DB\`; CREATE DATABASE \`$DB\` CHARACTER SET utf8mb4" || exit 2
-set -o pipefail    # a failed dump must stop here, not leave an empty clone behind
-mysqldump -h127.0.0.1 -uroot --default-character-set=utf8mb4 --single-transaction --quick --routines --triggers --no-tablespaces "$SRC_DB" \
-    | "${MYSQL[@]}" "$DB" || { echo "ABORT: clone $SRC_DB → $DB lỗi" >&2; exit 2; }
-set +o pipefail
-count() { "${Q[@]}" "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$1'"; }
-n_src=$(count "$SRC_DB"); n_dst=$(count "$DB")
-[ "$n_dst" -ge "$n_src" ] || { echo "ABORT: clone thiếu bảng ($n_dst/$n_src)" >&2; exit 2; }
-echo "clone $SRC_DB → $DB: $n_dst bảng"
+if [ "$SOURCE" = beta ]; then
+    bash "$HERE/beta.sh" || exit 2
+else
+    "${MYSQL[@]}" -e "DROP DATABASE IF EXISTS \`$DB\`; CREATE DATABASE \`$DB\` CHARACTER SET utf8mb4" || exit 2
+    set -o pipefail    # a failed dump must stop here, not leave an empty clone behind
+    mysqldump -h127.0.0.1 -uroot --default-character-set=utf8mb4 --single-transaction --quick --routines --triggers --no-tablespaces "$SRC_DB" \
+        | "${MYSQL[@]}" "$DB" || { echo "ABORT: clone $SRC_DB → $DB lỗi" >&2; exit 2; }
+    set +o pipefail
+    count() { "${Q[@]}" "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$1'"; }
+    n_src=$(count "$SRC_DB"); n_dst=$(count "$DB")
+    [ "$n_dst" -ge "$n_src" ] || { echo "ABORT: clone thiếu bảng ($n_dst/$n_src)" >&2; exit 2; }
+    echo "clone $SRC_DB → $DB: $n_dst bảng"
+fi
 
 # The master DB registers handlers/modules the release code does not ship: disable them in the clone,
 # otherwise every save fatals on a missing handler file (an artifact of the clone, not a release bug)

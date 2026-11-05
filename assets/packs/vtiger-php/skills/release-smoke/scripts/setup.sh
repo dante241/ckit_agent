@@ -15,8 +15,13 @@ fi
 cd "$WT" || exit 2
 
 # Local config: master's DB credentials, this worktree's root and DB, Redis cache db REDIS_DB
-sed -e "s#\$root_directory = '[^']*'#\$root_directory = '$WT/'#" \
-    -e "s#\$dbconfig\['db_name'\] = '[^']*'#\$dbconfig['db_name'] = '$DB'#" "$VT/config.env.php" > config.env.php
+DB_SED=(-e "s#\$dbconfig\['db_name'\] = '[^']*'#\$dbconfig['db_name'] = '$DB'#")
+# Port goes into db_server (db_port empty): CPQueue's PDO DSN uses db_server only, so a separate port would reach the local MySQL
+[ "$SOURCE" = beta ] && DB_SED+=(-e "s#\$dbconfig\['db_server'\] = '[^']*'#\$dbconfig['db_server'] = '127.0.0.1:$DB_PORT'#"
+    -e "s#\$dbconfig\['db_port'\] = '[^']*'#\$dbconfig['db_port'] = ''#"
+    -e "s#\$dbconfig\['db_username'\] = '[^']*'#\$dbconfig['db_username'] = 'root'#"
+    -e "s#\$dbconfig\['db_password'\] = '[^']*'#\$dbconfig['db_password'] = '$MYSQL_PWD'#")
+sed -e "s#\$root_directory = '[^']*'#\$root_directory = '$WT/'#" "${DB_SED[@]}" "$VT/config.env.php" > config.env.php
 python3 - "$REDIS_DB" <<'EOF'
 import re, sys
 p = 'config_override.php'
@@ -60,4 +65,7 @@ redis-cli -n "$REDIS_DB" flushdb >/dev/null
 sleep 1
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/index.php")
 echo "smoke site $BASE → $(git log -1 --format='%h %s' | cut -c1-80) | login page HTTP $code"
-[ "$code" = 200 ] || { echo "ABORT: trang login không trả 200 (xem $PHP_LOG)" >&2; exit 1; }
+if [ "$code" != 200 ]; then
+    "${MYSQL[@]}" "$DB" -N -e 'SELECT 1' >/dev/null 2>&1 || { echo "DB $DB chưa có — db.sh sẽ dựng rồi kiểm lại"; exit 0; }
+    echo "ABORT: trang login không trả 200 (xem $PHP_LOG)" >&2; exit 1
+fi
