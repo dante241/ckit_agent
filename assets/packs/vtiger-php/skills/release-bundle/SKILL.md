@@ -76,7 +76,7 @@ Mỗi MR luôn có commit mang marker `-x` (kể cả khi chỉ có T3): sửa t
 
 | Tình huống | Làm | Sai sót đã gặp |
 |---|---|---|
-| PHPStan/T3 cho thấy code thiếu do **helper thuần** (hàm tiện ích, không logic nghiệp vụ) | Copy nguyên văn master vào ticket/MR riêng nhắm `release`, merge, rồi `git merge --no-ff origin/release` vào branch tháng; resolve tiếp | — (#27458 helper CPMigration) |
+| PHPStan/T3 cho thấy code thiếu do **helper thuần** (hàm tiện ích, không logic nghiệp vụ) | Branch `fix/<ticket>-…` tạo từ **branch tháng**, copy nguyên văn master, `merge --no-ff` (hoặc MR) vào **branch tháng**; resolve tiếp. `release` chỉ nhận đúng 1 MR mỗi đợt: `release-core-MM.YYYY → release` | #27458: MR !483 nhắm thẳng `release` (c839d94305) → sai quy tắc "Không MR thẳng vào release" (`docs/release-process.md` §4.7) |
 | Code thiếu là **logic của ticket chưa release** (vd #21103 Ticket V3) | Ticket **phụ thuộc** → gỡ `Chờ release`/`Conflict cherry-pick`, gắn `Dev done` cho mọi MR của ticket, ghi vào report. `/release-check` lần sau sẽ promote lại (classify không biết phụ thuộc) → chạy bundle với `skip <iid>`. Cú pháp PHP 8.3 KHÔNG còn là lý do phụ thuộc từ đợt 10.2026 (release chạy 8.3) | #27290/#27293 (!454 !479); #27390 (!477 !482) lúc đầu bị hạ vì PHP 8.3, sau khi #27245 vào thì chỉ còn thiếu hàng đợi export |
 | MR sửa tính năng/file **release chưa từng có** (CPEcommerceIntegration, file của ticket chưa release) | Bỏ đúng hunk/file đó, giữ phần còn lại; ghi lý do trong report. `audit-month.sh` liệt kê `FILE-BỎ`/`THIẾU` để đối chiếu | — |
 | T3 composer/`vendor/` | Sửa tay: copy package từ master vào `vendor/`, thêm prefix vào `autoload_psr4.php` **và** `autoload_static.php` (`prefixLengthsPsr4` + `prefixDirsPsr4`), `composer.json`, entry trong `composer.lock` (content-hash để cũ — ghi rõ). KHÔNG `composer require`: vendor đã commit ≠ lock → bump cả vendor. Kiểm load class trên `php:7.2-cli` | — (#26929 psr/clock) |
@@ -110,6 +110,7 @@ Mỗi MR luôn có commit mang marker `-x` (kể cả khi chỉ có T3): sửa t
 |---|---|
 | Precondition | Có `classified-*.json` (`/release-check`) |
 | Cả ticket hoặc không gì | Không bao giờ để nửa ticket trên branch release |
+| Không MR/merge thẳng vào `release` | Mọi thay đổi (helper, hotfix, fix chỉ-release) vào **branch tháng**; `release` chỉ nhận MR `release-core-MM.YYYY → release` sau khi test |
 | Không squash, không push branch release | Push branch release + tạo MR tổng là việc người release làm tay sau khi test |
 | `--handoff` | Ngoại lệ duy nhất có push: chỉ push `pick/<ticket>` lên vtiger_release |
 | Idempotent | Marker `-x`; chạy lại cùng tháng chỉ pick MR mới |
