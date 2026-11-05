@@ -41,6 +41,9 @@ Ghi vào report mục "Phân loại" từng nhóm: lỗi release / lỗi cũ (c�
 | Fatal `... on null/false` khi gọi kèm XHR (`preProcess` bị bỏ) | Harness gửi `X-Requested-With` cho full page | Gọi lại không XHR → 200 |
 | Record id không tồn tại (Webforms 6, CPTodoList 1523771…) | URL lấy từ DB demo | `SELECT` record trong `vtiger_relsmoke` |
 | API "Record not found" / `FROM vtiger_customview AND` / `LIMIT , 20` | Gọi action không truyền tham số | File handler y hệt master |
+| PHPStan "chỉ release có": `SocketIO::setProtocole/emit/SSL_PROTOCOLE`, `NotificationAPI::getInstance()` | Trùng tên class: release có 2 `class SocketIO` (`libraries/SocketIO/SocketIO.php` có đủ method, `socket.io.php` thì không) và 2 `NotificationAPI` (v1 không có `getInstance`, v2 có); PHPStan chọn nhầm bản | Xem `require_once` ở caller (PBXManager/BaseConnector, Chatbox, CPAICameraIntegration → `SocketIO.php`; CloudWorkApi v2 → `v2/NotificationApi.php`) và method có trong file đó |
+| `Vtiger_Record_Model::getAttachmentDetails()` không có (CPTicketCommunicationLog Data.php) | `getInstanceById(..., 'CPTicketCommunicationLog')` khai báo trả `Vtiger_Record_Model`, runtime trả lớp con có method | `CPTicketCommunicationLog_Record_Model::getAttachmentDetails()` tồn tại |
+| `invalid return type imap_search` (MailConverter MailBox) | Docblock `@return imap_search` sai kiểu | Chỉ docblock |
 | `DivisionByZeroError`, `array_key_exists(): ... null given`, `... must be of type array` | **Lỗi thật chỉ có trên PHP 8** (PHP 7 chỉ cảnh báo) — release đợt này lên 8.3 nên phải sửa | Sửa trên master qua MR (ticket nâng runtime), pick `-x -m 1` vào branch tháng, chạy lại smoke |
 
 Lỗi chỉ có trên PHP 8 mà code giống master **vẫn là lỗi của đợt release** khi đợt đó chuyển production lên 8.3: sửa trên master rồi pick (đợt 10.2026: MR !484 — chia tổng 0 trong `Chart.php`, `getSelectedFieldsList()` trả null, `array + null` trong Webforms).
