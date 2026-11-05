@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# phpstan.sh <ref> <out_dir> — PHPStan on every PHP file origin/release..<ref> changes (release-bundle's
+# phpstan.sh <ref> <out_dir> — PHPStan on every PHP file <base>..<ref> changes (release-bundle's
 # phpstan-check: new errors after vs before), then split the new errors into
 #   same on master (same file + message on origin/master: code that came from master as is) and
 #   release-only (read each one), plus calls with too few arguments (ArgumentCountError on PHP 8).
@@ -11,7 +11,9 @@ CHECK="$HERE/../../release-bundle/scripts/phpstan-check.sh"
 cd "$VT" || exit 2
 git fetch -q origin master release 2>/dev/null
 RES=$(ls -t agents/release-queue/bundle-result-*.json 2>/dev/null | head -1)
-RELEASE_PHPSTAN_PROCS="${RELEASE_PHPSTAN_PROCS:-3}" nice -n 10 bash "$CHECK" origin/release "$REF" "$OUT/phpstan.json" ${RES:+"$VT/$RES"} | tail -2
+# <base> = origin/release; smoking release itself after the batch merge: SMOKE_PHPSTAN_BASE=<previous release commit>
+BASE="${SMOKE_PHPSTAN_BASE:-origin/release}"
+RELEASE_PHPSTAN_PROCS="${RELEASE_PHPSTAN_PROCS:-3}" nice -n 10 bash "$CHECK" "$BASE" "$REF" "$OUT/phpstan.json" ${RES:+"$VT/$RES"} | tail -2
 [ -s "$OUT/phpstan.json" ] || exit 0
 
 # Same files on origin/master, analysed the same way (vtiger's config without baselines)
@@ -51,7 +53,7 @@ few_ids = {id(e) for e in few}
 concrete = [e for e in new if (e['file'], e['message']) in on_master and id(e) not in few_ids
             and e['identifier'] in CONCRETE and not re.search(r'\bobject\b|_Base_Model|Vtiger_(Record|Module)_Model', e['message'])]
 json.dump(rel_only, open(f'{out}/phpstan-release-only.json', 'w'), ensure_ascii=False, indent=1)
-print(f'phpstan: {len(new)} lỗi mới so với origin/release; y hệt master {len(new) - len(rel_only)}; chỉ release có {len(rel_only)}; '
+print(f'phpstan: {len(new)} lỗi mới so với base; y hệt master {len(new) - len(rel_only)}; chỉ release có {len(rel_only)}; '
       f'gọi thiếu tham số {len(few)}; có cả trên master nhưng là symbol cụ thể không tồn tại {len(concrete)}')
 for title, rows in (('Chỉ release có', rel_only), ('Gọi thiếu tham số (ArgumentCountError)', few),
                     ('Có cả trên master — symbol cụ thể, cần đọc', concrete)):
