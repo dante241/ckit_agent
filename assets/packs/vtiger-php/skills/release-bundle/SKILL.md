@@ -111,6 +111,7 @@ Mỗi MR luôn có commit mang marker `-x` (kể cả khi chỉ có T3): sửa t
 | Precondition | Có `classified-*.json` (`/release-check`) |
 | Cả ticket hoặc không gì | Không bao giờ để nửa ticket trên branch release |
 | Không MR/merge thẳng vào `release` | Mọi thay đổi (helper, hotfix, fix chỉ-release) vào **branch tháng**; `release` chỉ nhận MR `release-core-MM.YYYY → release` sau khi test |
+| Mỗi đợt đúng **1 commit** trên `release` | First-parent của `release` mỗi đợt = 1 merge "Release Core <version>" (team update core theo commit này). Lỗi tìm ra sau khi đã merge đợt: sửa trên branch tháng, rồi dựng lại merge đợt (`git commit-tree <tree branch tháng> -p <release trước đợt> -p <tip branch tháng>`, cùng tiêu đề, liệt kê các MR) và force-push `release` (gỡ protect → push `--force-with-lease` → protect lại push 0 / merge 40) — KHÔNG thêm MR "Hotfix" thứ hai lên `release`. Chưa tag/mirror thì làm được; đã tag thì hỏi user |
 | Không squash, không push branch release | Push branch release + tạo MR tổng là việc người release làm tay sau khi test |
 | `--handoff` | Ngoại lệ duy nhất có push: chỉ push `pick/<ticket>` lên vtiger_release |
 | Idempotent | Marker `-x`; chạy lại cùng tháng chỉ pick MR mới |
