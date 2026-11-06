@@ -598,7 +598,8 @@ fn insert_under_tools(s: &str, block: &str) -> String {
 /// omp discovers (`~/.omp/hooks/pre/` is NOT scanned; hooks there never ran):
 /// - `<NS>-recall.ts`: injects the live STATE at every prompt and into compaction.
 /// - `<NS>-code-intel.ts`: blocks the first grep/read on code per prompt until a
-///   code-intel device ran (a retry of the same call passes).
+///   code-intel device ran (a retry of the same call passes); appends a codegraph
+///   hint to definition-lookup grep results (`function foo\(`, `class Foo`) without blocking.
 /// Removes the legacy copy from the undiscovered dir. Idempotent (byte-identical skip).
 pub(crate) fn ensure_hooks(home: &Path) -> Result<()> {
     let dir = home.join(".omp/agent/hooks/pre");

@@ -117,9 +117,17 @@ fn ingest(conn: &Connection, sess_dir: &Path) -> Result<(usize, usize)> {
                         continue;
                     }
                     let id = c.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string();
-                    let name = c.get("name").and_then(|n| n.as_str()).unwrap_or("?").to_string();
-                    let cmd = c
-                        .get("arguments")
+                    let name = c.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+                    let args = c.get("arguments");
+                    // omp xdev mounts MCP tools as devices: `write xd://<tool>` IS the call.
+                    let device = args
+                        .and_then(|a| a.get("path"))
+                        .and_then(|p| p.as_str())
+                        .filter(|_| name == "write")
+                        .and_then(|p| p.strip_prefix("xd://"))
+                        .map(|p| p.split('/').next().unwrap_or(p));
+                    let name = device.unwrap_or(name).to_string();
+                    let cmd = args
                         .and_then(|a| a.get("command").or_else(|| a.get("cmd")))
                         .and_then(|x| x.as_str())
                         .unwrap_or("")
@@ -146,8 +154,9 @@ fn ingest(conn: &Connection, sess_dir: &Path) -> Result<(usize, usize)> {
     Ok((new_rows, n_sessions))
 }
 
-/// Map a tool call to (category, detail). codegraph runs via `bash`, so its
-/// command string is inspected; serena/cbm/headroom are MCP tools.
+/// Map a tool call to (category, detail). codegraph runs via `bash` or the
+/// `mcp__codegraph_*` tools; serena/cbm/headroom are MCP tools. `name` is the
+/// xd:// device name when the call was a `write xd://<tool>`.
 fn categorize(name: &str, cmd: &str) -> (&'static str, String) {
     const SERENA: &[&str] = &[
         "find_symbol", "find_referencing_symbols", "find_implementations", "find_declaration",
@@ -161,7 +170,7 @@ fn categorize(name: &str, cmd: &str) -> (&'static str, String) {
     ];
     const SEARCH: &[&str] = &["grep", "glob", "search", "find"];
     let n = name.to_lowercase();
-    if name == "bash" && cmd.contains("codegraph") {
+    if n.contains("codegraph") || (name == "bash" && cmd.contains("codegraph")) {
         return ("optimizer", "codegraph".into());
     }
     if n.contains("serena") || SERENA.contains(&name) {

@@ -12,6 +12,14 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.50] - 2026-11-06
+
+### Changed
+- Hook code-intel (`~/.omp/agent/hooks/pre/ckit-code-intel.ts`): khi grep tìm định nghĩa (`function foo\(`, `class Foo`, `def`/`fn`/`func`…) trong repo đang mở, hook gắn thêm 1 dòng gợi ý `codegraph_explore` vào kết quả grep. Hook không chặn lệnh này, vì chặn tốn thêm 1 lượt model trả phí: theo log, 60% số lần bị chặn agent chỉ gọi lại y hệt lệnh cũ. Grep vào path ngoài repo (worktree `/tmp`, repo khác, `~`) không bị gắn gợi ý.
+
+### Fixed
+- `ckit harness toolstats` đếm thiếu optimizer: lệnh `write xd://<tool>` (cách omp xdev gọi MCP) bị tính là `edit/write`, còn `mcp__codegraph_explore` gọi trực tiếp bị tính là `other`. Giờ hai loại này được phân loại theo tên tool thật. Ví dụ repo vtiger: optimizer tăng từ 100 lên 571 lookup (3.4% → 16.5%).
+
 ## [0.1.49] - 2026-11-06
 
 ### Changed
