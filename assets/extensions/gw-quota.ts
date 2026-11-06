@@ -6,20 +6,21 @@
 // 1. 9router ai-gateway providers (cloudgo-cc / cloudgo-cx): look up the
 //    provider's { baseUrl, apiKey } in ~/.omp/agent/models.yml and poll
 //    `${baseUrl}/quota`. Auth sends BOTH x-api-key (Anthropic path) and
-//    Authorization: Bearer (Codex path). The endpoint returns only used
+//    Authorization: Bearer (Codex path). The endpoint returns used
 //    percentages for the refilling per-key bucket (`used_percent` over
 //    `window_seconds`) and the calendar day (`daily_used_percent`) — the
 //    bucket refills continuously, so no reset clock is shown:
-//    `Quota 4h ━━─── 40% · Day ━━─── 47%`.
+//    `Quota 4h ━━━── 60% · Day ━━━── 53%`.
 // 2. `anthropic` with a Claude subscription (OAuth login): run omp's own
 //    `omp usage --provider anthropic --json` (the extension ctx exposes no
 //    usage API) and show every window it reports, incl. model-scoped weekly
 //    buckets the built-in `usage` status-line segment drops:
-//    `Claude 5h ━──── 2% 4h52m · 7d Fable ───── 0% 16h`. These windows roll
+//    `Claude 5h ━━━━━ 98% 4h52m · 7d Fable ━━━━━ 100% 16h`. These windows roll
 //    over, so each carries its reset countdown. An API-key `anthropic` login
 //    yields no report → hidden.
 //
-// Meter + color track the percentage (green/yellow/red). Unlimited keys and
+// The widget shows what REMAINS (100 − used), so the meter drains like a fuel
+// gauge; color tracks usage (green/yellow/red). Unlimited keys and
 // other providers are hidden. All failures are swallowed (session never
 // affected). `/gwquota` forces a refresh and reports detail via a notification.
 import { execFile } from "node:child_process";
@@ -244,18 +245,26 @@ function levelSgr(pct: number, exceeded: boolean): string {
   return "92";
 }
 
-// 5-cell meter (━ filled in the level color, ─ empty dim-grey). Box-drawing, not ▰▱: SF Mono has ━─ and Ghostty
-// draws them as sprites, while ▰▱ come from a fallback font (Menlo) that Ghostty rescales into a ladder.
-function bar(pct: number, sgr: string): string {
-  const filled = Math.max(0, Math.min(5, Math.round(pct / 20)));
+// 5-cell meter of the REMAINING share (━ filled in the level color, ─ empty dim-grey). Box-drawing, not ▰▱:
+// SF Mono has ━─ and Ghostty draws them as sprites, while ▰▱ come from a fallback font (Menlo) that Ghostty
+// rescales into a ladder.
+function bar(left: number, sgr: string): string {
+  // Any quota left keeps ≥1 cell, so an empty meter means exhausted only.
+  const filled = left > 0 ? Math.max(1, Math.min(5, Math.round(left / 20))) : 0;
   return paint(sgr, "━".repeat(filled)) + paint("90", "─".repeat(5 - filled));
+}
+
+// Remaining share of a budget, clamped (a gateway may report >100% used once exceeded).
+function left(b: Budget): number {
+  return b.exceeded ? 0 : Math.max(0, Math.min(100, 100 - b.pct));
 }
 
 function segment(b: Budget): string {
   const sgr = levelSgr(b.pct, b.exceeded);
+  const rest = left(b);
   const head = b.label ? `${paint("90", b.label)} ` : "";
   const reset = b.resetsAt ? ` ${paint("90", fmtReset(b.resetsAt))}` : "";
-  return `${head}${bar(b.pct, sgr)} ${paint(sgr, b.pct + "%")}${reset}`;
+  return `${head}${bar(rest, sgr)} ${paint(sgr, rest + "%")}${reset}`;
 }
 
 export function statusText(title: string, bs: Budget[]): string {
@@ -369,7 +378,7 @@ export default function gwQuotaExtension(pi: ExtensionAPI): void {
         const detail = bs
           .map(
             (b) =>
-              `${b.label || "window"} [${b.source}]: ${b.pct}% used` +
+              `${b.label || "window"} [${b.source}]: ${left(b)}% left (${b.pct}% used)` +
               (b.resetsAt ? `, resets in ${fmtReset(b.resetsAt)}` : "") +
               (b.exceeded ? " — EXCEEDED" : ""),
           )

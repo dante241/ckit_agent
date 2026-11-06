@@ -12,6 +12,9 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Changed
+- `gw-quota`: thanh quota giờ hiển thị phần **còn lại** (giảm dần) thay vì phần đã dùng (tăng dần): `Quota 4h ━━━── 60% · Day ━━━── 53%`. Thanh rút dần như đồng hồ xăng; còn quota thì giữ ít nhất 1 ô, thanh rỗng chỉ khi đã hết. Màu vẫn đổi theo mức đã dùng (xanh → vàng ở 70% → đỏ ở 90% hoặc khi vượt quota). Khi vượt quota hiện `0%`. `/gwquota` báo cả hai số: `60% left (40% used)`.
+
 ## [0.1.50] - 2026-11-06
 
 ### Changed
