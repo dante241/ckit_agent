@@ -1,6 +1,6 @@
 # VTiger Cron Pattern
 
-> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md` + `.omp/rules/php-conventions.md`
+> **Conventions:** Follow `rule://cloudgo-development-rules` + `rule://php-conventions`
 
 ## Architecture Overview
 

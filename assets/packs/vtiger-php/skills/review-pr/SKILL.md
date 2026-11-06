@@ -1,8 +1,8 @@
 ---
 name: review-pr
 disable-model-invocation: true
-description: "Review GitLab Merge Request for bugs, security, logic, and AGENTS.md/.omp/rules compliance. Posts comment and auto-merges if clean."
-allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), Bash(bash .omp/skills/review-pr/scripts/*), Bash(bash ~/.omp/skills/review-pr/scripts/*), mcp__pms_*, Agent, Read, Grep, Glob
+description: "Review GitLab Merge Request for bugs, security, logic, and AGENTS.md/pack rules compliance. Posts comment and auto-merges if clean."
+allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), Bash(bash ~/.config/8sync/packs/vtiger-php/skills/review-pr/scripts/*), mcp__pms_*, Agent, Read, Grep, Glob
 ---
 
 # Review PR Skill (GitLab)
@@ -97,15 +97,16 @@ git diff origin/<TARGET>..mr/<MR_NUMBER> --stat
    - **Relationships**: Quan hệ giữa các module (1-N, N-N)
    - **Gotchas & edge cases**: Các lỗi đã biết, cần tránh
    - **Business rules**: Quy tắc nghiệp vụ đặc thù của module
-5. **Coding rules (BẮT BUỘC):** map file đổi → rule theo bảng *Path-scoped sibling rules* trong `rule://cloudgo-development-rules`, `read rule://<name>` từng rule khớp, luôn kèm `cloudgo-development-rules` + `error-patterns` → `$RULES_CONTEXT` (danh sách tên rule). Rule code là tiêu chí review: `scope: tool:edit/write` của rule chỉ quyết định lúc rule tự nạp (khi sửa), KHÔNG phải lý do bỏ/bác finding; loại file rule áp dụng vẫn theo nội dung rule.
-6. Truyền knowledge context + `$RULES_CONTEXT` cho TẤT CẢ 5 agents ở Step 3 và mọi validator ở Step 4
-7. **Rule mới nhất:** `rule://<name>` là bản đang deploy (`.omp/rules/` của project, hoặc `~/.omp/agent/rules/` khi pack cài `--global`) — đọc trực tiếp, KHÔNG dùng trí nhớ/bản tóm tắt từ review cũ. Re-review (round 2+) cũng nạp lại rule và chạy lại Step 2.6 trên head mới, kể cả khi head không đổi nhưng `master` đã có rule/gate mới.
+5. **Coding rules (BẮT BUỘC):** map file đổi → rule theo bảng *Path-scoped sibling rules* trong `rule://cloudgo-development-rules`, `read rule://<name>` từng rule khớp, luôn kèm `cloudgo-development-rules` → `$RULES_CONTEXT` (danh sách tên rule). Rule code là tiêu chí review: `scope: tool:edit/write` của rule chỉ quyết định lúc rule tự nạp (khi sửa), KHÔNG phải lý do bỏ/bác finding; loại file rule áp dụng vẫn theo nội dung rule.
+   **Error patterns → `$EP_HITS`:** KHÔNG đưa cả catalog cho subagent. Chạy một lần trên diff Step 1: `glab mr diff <MR_NUMBER> --repo $REPO | bash "$HOME/.config/8sync/packs/vtiger-php/skills/review-pr/scripts/ep-hits.sh"` — in các entry `rule://error-patterns` có needle `Trigger` khớp dòng thêm / đường dẫn file, dòng cuối `EP_HITS: <n> (<ids>)`. Lưu nguyên output → `$EP_HITS` (kể cả `EP_HITS: 0`). Orchestrator tự đối chiếu thêm các Trigger ngữ nghĩa (chữ ngoài backtick, vd EP-001/004/006/021) và nối entry khớp vào `$EP_HITS`.
+6. Truyền knowledge context + `$RULES_CONTEXT` + `$EP_HITS` cho TẤT CẢ 5 agents ở Step 3 và mọi validator ở Step 4; subagent đã có `$EP_HITS` thì KHÔNG đọc lại `rule://error-patterns`.
+7. **Rule mới nhất:** `rule://<name>` là bản đang deploy (file thật trong `.omp/rules/` của project nếu có, không thì bản trong pack `~/.config/8sync/packs/vtiger-php/rules/`) — đọc trực tiếp, KHÔNG dùng trí nhớ/bản tóm tắt từ review cũ. Re-review (round 2+) cũng nạp lại rule và chạy lại Step 2.6 trên head mới, kể cả khi head không đổi nhưng `master` đã có rule/gate mới.
 
 ### Step 2.6: PHP gate cơ học (BẮT BUỘC — không bỏ, không thay bằng đọc code)
 
 ```bash
-# chạy từ gốc repo vtiger; script nằm trong thư mục skill (project-local, hoặc ~/.omp khi pack cài --global)
-GATE=.omp/skills/review-pr/scripts/php-gate.sh; [ -f "$GATE" ] || GATE="$HOME/.omp/skills/review-pr/scripts/php-gate.sh"
+# chạy từ gốc repo vtiger; script nằm trong store của pack
+GATE="$HOME/.config/8sync/packs/vtiger-php/skills/review-pr/scripts/php-gate.sh"
 bash "$GATE" <MR_NUMBER> <TARGET_BRANCH>
 ```
 
@@ -121,7 +122,7 @@ Script dựng worktree tạm = `origin/<TARGET>` + merge MR (phân tích đúng 
 ### Step 2.7: Release pickability (dự báo, KHÔNG chặn merge)
 
 ```bash
-PICK=.omp/skills/review-pr/scripts/release-pick-preview.sh; [ -f "$PICK" ] || PICK="$HOME/.omp/skills/review-pr/scripts/release-pick-preview.sh"
+PICK="$HOME/.config/8sync/packs/vtiger-php/skills/review-pr/scripts/release-pick-preview.sh"
 bash "$PICK" <MR_NUMBER> <TARGET_BRANCH>
 ```
 
@@ -186,7 +187,7 @@ unknowns: [<câu hỏi nghiệp vụ agent chưa giải đáp được — sẽ 
 
 ### Step 3: Parallel Review (5 agents)
 
-Dùng `agent: code-reviewer` cho tất cả agents. Launch 5 agents song song (1 lời gọi `task`, 5 item), mỗi agent nhận: MR title, description, full diff, knowledge context, `$RULES_CONTEXT` và **`$BUSINESS_MANIFEST` từ Step 2.5**.
+Dùng `agent: code-reviewer` cho tất cả agents. Launch 5 agents song song (1 lời gọi `task`, 5 item), mỗi agent nhận: MR title, description, full diff, knowledge context, `$RULES_CONTEXT`, `$EP_HITS` (flag `EP-NNN` khi diff khớp entry) và **`$BUSINESS_MANIFEST` từ Step 2.5**.
 
 **Yêu cầu CHUNG cho mọi agent:** Ngoài list lỗi, mỗi agent PHẢI trả về **Coverage Report** cho cả `business_rules` VÀ `ticket_requirements`:
 
@@ -249,7 +250,7 @@ Audit changes against `cloudgo-development-rules.md` và mọi rule trong `$RULE
 - **XSS**: `.text()` not `.html()` for dynamic content; `vtlib_purify()` for user input; jQuery DOM construction not string concatenation
 - **CSRF**: `$request->validateWriteAccess()` on ALL write Action controllers
 - **PHP headers**: `@author`, `@email`, `@create date` (required on new files)
-- **Type declarations**: Return types, parameter types theo `php-conventions.md`
+- **Type declarations**: Return types, parameter types theo `rule://php83` (F)
 - **Language file directory** (MEDIUM): Language files phải đúng path theo `$developerTeam` trong `config.env.php` (hiện tại `R&D`):
   - R&D → `languages/<locale>/ModuleName.php` (root, KHÔNG được đặt trong `dev/`)
   - DEV → `languages/<locale>/dev/ModuleName.php`
@@ -270,13 +271,13 @@ Audit code quality theo `cloudgo-development-rules.md` và mọi rule trong `$RU
 - **Dead code**: Không commented-out code, unused variables, unused imports
 - **DRY**: Không logic trùng lặp — phải extract thành shared methods
 - **Null coalescing**: Dùng `??` thay vì verbose `isset()` checks
-- **Modification tracking**: theo `rule://php-conventions` § Modification Tracking — hàm mới / viết lại gần cả hàm của người khác → dòng `Added by` / `Modified by` đầu docblock (không `@`, không `// End`); sửa vài dòng trong hàm người khác → `// Modified by` … `// End <Name>` với blank line trước
+- **Modification tracking**: theo `rule://cloudgo-development-rules` § Modification Tracking Comments — hàm mới / viết lại gần cả hàm của người khác → dòng `Added by` / `Modified by` đầu docblock (không `@`, không `// End`); sửa vài dòng trong hàm người khác → `// Modified by` … `// End <Name>` với blank line trước
 - **File locations**: Kiểm tra CSS/JS/TPL đúng thư mục theo convention table
 - **Constants**: Dùng class constants thay vì magic strings/numbers
 - **Error handling**: try/catch cho external calls, `error_log()` cho errors
 - **BlocksAndFieldsRegister** (HIGH): Field mới PHẢI đăng ký trong `modules/{Module}/BlocksAndFieldsRegister.php` (Quick Repair sẽ tạo DB column). KHÔNG tạo field bằng raw SQL migration. Thiếu register → flag HIGH.
 - **JS AJAX pattern** (MEDIUM): Phải dùng `app.request.post()` / `app.request.get()`, không dùng raw `$.ajax()`, `$.post()`, `$.get()`.
-- **Class structure order** (MEDIUM): theo `php-conventions.md` § Class Structure — Constants → static properties → properties → `__construct` → static factory (`getInstance`) → public → protected → private. Sai thứ tự → flag MEDIUM.
+- **Class structure order** (MEDIUM): theo `rule://php83` C1 — Constants → static properties → properties → `__construct` → static factory (`getInstance`) → public → protected → private. Sai thứ tự → flag MEDIUM.
 
 **Agent 4: Bug scan**
 Scan diff for obvious bugs — only flag issues visible in the diff:
@@ -330,7 +331,7 @@ Dùng knowledge context từ Step 2 + `ticket_requirements` từ Step 2.5 để 
 
 For each issue from Step 3:
 - Launch validation subagent với `agent: code-reviewer` (model do omp chọn qua `~/.config/ckit/models.toml`)
-- Subagent nhận: MR context + mô tả lỗi + source code liên quan + `$RULES_CONTEXT`; vi phạm rule code là lỗi thật — không bác chỉ vì rule có `scope: tool:edit/write` (trigger lúc sửa); loại file rule áp dụng vẫn theo nội dung rule
+- Subagent nhận: MR context + mô tả lỗi + source code liên quan + `$RULES_CONTEXT` + `$EP_HITS`; vi phạm rule code là lỗi thật — không bác chỉ vì rule có `scope: tool:edit/write` (trigger lúc sửa); loại file rule áp dụng vẫn theo nội dung rule
 - Phải xác nhận với độ tin cậy cao rằng lỗi là thật
 - Loại bỏ những issue không được xác nhận
 
@@ -415,7 +416,7 @@ Do NOT flag these:
 | **GitLab only** | Uses `glab` CLI, not `gh` |
 | **Diff from GitLab** | Always use `glab mr diff` first (correct target branch) |
 | **Knowledge required** | MUST read knowledge files before reviewing logic |
-| **Coding rules required** | Step 2 load mọi rule khớp file đổi (`$RULES_CONTEXT`) và truyền cho 5 agents + validators. Rule code là tiêu chí review; `scope: tool:edit/write` chỉ quyết định lúc rule tự nạp, không quyết định có áp dụng khi review; loại file rule áp dụng theo glob ở bảng + nội dung rule |
+| **Coding rules required** | Step 2 load mọi rule khớp file đổi (`$RULES_CONTEXT`) + `$EP_HITS` (entry error-patterns khớp diff, qua `scripts/ep-hits.sh`) và truyền cho 5 agents + validators. Rule code là tiêu chí review; `scope: tool:edit/write` chỉ quyết định lúc rule tự nạp, không quyết định có áp dụng khi review; loại file rule áp dụng theo glob ở bảng + nội dung rule |
 | **Business manifest MANDATORY** | Step 2.5 phải build Business Logic Manifest (YAML) trước khi review. Không có manifest → block. Manifest rỗng mà không phải refactor → yêu cầu chạy lại. |
 | **Knowledge cross-check** | Mỗi `business_rule` phải đối chiếu với `docs/knowledge/modules/<Module>.md`. Mâu thuẫn nghiệp vụ → CRITICAL. |
 | **Coverage gate** | Comment BẮT BUỘC có section "Phạm vi nghiệp vụ đã review". Merge chỉ cho phép khi 100% `business_rules` có status `reviewed: true` từ ít nhất 1 agent. |

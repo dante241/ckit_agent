@@ -5,7 +5,7 @@ description: "VTiger inventory modules — line items, SalesOrder/Invoice/Quote,
 
 # VTiger Inventory Skill
 
-> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md`
+> **Conventions:** Follow `rule://cloudgo-development-rules`
 
 ## When to Use
 

@@ -41,10 +41,10 @@ pub(crate) fn global_pass(env: &env_detect::Env) -> Result<()> {
     let _ = deploy::ensure_omp_capabilities_snapshot(&env.home);
     deploy::ensure_feynman_cli();
     let _ = install_external_skill_packs(env); // best-effort; skips packs already present
-    // `skill add pack:<name> --global` packs track the binary's embedded pack (offline)
-    crate::verbs::skill::pack::refresh_global_packs(&env.home, &crate::brand::config_dir(&env.home).join("skills.toml"));
-    // project packs live once in a shared store; re-link every recorded project
-    crate::verbs::skill::pack::refresh_linked_packs(&env.home);
+    // packs are project-only: undo global installs of older versions
+    crate::verbs::skill::pack::retire_global_packs(&env.home, &crate::brand::config_dir(&env.home).join("skills.toml"));
+    // project packs live once in a shared store that omp loads as an extension
+    crate::verbs::skill::pack::refresh_stores(&env.home);
     let global_dir = env.home.join(".omp/skills");
     for d in discover::list_installed_skill_dirs(&global_dir).unwrap_or_default() {
         deploy::ensure_skill_layout(&d);

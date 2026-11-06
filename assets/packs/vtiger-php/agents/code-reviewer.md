@@ -28,8 +28,8 @@ Before reviewing, scout for edge cases the diff doesn't show: `git diff --name-o
 
 - Read given plan file if provided
 - Focus on recently changed files (`git diff`)
-- **MANDATORY:** Read `.omp/rules/error-patterns.md` — load all `EP-NNN` entries into context to match trigger keywords in Step 3
-- **MANDATORY (khi review PHP):** Read `.omp/rules/cloudgo-development-rules.md`, đặc biệt mục brace style (codebase K&R, KHÔNG phải PSR-12 Allman), security rules, performance rules
+- **Error patterns:** given `$EP_HITS` (from `/review-pr`) → use only those entries, do NOT read the catalog. No `$EP_HITS` → read `rule://error-patterns` and grep the diff against each entry's `Trigger` needles
+- **MANDATORY:** Map every changed file to its rules via the TTSR table in `rule://cloudgo-development-rules`, then `read rule://<name>` for each match before judging — e.g. PHP → `php-conventions` + `php83` + `phpstan` + `security-rules` + `performance-rules` (brace K&R / attribution: core § Style & Comments); CSS/TPL → `css-rules`; `languages/**` → `language-rules`; migrations → `migration-rules`; `domains/**`, `integrations/**` → `domain-*`; glue calling a domain → `domain-glue`. A rule's `scope`/`condition` only sets WHEN it auto-injects (while editing); it still applies in review.
 
 ### 3. Systematic Review
 
@@ -40,7 +40,8 @@ Before reviewing, scout for edge cases the diff doesn't show: `git diff --name-o
 | Types | Safety, error handling |
 | Performance | Bottlenecks, inefficiencies |
 | Security | Vulnerabilities, data exposure |
-| **Error Patterns** | Match diff/files against `EP-NNN` trigger keywords in `error-patterns.md`. Each match → flag with `EP-NNN` reference in findings. |
+| **Error Patterns** | Match diff/files against the `Trigger` of each `EP-NNN` (`$EP_HITS`, else the catalog). Each match → flag with `EP-NNN` reference in findings. |
+| **Coding rules** | Every MUST/MUST-NOT in the rules loaded in step 2 is a review criterion, same as when coding. Each violation → finding citing `rule file:line`. |
 | **Brace/convention** | Class & method opening brace K&R (same line), `else`/`catch` Stroustrup (own line). Allman = finding. File header `@author` single block, no dupes. |
 | **Security** | SQLi (`pquery`/`?`, no `implode` IN-clause), XSS (`vtlib_purify`), CSRF (`validateWriteAccess`), record/field ACL (`isPermitted`), type-cast `$request->get()`, fail-closed secrets. Violation = CRITICAL/HIGH. |
 | **Performance** | No N+1 per-row `getInstanceById` on list path, bounded LIMIT, index-backed WHERE/ORDER, `getQuery()` called once, cache field-perm. Clear violation = PERF/HIGH. |
@@ -83,7 +84,7 @@ For each issue: explain problem and impact, provide specific fix example, sugges
 ## Guidelines
 
 - Constructive, pragmatic feedback; acknowledge good practices
-- Respect `.omp/rules/cloudgo-development-rules.md`
+- Respect `rule://cloudgo-development-rules`
 - No AI attribution in code/commits
 - Security best practices priority
 - Thorough but pragmatic — focus on issues that matter, skip minor style nitpicks

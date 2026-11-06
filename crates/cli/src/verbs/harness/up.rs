@@ -47,8 +47,8 @@ fn refresh_once(env: &env_detect::Env, pull: bool, commit: bool) -> Result<()> {
         return Ok(());
     };
     crate::verbs::skill::deploy::remove_project_skill_copies(&root);
-    crate::verbs::skill::pack::refresh_global_packs(&env.home, &crate::brand::config_dir(&env.home).join("skills.toml"));
-    crate::verbs::skill::pack::link_listed_packs(&env.home, &root);
+    crate::verbs::skill::pack::retire_global_packs(&env.home, &crate::brand::config_dir(&env.home).join("skills.toml"));
+    crate::verbs::skill::pack::ensure_listed_packs(&env.home, &root);
     if pull {
         ui::step("re-pull registered skills (--pull)");
         let registry = crate::brand::config_dir(&env.home).join("skills.toml");

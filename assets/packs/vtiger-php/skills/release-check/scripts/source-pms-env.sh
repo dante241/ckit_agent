@@ -2,7 +2,7 @@
 # source-pms-env.sh — Extract PMS_* env vars from the omp MCP config for shell export.
 #
 # Usage:
-#   eval "$(bash .omp/skills/release-check/scripts/source-pms-env.sh)"
+#   eval "$(bash ~/.config/ckit/packs/vtiger-php/skills/release-check/scripts/source-pms-env.sh)"
 #
 # Credentials stay in the omp MCP server config (never hardcoded here).
 # Searches project + user omp config locations for a `pms` stdio server and

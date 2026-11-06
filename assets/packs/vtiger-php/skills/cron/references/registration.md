@@ -1,6 +1,6 @@
 # VTiger Cron Task Registration
 
-> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md` + `.omp/rules/migration-rules.md`
+> **Conventions:** Follow `rule://cloudgo-development-rules` + `rule://migration-rules`
 >
 > This file is the canonical reference for cron registration (`createCronjob`, `vtiger_cron_task`, running/troubleshooting). Generic migration mechanics live in the `migration` skill.
 

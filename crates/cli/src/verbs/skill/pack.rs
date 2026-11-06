@@ -1,14 +1,14 @@
-//! Domain skill+rule packs — `assets/packs/<name>/{skills/<sub>,rules/*.md}`.
+//! Domain packs — `assets/packs/<name>/{skills/<sub>,rules,commands,agents}`.
 //!
-//! A pack bundles a project-type's SKILL.md set (e.g. VTiger/PHP: `action`,
-//! `field`, `database`, …) together with its `.omp/rules/*.md` convention
-//! files, so a new project of that type gets both in one `skill add pack:<name>`.
-//! Project-local by default: every pack file lives once in a shared store
-//! (`~/.config/<ns>/packs/<name>/`) and each project's `.omp/` holds symlinks
-//! into it, so `8sync up` refreshes every linked project at once. `--global`
-//! installs a copy into `~/.omp` for machines that work on that project type
-//! almost exclusively (its always-on rules then load in every omp session).
-use anyhow::Result;
+//! A pack bundles a project type's skills, convention rules, slash commands and
+//! subagents (e.g. VTiger/PHP). Every pack file lives once in a shared store
+//! (`~/.config/<ns>/packs/<name>/`) that omp loads as an extension package: a
+//! project opts in through `extensions` in its `.omp/settings.json`. omp reads the
+//! store's `skills/`, `commands/`, `rules/` and `agents/` itself, so `8sync up`
+//! refreshing the store updates every project at once. A real file of the same
+//! name under a project's `.omp/` overrides the pack copy. Packs are never global:
+//! their always-on rules belong only to the repos that list them.
+use anyhow::{anyhow, bail, Result};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -57,89 +57,42 @@ pub(crate) fn discover_packs() -> Vec<PackInfo> {
 
 /// A pack counts as installed once it has a `[<name>]` entry with
 /// `src = "pack:<name>"` in the project manifest (`agents/skills.toml`) —
-/// the same registry every other source (`git`/`builtin`/`path`) is tracked
-/// by; `skill update vtiger-php` re-heals a hand-deleted skill/rule file.
+/// the same registry every other source (`git`/`builtin`/`path`) is tracked by.
 pub(crate) fn is_pack_installed(root: &Path, name: &str) -> bool {
     let manifest = root.join("agents/skills.toml");
     let reg = super::discover::read_registry(&manifest);
     reg.get(name).is_some_and(|e| e.src == format!("pack:{}", name))
 }
 
-/// Where a pack is installed.
-pub(crate) enum PackScope<'a> {
-    /// `<root>/.omp/{skills,rules,commands,agents,RULES.md}`
-    Project(&'a Path),
-    /// `~/.omp/skills/<sub>` + `~/.omp/agent/{rules,commands,agents,RULES.md}`
-    Global(&'a Path),
-    /// Shared store `<packs dir>/<name>/`, laid out like the pack root.
-    Store(&'a Path),
-}
-
-impl PackScope<'_> {
-    /// Installed path of pack file `rel` (relative to the pack root).
-    fn target(&self, rel: &str) -> PathBuf {
-        match self {
-            PackScope::Project(root) => root.join(".omp").join(rel),
-            PackScope::Global(home) => match rel.strip_prefix("skills/") {
-                Some(skill) => home.join(".omp/skills").join(skill),
-                None => home.join(".omp/agent").join(rel),
-            },
-            PackScope::Store(dir) => dir.join(rel),
-        }
-    }
-
-    fn lock_path(&self, name: &str) -> PathBuf {
-        match self {
-            PackScope::Project(root) => root.join(".omp").join(format!("pack-{}.lock", name)),
-            PackScope::Global(home) => home.join(".omp/agent").join(format!("pack-{}.lock", name)),
-            PackScope::Store(dir) => dir.with_file_name(format!("{}.lock", name)),
-        }
-    }
-}
-
-/// Install pack `name` into a project: refresh the shared store, then make every
-/// top-level pack entry under `<root>/.omp/` (`RULES.md`, `rules/<f>`,
-/// `commands/<f>`, `agents/<f>`, `skills/<dir>`) a symlink into it (a copy off
-/// unix), and record the project so `8sync up` refreshes it after a release.
-///
-/// `.omp` is usually untracked, so a local edit must never be lost silently: a
-/// real file/dir (copy-mode install) is replaced only while every file in it
-/// equals the store copy or still has the hash in `.omp/pack-<name>.lock`; an
-/// edited one is kept unless `force`, which moves it to `.omp/removed/` first.
-/// Edits made through a link land in the store and are kept by later refreshes
-/// unless `force`. Errors only if the pack doesn't exist under `assets/packs/`.
+/// Install pack `name` into a project: refresh the shared store, retire any
+/// older per-project copy or symlinks of it under `.omp/`, then add the store to
+/// `extensions` in `<root>/.omp/settings.json` (other keys and entries kept).
+/// Errors only if the pack doesn't exist or `settings.json` isn't a JSON object.
 pub(crate) fn install_pack(home: &Path, root: &Path, name: &str, force: bool) -> Result<()> {
     let store = refresh_store(home, name, force)?;
-    deploy_project(root, &store, name, force)?;
-    record_project(home, name, root)
-}
-
-/// Put the pack into one project: symlinks into the store on unix; off unix a
-/// copy (lock-guarded, local edits kept unless `force`). Either way the pack
-/// entries go into the clone's git exclude block.
-fn deploy_project(root: &Path, store: &Path, name: &str, force: bool) -> Result<()> {
-    #[cfg(unix)]
-    link_pack(root, store, name, force)?;
-    #[cfg(not(unix))]
-    {
-        let _ = store;
-        install_pack_in(&PackScope::Project(root), name, force)?;
-    }
-    exclude_pack_from_git(root, name);
+    retire_project_copy(root, &store, name, force)?;
+    let settings = root.join(".omp/settings.json");
+    set_extension(&settings, home, &store, true)?;
+    exclude_settings_from_git(root, name);
+    ui::ok(&format!("pack `{}` → omp extension {} in {}", name, extension_entry(home, &store), settings.display()));
     Ok(())
 }
 
-/// Link every pack this project lists in `agents/skills.toml` that is not linked
-/// yet: a fresh clone (row, no `.omp/`) or a copy-mode install. Once linked it
-/// only re-asserts the git exclude block (the repo may have been `git init`ed
-/// after linking), so `8sync .` can run it on each launch. Local edits are kept.
-pub(crate) fn link_listed_packs(home: &Path, root: &Path) {
+/// Install every pack this project lists in `agents/skills.toml` that is not an
+/// omp extension of it yet (fresh clone, or a pre-extension copy/link install).
+/// Once installed it only re-asserts the git exclude, so `8sync .` can run it on
+/// each launch. Local edits are kept.
+pub(crate) fn ensure_listed_packs(home: &Path, root: &Path) {
     for pk in discover_packs() {
         if !is_pack_installed(root, &pk.name) {
             continue;
         }
-        if is_linked(home, root, &pk.name) {
-            exclude_pack_from_git(root, &pk.name);
+        let store = store_dir(home, &pk.name);
+        if store.is_dir()
+            && has_extension(&root.join(".omp/settings.json"), home, &store)
+            && !has_legacy_install(root, &store, &pk.name)
+        {
+            exclude_settings_from_git(root, &pk.name);
             continue;
         }
         if let Err(e) = install_pack(home, root, &pk.name, false) {
@@ -148,51 +101,27 @@ pub(crate) fn link_listed_packs(home: &Path, root: &Path) {
     }
 }
 
-/// Recorded for `name` and every pack entry present under `.omp/`: a real file
-/// (kept local edit) counts, a link counts only while it points into the store.
-fn is_linked(home: &Path, root: &Path, name: &str) -> bool {
-    let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    if !read_projects(home, name).contains(&canonical) {
-        return false;
-    }
-    let (omp, store) = (root.join(".omp"), store_dir(home, name));
-    pack_entries(name).iter().all(|e| {
-        let path = omp.join(e);
-        match std::fs::symlink_metadata(&path) {
-            Ok(m) if m.file_type().is_symlink() => {
-                std::fs::read_link(&path).is_ok_and(|t| t == store.join(e)) && path.exists()
-            }
-            Ok(_) => true,
-            Err(_) => false,
-        }
-    })
-}
-
-/// `8sync up` / harness passes: refresh each project pack's store once, then
-/// re-deploy it into every recorded project (new pack entries get a link or
-/// copy, removed links go). A recorded project that is gone or no longer lists
-/// the pack in `agents/skills.toml` is dropped from the record.
-pub(crate) fn refresh_linked_packs(home: &Path) {
+/// `8sync up` / harness passes: refresh the store of every pack this machine
+/// uses. Projects that v0.1.47 recorded for re-linking are migrated to the
+/// extension once, then the record is dropped.
+pub(crate) fn refresh_stores(home: &Path) {
     for pk in discover_packs() {
-        let recorded = read_projects(home, &pk.name);
-        if recorded.is_empty() {
-            continue;
-        }
-        let live: Vec<PathBuf> = recorded.into_iter().filter(|r| is_pack_installed(r, &pk.name)).collect();
-        if !live.is_empty() {
-            match refresh_store(home, &pk.name, false) {
-                Ok(store) => {
-                    for root in &live {
-                        if let Err(e) = deploy_project(root, &store, &pk.name, false) {
-                            ui::warn(&format!("pack `{}` refresh failed in {}: {}", pk.name, root.display(), e));
-                        }
+        let record = legacy_projects_file(home, &pk.name);
+        if let Ok(body) = std::fs::read_to_string(&record) {
+            for root in body.lines().filter(|l| !l.trim().is_empty()).map(Path::new) {
+                if is_pack_installed(root, &pk.name) {
+                    if let Err(e) = install_pack(home, root, &pk.name, false) {
+                        ui::warn(&format!("pack `{}` migration failed in {}: {}", pk.name, root.display(), e));
                     }
                 }
-                Err(e) => ui::warn(&format!("pack `{}` store refresh failed: {}", pk.name, e)),
             }
+            let _ = std::fs::remove_file(&record);
         }
-        if let Err(e) = write_projects(home, &pk.name, &live) {
-            ui::warn(&format!("pack `{}` project record not saved: {}", pk.name, e));
+        if !store_dir(home, &pk.name).is_dir() {
+            continue;
+        }
+        if let Err(e) = refresh_store(home, &pk.name, false) {
+            ui::warn(&format!("pack `{}` store refresh failed: {}", pk.name, e));
         }
     }
 }
@@ -201,158 +130,177 @@ fn store_dir(home: &Path, name: &str) -> PathBuf {
     crate::brand::config_dir(home).join("packs").join(name)
 }
 
-fn projects_file(home: &Path, name: &str) -> PathBuf {
+/// v0.1.47 list of linked projects (`<packs dir>/<name>.projects`).
+fn legacy_projects_file(home: &Path, name: &str) -> PathBuf {
     crate::brand::config_dir(home).join("packs").join(format!("{}.projects", name))
 }
 
-fn read_projects(home: &Path, name: &str) -> Vec<PathBuf> {
-    std::fs::read_to_string(projects_file(home, name))
-        .unwrap_or_default()
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(PathBuf::from)
-        .collect()
+/// `extensions` entry for the store: `~/…` when under home, so the line reads
+/// the same on every machine.
+fn extension_entry(home: &Path, store: &Path) -> String {
+    match store.strip_prefix(home) {
+        Ok(rel) => format!("~/{}", rel.to_string_lossy().replace('\\', "/")),
+        Err(_) => store.to_string_lossy().into_owned(),
+    }
 }
 
-fn write_projects(home: &Path, name: &str, roots: &[PathBuf]) -> Result<()> {
-    let path = projects_file(home, name);
-    if let Some(p) = path.parent() {
+fn points_to(home: &Path, entry: &serde_json::Value, store: &Path) -> bool {
+    entry.as_str().is_some_and(|s| match s.strip_prefix("~/") {
+        Some(rel) => home.join(rel) == store,
+        None => Path::new(s) == store,
+    })
+}
+
+fn has_extension(settings: &Path, home: &Path, store: &Path) -> bool {
+    std::fs::read_to_string(settings)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("extensions")?.as_array().map(|a| a.iter().any(|e| points_to(home, e, store))))
+        .unwrap_or(false)
+}
+
+/// Add (`present`) or remove the store from `extensions` in an omp
+/// `settings.json`, keeping every other key and entry. A file left as `{}` by a
+/// removal is deleted. Never rewrites a file it cannot parse.
+fn set_extension(settings: &Path, home: &Path, store: &Path, present: bool) -> Result<()> {
+    let text = std::fs::read_to_string(settings).ok();
+    if text.is_none() && !present {
+        return Ok(());
+    }
+    let entry = extension_entry(home, store);
+    let mut value: serde_json::Value = match text.as_deref().map(str::trim) {
+        Some(t) if !t.is_empty() => serde_json::from_str(t).map_err(|e| {
+            anyhow!("{} is not valid JSON ({}); add \"{}\" to its `extensions` by hand", settings.display(), e, entry)
+        })?,
+        _ => serde_json::json!({}),
+    };
+    let Some(obj) = value.as_object_mut() else {
+        bail!("{} is not a JSON object", settings.display());
+    };
+    let list = obj.entry("extensions").or_insert_with(|| serde_json::json!([]));
+    let Some(list) = list.as_array_mut() else {
+        bail!("`extensions` in {} is not an array", settings.display());
+    };
+    if list.iter().any(|e| points_to(home, e, store)) == present {
+        return Ok(());
+    }
+    if present {
+        list.push(entry.into());
+    } else {
+        list.retain(|e| !points_to(home, e, store));
+    }
+    if list.is_empty() {
+        obj.remove("extensions");
+    }
+    if obj.is_empty() {
+        std::fs::remove_file(settings)?;
+        return Ok(());
+    }
+    if let Some(p) = settings.parent() {
         std::fs::create_dir_all(p)?;
     }
-    let body: String = roots.iter().map(|r| format!("{}\n", r.display())).collect();
-    std::fs::write(path, body)?;
+    std::fs::write(settings, serde_json::to_string_pretty(&value)? + "\n")?;
     Ok(())
 }
 
-fn record_project(home: &Path, name: &str, root: &Path) -> Result<()> {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let mut roots = read_projects(home, name);
-    if !roots.contains(&root) {
-        roots.push(root);
-        roots.sort();
-    }
-    write_projects(home, name, &roots)
-}
-
-/// Pack files an install deploys, relative to the pack root.
+/// Pack files the store holds, relative to the pack root.
 fn pack_rels(name: &str) -> Vec<String> {
     let prefix = format!("packs/{}/", name);
     assets::iter_under(&prefix)
         .iter()
         .filter_map(|p| p.strip_prefix(&prefix).map(String::from))
-        .filter(|rel| rel == "RULES.md" || ["skills/", "rules/", "commands/", "agents/"].iter().any(|d| rel.starts_with(d)))
+        .filter(|rel| ["skills/", "rules/", "commands/", "agents/"].iter().any(|d| rel.starts_with(d)))
         .collect()
 }
 
-/// Top-level entries a project links: `RULES.md`, `<kind>/<file>` or `skills/<dir>`.
-fn pack_entries(name: &str) -> Vec<String> {
-    let mut entries: Vec<String> = pack_rels(name)
-        .iter()
-        .map(|rel| {
-            let mut parts = rel.splitn(3, '/');
-            match (parts.next(), parts.next()) {
-                (Some(kind), Some(item)) => format!("{}/{}", kind, item),
-                _ => rel.clone(),
-            }
-        })
-        .collect();
+/// The top-level `.omp/` entry an older install created for pack file `rel`:
+/// `<kind>/<file>` or `skills/<dir>`.
+fn top_entry(rel: &str) -> String {
+    let mut parts = rel.splitn(3, '/');
+    match (parts.next(), parts.next()) {
+        (Some(kind), Some(item)) => format!("{}/{}", kind, item),
+        _ => rel.to_string(),
+    }
+}
+
+/// Top-level entries an older install put under `.omp/`: `RULES.md`, every
+/// entry of the current pack, and every entry its copy lock recorded — so a
+/// file the pack has since dropped is retired too.
+fn legacy_entries(name: &str, lock: &BTreeMap<String, String>) -> Vec<String> {
+    let mut entries: Vec<String> = pack_rels(name).iter().chain(lock.keys()).map(|rel| top_entry(rel)).collect();
+    entries.push("RULES.md".to_string());
     entries.sort();
     entries.dedup();
     entries
 }
 
-/// Refresh the shared store (store edits kept unless `force`), then delete store
-/// files the pack no longer ships while they are still unedited.
-fn refresh_store(home: &Path, name: &str, force: bool) -> Result<PathBuf> {
-    let dir = store_dir(home, name);
-    let scope = PackScope::Store(&dir);
-    install_pack_in(&scope, name, force)?;
-    let shipped: std::collections::BTreeSet<String> = pack_rels(name).into_iter().collect();
-    let lock_path = scope.lock_path(name);
-    let mut lock = read_lock(&lock_path);
-    lock.retain(|rel, hash| {
-        if shipped.contains(rel) {
-            return true;
-        }
-        let target = dir.join(rel);
-        match std::fs::read_to_string(&target) {
-            Ok(cur) if fnv1a(&cur) == *hash => {
-                let _ = std::fs::remove_file(&target);
-                let mut parent = target.parent();
-                while let Some(p) = parent {
-                    if p == dir || std::fs::remove_dir(p).is_err() {
-                        break;
-                    }
-                    parent = p.parent();
-                }
-                false
-            }
-            Ok(_) => true,
-            Err(_) => false,
-        }
-    });
-    write_lock(&lock_path, &lock)?;
-    Ok(dir)
+/// Symlinks under `.omp/` (and its `rules|commands|agents|skills`) that point into `store`.
+fn store_links(omp: &Path, store: &Path) -> Vec<PathBuf> {
+    ["", "rules", "commands", "agents", "skills"]
+        .iter()
+        .filter_map(|d| std::fs::read_dir(omp.join(d)).ok())
+        .flat_map(|read| read.flatten().map(|e| e.path()))
+        .filter(|p| std::fs::read_link(p).is_ok_and(|t| t.starts_with(store)))
+        .collect()
 }
 
-/// Point every pack entry under `<root>/.omp/` at the store; drop links whose
-/// store target is gone.
-#[cfg(unix)]
-fn link_pack(root: &Path, store: &Path, name: &str, force: bool) -> Result<()> {
+/// A copy lock or a link into the store is left from a pre-extension install.
+fn has_legacy_install(root: &Path, store: &Path, name: &str) -> bool {
     let omp = root.join(".omp");
-    let lock_path = PackScope::Project(root).lock_path(name);
+    omp.join(format!("pack-{}.lock", name)).exists() || !store_links(&omp, store).is_empty()
+}
+
+/// Remove what a pre-extension install left under `<root>/.omp/`: every link into
+/// the store (v0.1.47) and every copied entry still equal to the store copy or to
+/// the hash in `.omp/pack-<name>.lock`. A locally edited copy keeps overriding the
+/// pack unless `force`, which moves it to `.omp/removed/`.
+fn retire_project_copy(root: &Path, store: &Path, name: &str, force: bool) -> Result<()> {
+    let omp = root.join(".omp");
+    let mut retired = 0usize;
+    for link in store_links(&omp, store) {
+        std::fs::remove_file(&link)?;
+        retired += 1;
+    }
+
+    let lock_path = omp.join(format!("pack-{}.lock", name));
     let lock = read_lock(&lock_path);
     let backup_dir = omp.join("removed").join(format!(
         "pack-{}-{}",
         name,
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
     ));
-    let (mut linked, mut unchanged) = (0usize, 0usize);
     let (mut kept, mut moved): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
-    for entry in pack_entries(name) {
-        let src = store.join(&entry);
+    for entry in legacy_entries(name, &lock) {
         let dst = omp.join(&entry);
-        match std::fs::symlink_metadata(&dst) {
-            Ok(m) if m.file_type().is_symlink() => {
-                if std::fs::read_link(&dst).is_ok_and(|t| t == src) {
-                    unchanged += 1;
-                    continue;
-                }
+        let Ok(meta) = std::fs::symlink_metadata(&dst) else {
+            continue;
+        };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if is_pristine(&dst, &store.join(&entry), &entry, &lock) {
+            if meta.is_dir() {
+                std::fs::remove_dir_all(&dst)?;
+            } else {
                 std::fs::remove_file(&dst)?;
             }
-            Ok(m) => {
-                if !is_pristine(&dst, &src, &entry, &lock) {
-                    if !force {
-                        kept.push(entry);
-                        continue;
-                    }
-                    let backup = backup_dir.join(&entry);
-                    if let Some(p) = backup.parent() {
-                        std::fs::create_dir_all(p)?;
-                    }
-                    std::fs::rename(&dst, &backup)?;
-                    moved.push(entry.clone());
-                } else if m.is_dir() {
-                    std::fs::remove_dir_all(&dst)?;
-                } else {
-                    std::fs::remove_file(&dst)?;
-                }
+            retired += 1;
+        } else if force {
+            let backup = backup_dir.join(&entry);
+            if let Some(p) = backup.parent() {
+                std::fs::create_dir_all(p)?;
             }
-            Err(_) => {}
+            std::fs::rename(&dst, &backup)?;
+            moved.push(entry);
+        } else {
+            kept.push(entry);
         }
-        if let Some(p) = dst.parent() {
-            std::fs::create_dir_all(p)?;
-        }
-        std::os::unix::fs::symlink(&src, &dst)?;
-        linked += 1;
     }
-    let stale = remove_stale_links(&omp, store);
     let _ = std::fs::remove_file(&lock_path);
 
-    ui::ok(&format!(
-        "pack `{}` → {} link(s) created, {} unchanged, {} stale removed → {}",
-        name, linked, unchanged, stale, omp.display()
-    ));
+    if retired > 0 {
+        ui::info(&format!("pack `{}`: {} old link(s)/copied entr(ies) removed from {}", name, retired, omp.display()));
+    }
     if !moved.is_empty() {
         ui::warn(&format!("{} locally edited entr(ies) moved to {}:", moved.len(), backup_dir.display()));
         for entry in &moved {
@@ -361,7 +309,7 @@ fn link_pack(root: &Path, store: &Path, name: &str, force: bool) -> Result<()> {
     }
     if !kept.is_empty() {
         ui::warn(&format!(
-            "{} locally edited entr(ies) kept as real files, not linked (rerun with --force to move them to .omp/removed/ and link):",
+            "{} locally edited entr(ies) kept; they override the pack copy (rerun with --force to move them to .omp/removed/):",
             kept.len()
         ));
         for entry in &kept {
@@ -371,9 +319,8 @@ fn link_pack(root: &Path, store: &Path, name: &str, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// A real file/dir may be replaced by a link when every file in it equals the
-/// store copy or still has the hash recorded at copy-install time.
-#[cfg(unix)]
+/// A real file/dir may go when every file in it equals the store copy or still
+/// has the hash recorded at copy-install time.
 fn is_pristine(dst: &Path, src: &Path, entry: &str, lock: &BTreeMap<String, String>) -> bool {
     let file_ok = |path: &Path, store_copy: &Path, rel: &str| -> bool {
         let Ok(cur) = std::fs::read_to_string(path) else {
@@ -409,31 +356,12 @@ fn is_pristine(dst: &Path, src: &Path, entry: &str, lock: &BTreeMap<String, Stri
     true
 }
 
-/// Remove links into `store` whose target no longer exists. Returns the count.
-#[cfg(unix)]
-fn remove_stale_links(omp: &Path, store: &Path) -> usize {
-    let mut removed = 0usize;
-    for dir in [omp.to_path_buf(), omp.join("rules"), omp.join("commands"), omp.join("agents"), omp.join("skills")] {
-        let Ok(read) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for item in read.flatten() {
-            let path = item.path();
-            let Ok(target) = std::fs::read_link(&path) else {
-                continue;
-            };
-            if target.starts_with(store) && !target.exists() && std::fs::remove_file(&path).is_ok() {
-                removed += 1;
-            }
-        }
-    }
-    removed
-}
-
-/// Keep the machine-local pack out of git (symlinks into one user's store, or a
-/// generated copy off unix): a managed block in the clone's `info/exclude`
-/// (never committed) lists every pack entry under `.omp/` plus the copy lock.
-fn exclude_pack_from_git(root: &Path, name: &str) {
+/// Keep the machine-local `.omp/settings.json` (it names this user's store) out
+/// of git: a managed block in the clone's `info/exclude`, never committed. A
+/// per-file pattern is fine here — omp reads `settings.json` directly, it only
+/// filters the files it globs (which is why v0.1.47's per-entry block hid the
+/// pack's commands and rules; that block is replaced).
+fn exclude_settings_from_git(root: &Path, name: &str) {
     let Ok(out) = std::process::Command::new("git")
         .arg("-C")
         .arg(root)
@@ -453,44 +381,72 @@ fn exclude_pack_from_git(root: &Path, name: &str) {
     }
     let exclude = PathBuf::from(exclude);
     let exclude = if exclude.is_absolute() { exclude } else { root.join(exclude) };
-    let mut body: Vec<String> = pack_entries(name).iter().map(|e| format!("/{}.omp/{}", prefix, e)).collect();
-    body.push(format!("/{}.omp/pack-{}.lock", prefix, name));
+    let begin = format!("# >>> ckit pack {} (machine-local) >>>", name);
+    let legacy_begin = format!("# >>> ckit pack {} (machine-local symlinks) >>>", name);
+    if let Ok(cur) = std::fs::read_to_string(&exclude) {
+        if cur.contains(&legacy_begin) {
+            let _ = std::fs::write(&exclude, cur.replace(&legacy_begin, &begin));
+        }
+    }
     let _ = crate::verbs::harness::memory::upsert_block(
         &exclude,
-        &format!("# >>> ckit pack {} (machine-local symlinks) >>>", name),
+        &begin,
         &format!("# <<< ckit pack {} <<<", name),
-        &body.join("\n"),
+        &format!("/{}.omp/settings.json", prefix),
     );
 }
 
-/// Registry `src` prefix of a `--global` pack. Distinct from the project-manifest
-/// `pack:` so a stale `pack:` row in the global registry never installs globally.
+/// Registry `src` prefix older versions wrote for a `--global` pack.
 pub(crate) const GLOBAL_SRC_PREFIX: &str = "pack-global:";
 
-/// Same as [`install_pack`] into `~/.omp` (lock: `~/.omp/agent/pack-<name>.lock`).
-pub(crate) fn install_pack_global(home: &Path, name: &str, force: bool) -> Result<()> {
-    install_pack_in(&PackScope::Global(home), name, force)
+fn global_settings(home: &Path) -> PathBuf {
+    home.join(".omp/agent/settings.json")
 }
 
-/// Refresh every pack registered with `--global` in `registry` (the global
-/// `skills.toml`) from the embedded assets — offline, local edits kept. Run by
-/// `harness` init/up/global, so `8sync up` applies a new release's pack too.
-pub(crate) fn refresh_global_packs(home: &Path, registry: &Path) {
-    let reg = super::discover::read_registry(registry);
-    let wanted: Vec<&str> = reg.values().filter_map(|e| e.src.strip_prefix(GLOBAL_SRC_PREFIX)).collect();
-    remove_unregistered_global_packs(home, &wanted);
-    for pack in wanted {
-        if let Err(e) = install_pack_global(home, pack, false) {
-            ui::warn(&format!("global pack `{}` refresh failed: {}", pack, e));
+/// Undo every global pack install of older versions: the `~/.omp` copies, every
+/// `pack-global:` row of `registry` (the global `skills.toml`) and every pack
+/// store in `~/.omp/agent/settings.json` `extensions`. Run by `harness`
+/// init/up/global, so `8sync up` migrates each machine.
+pub(crate) fn retire_global_packs(home: &Path, registry: &Path) {
+    remove_legacy_global_copies(home);
+    let mut reg = super::discover::read_registry(registry);
+    let mut dropped: Vec<String> = Vec::new();
+    reg.retain(|_, e| match e.src.strip_prefix(GLOBAL_SRC_PREFIX) {
+        Some(name) => {
+            dropped.push(name.to_string());
+            false
+        }
+        None => true,
+    });
+    if !dropped.is_empty() {
+        match super::discover::write_registry(registry, &reg) {
+            Ok(()) => ui::warn(&format!(
+                "global pack {} removed from {}: packs now load only in repos that list them",
+                dropped.join(", "),
+                registry.display()
+            )),
+            Err(e) => ui::warn(&format!("could not update {}: {}", registry.display(), e)),
+        }
+    }
+    for pk in discover_packs() {
+        if let Err(e) = set_extension(&global_settings(home), home, &store_dir(home, &pk.name), false) {
+            ui::warn(&format!("global pack `{}` removal failed: {}", pk.name, e));
         }
     }
 }
 
-/// Undo a global pack whose lock exists but which has no `pack-global:` registry
-/// row (v0.1.33 installed one from a legacy `pack:` row). Only files still
-/// byte-identical to the lock are deleted; locally edited files stay.
-fn remove_unregistered_global_packs(home: &Path, wanted: &[&str]) {
-    let scope = PackScope::Global(home);
+/// Where a pre-extension `--global` install copied pack file `rel`.
+fn legacy_global_target(home: &Path, rel: &str) -> PathBuf {
+    match rel.strip_prefix("skills/") {
+        Some(skill) => home.join(".omp/skills").join(skill),
+        None => home.join(".omp/agent").join(rel),
+    }
+}
+
+/// Undo every `~/.omp` copy of a pack (lock `~/.omp/agent/pack-<name>.lock`).
+/// Only files still byte-identical to the lock are deleted. Edited files stay in the
+/// lock, so every run reports them until the user moves or deletes them.
+fn remove_legacy_global_copies(home: &Path) {
     let Ok(entries) = std::fs::read_dir(home.join(".omp/agent")) else {
         return;
     };
@@ -499,12 +455,10 @@ fn remove_unregistered_global_packs(home: &Path, wanted: &[&str]) {
         let Some(name) = file.strip_prefix("pack-").and_then(|f| f.strip_suffix(".lock")) else {
             continue;
         };
-        if wanted.contains(&name) {
-            continue;
-        }
-        let (mut removed, mut kept) = (0usize, Vec::new());
+        let mut removed = 0usize;
+        let mut kept: BTreeMap<String, String> = BTreeMap::new();
         for (rel, hash) in read_lock(&entry.path()) {
-            let target = scope.target(&rel);
+            let target = legacy_global_target(home, &rel);
             match std::fs::read_to_string(&target) {
                 Ok(cur) if fnv1a(&cur) == hash => {
                     if std::fs::remove_file(&target).is_ok() {
@@ -512,43 +466,58 @@ fn remove_unregistered_global_packs(home: &Path, wanted: &[&str]) {
                         prune_empty_parents(&target, home);
                     }
                 }
-                Ok(_) => kept.push(rel),
+                Ok(_) => {
+                    kept.insert(rel, hash);
+                }
                 Err(_) => {}
             }
         }
-        let _ = std::fs::remove_file(entry.path());
-        ui::warn(&format!(
-            "global pack `{}` removed ({} file(s)): it was never added with `skill add pack:{} --global`",
-            name, removed, name
-        ));
-        for rel in &kept {
-            ui::info(&format!("  kept (locally edited): {}", scope.target(rel).display()));
+        if removed > 0 {
+            ui::warn(&format!("old ~/.omp copy of pack `{}` removed ({} file(s)); packs now load as omp extensions", name, removed));
+        }
+        if kept.is_empty() {
+            let _ = std::fs::remove_file(entry.path());
+            continue;
+        }
+        let _ = write_lock(&entry.path(), &kept);
+        ui::warn(&format!("{} locally edited file(s) from the old ~/.omp copy of pack `{}` still load in every repo; move or delete them:", kept.len(), name));
+        for rel in kept.keys() {
+            ui::info(&format!("  {}", legacy_global_target(home, rel).display()));
         }
     }
 }
 
 /// Remove now-empty directories above `path`, stopping at `~/.omp/skills` / `~/.omp/agent`.
+/// Empty subdirectories (the `references/` + `scripts/` a skill layout pass adds) don't
+/// keep a directory alive.
 fn prune_empty_parents(path: &Path, home: &Path) {
     let stops = [home.join(".omp/skills"), home.join(".omp/agent"), home.join(".omp")];
     let mut dir = path.parent();
     while let Some(d) = dir {
-        if stops.iter().any(|s| s == d) || std::fs::remove_dir(d).is_err() {
+        if stops.iter().any(|s| s == d) {
+            break;
+        }
+        for sub in std::fs::read_dir(d).into_iter().flatten().flatten() {
+            let _ = std::fs::remove_dir(sub.path());
+        }
+        if std::fs::remove_dir(d).is_err() {
             break;
         }
         dir = d.parent();
     }
 }
 
-fn install_pack_in(scope: &PackScope, name: &str, force: bool) -> Result<()> {
+/// Refresh the shared store from the embedded assets (store edits kept unless
+/// `force`, which saves the edit as `.bak`), then delete store files the pack no
+/// longer ships while they are still unedited.
+fn refresh_store(home: &Path, name: &str, force: bool) -> Result<PathBuf> {
+    let dir = store_dir(home, name);
     let files = pack_rels(name);
     if files.is_empty() {
-        anyhow::bail!("no bundled pack `{}` (assets/packs/{}/ not found)", name, name);
+        bail!("no bundled pack `{}` (assets/packs/{}/ not found)", name, name);
     }
-
-    let lock_path = scope.lock_path(name);
-    if let Some(p) = lock_path.parent() {
-        std::fs::create_dir_all(p)?;
-    }
+    std::fs::create_dir_all(&dir)?;
+    let lock_path = dir.with_file_name(format!("{}.lock", name));
     let mut lock = read_lock(&lock_path);
     let (mut written, mut unchanged) = (0usize, 0usize);
     let mut kept: Vec<String> = Vec::new();
@@ -557,9 +526,8 @@ fn install_pack_in(scope: &PackScope, name: &str, force: bool) -> Result<()> {
             continue;
         };
         let body = if rel.ends_with(".md") || rel.ends_with(".txt") { crate::brand::render(&body).into_owned() } else { body };
-        let target = scope.target(rel);
-        let current = std::fs::read_to_string(&target).ok();
-        match current {
+        let target = dir.join(rel);
+        match std::fs::read_to_string(&target).ok() {
             Some(cur) if cur == body => unchanged += 1,
             Some(cur) if lock.get(rel) != Some(&fnv1a(&cur)) => {
                 if !force {
@@ -579,27 +547,59 @@ fn install_pack_in(scope: &PackScope, name: &str, force: bool) -> Result<()> {
         }
         lock.insert(rel.to_string(), fnv1a(&body));
     }
+
+    let shipped: std::collections::BTreeSet<&String> = files.iter().collect();
+    let mut orphaned: Vec<String> = Vec::new();
+    lock.retain(|rel, hash| {
+        if shipped.contains(rel) {
+            return true;
+        }
+        let target = dir.join(rel);
+        match std::fs::read_to_string(&target) {
+            Ok(cur) if fnv1a(&cur) == *hash => {
+                let _ = std::fs::remove_file(&target);
+                let mut parent = target.parent();
+                while let Some(p) = parent {
+                    if p == dir || std::fs::remove_dir(p).is_err() {
+                        break;
+                    }
+                    parent = p.parent();
+                }
+                false
+            }
+            Ok(_) => {
+                orphaned.push(rel.clone());
+                true
+            }
+            Err(_) => false,
+        }
+    });
     write_lock(&lock_path, &lock)?;
     for sub in pack_skill_names(name) {
-        audit_skill_layout(&scope.target(&format!("skills/{}", sub)));
+        audit_skill_layout(&dir.join("skills").join(sub));
     }
 
-    let place = match scope {
-        PackScope::Project(root) => root.join(".omp").display().to_string(),
-        PackScope::Global(home) => format!("{} + {}", home.join(".omp/skills").display(), home.join(".omp/agent").display()),
-        PackScope::Store(dir) => format!("store {}", dir.display()),
-    };
-    ui::ok(&format!("pack `{}` → {} file(s) written, {} unchanged → {}", name, written, unchanged, place));
+    ui::ok(&format!("pack `{}` → {} file(s) written, {} unchanged → store {}", name, written, unchanged, dir.display()));
     if !kept.is_empty() {
         ui::warn(&format!(
-            "{} locally edited file(s) kept (rerun with --force to overwrite, old copy saved as .bak):",
+            "{} locally edited store file(s) kept (rerun with --force to overwrite, old copy saved as .bak):",
             kept.len()
         ));
         for rel in &kept {
-            ui::info(&format!("  {}", scope.target(rel).display()));
+            ui::info(&format!("  {}", dir.join(rel).display()));
         }
     }
-    Ok(())
+    if !orphaned.is_empty() {
+        ui::warn(&format!(
+            "{} store file(s) no longer shipped by pack `{}` but edited locally — kept, still loaded; move or delete them:",
+            orphaned.len(),
+            name
+        ));
+        for rel in &orphaned {
+            ui::info(&format!("  {}", dir.join(rel).display()));
+        }
+    }
+    Ok(dir)
 }
 
 fn write_file(target: &Path, body: &str) -> Result<()> {
@@ -625,7 +625,7 @@ fn fnv1a(s: &str) -> String {
     format!("{:016x}", h)
 }
 
-/// Lock format: one `<hash>\t<path relative to .omp>` per line.
+/// Lock format: one `<hash>\t<path relative to the pack root>` per line.
 fn read_lock(path: &Path) -> BTreeMap<String, String> {
     std::fs::read_to_string(path)
         .unwrap_or_default()
@@ -648,100 +648,111 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ckit-pack-{}-{}", tag, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        dir
+        dir.canonicalize().unwrap()
+    }
+
+    fn extensions(settings: &Path) -> Vec<String> {
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(settings).unwrap()).unwrap();
+        v["extensions"].as_array().unwrap().iter().map(|e| e.as_str().unwrap().to_string()).collect()
+    }
+
+    fn list_pack(root: &Path) {
+        std::fs::create_dir_all(root.join("agents")).unwrap();
+        std::fs::write(root.join("agents/skills.toml"), "[vtiger-php]\nsrc = \"pack:vtiger-php\"\n").unwrap();
     }
 
     #[test]
-    fn global_scope_maps_skills_to_omp_skills_and_the_rest_to_agent_dir() {
-        let home = Path::new("/h");
-        let scope = PackScope::Global(home);
-        assert_eq!(scope.target("skills/field/SKILL.md"), Path::new("/h/.omp/skills/field/SKILL.md"));
-        assert_eq!(scope.target("rules/php83.md"), Path::new("/h/.omp/agent/rules/php83.md"));
-        assert_eq!(scope.target("commands/review-pr.md"), Path::new("/h/.omp/agent/commands/review-pr.md"));
-        assert_eq!(scope.target("RULES.md"), Path::new("/h/.omp/agent/RULES.md"));
-        assert_eq!(scope.lock_path("vtiger-php"), Path::new("/h/.omp/agent/pack-vtiger-php.lock"));
-    }
-
-    #[test]
-    fn global_install_is_idempotent_and_keeps_a_local_edit() {
-        let home = temp_home("global");
-        install_pack_global(&home, "vtiger-php", false).unwrap();
-        let rule = home.join(".omp/agent/rules/php-conventions.md");
-        let installed = std::fs::read(&rule).unwrap();
-        assert!(home.join(".omp/skills/review-pr/SKILL.md").is_file());
-        assert!(home.join(".omp/agent/commands/review-pr.md").is_file());
-
-        // Rerun writes nothing; an edited file survives a normal update.
-        std::fs::write(&rule, "local edit").unwrap();
-        install_pack_global(&home, "vtiger-php", false).unwrap();
-        assert_eq!(std::fs::read_to_string(&rule).unwrap(), "local edit");
-
-        // --force restores the pack copy and keeps the edit as .bak.
-        install_pack_global(&home, "vtiger-php", true).unwrap();
-        assert_eq!(std::fs::read(&rule).unwrap(), installed);
-        assert_eq!(std::fs::read_to_string(home.join(".omp/agent/rules/php-conventions.md.bak")).unwrap(), "local edit");
-        let _ = std::fs::remove_dir_all(&home);
-    }
-
-    #[test]
-    fn harness_refresh_installs_only_packs_registered_globally() {
-        let home = temp_home("refresh");
-        let registry = home.join("skills.toml");
-        refresh_global_packs(&home, &registry);
-        assert!(!home.join(".omp/agent/rules").exists());
-
-        // a legacy project-style `pack:` row must not opt the machine in
-        std::fs::write(&registry, "[vtiger-php]\nsrc = \"pack:vtiger-php\"\nwhen = \"on-demand\"\n").unwrap();
-        refresh_global_packs(&home, &registry);
-        assert!(!home.join(".omp/agent/rules").exists());
-
-        std::fs::write(&registry, "[vtiger-php]\nsrc = \"pack-global:vtiger-php\"\nwhen = \"on-demand\"\n").unwrap();
-        refresh_global_packs(&home, &registry);
-        assert!(home.join(".omp/agent/rules/php-conventions.md").is_file());
-        assert!(home.join(".omp/agent/pack-vtiger-php.lock").is_file());
-        let _ = std::fs::remove_dir_all(&home);
-    }
-
-    #[test]
-    fn harness_refresh_removes_an_unregistered_global_pack_but_keeps_edits() {
-        let home = temp_home("orphan");
-        let registry = home.join("skills.toml");
-        install_pack_global(&home, "vtiger-php", false).unwrap();
-        let edited = home.join(".omp/agent/rules/php83.md");
-        std::fs::write(&edited, "local edit").unwrap();
-
-        // legacy `pack:` row = not an opt-in -> the orphan install is undone
-        std::fs::write(&registry, "[vtiger-php]\nsrc = \"pack:vtiger-php\"\n").unwrap();
-        refresh_global_packs(&home, &registry);
-        assert!(!home.join(".omp/agent/pack-vtiger-php.lock").exists());
-        assert!(!home.join(".omp/agent/RULES.md").exists());
-        assert!(!home.join(".omp/skills/field").exists());
-        assert_eq!(std::fs::read_to_string(&edited).unwrap(), "local edit");
-        assert!(home.join(".omp/skills").is_dir());
-        let _ = std::fs::remove_dir_all(&home);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn project_install_links_every_entry_into_the_shared_store() {
-        let home = temp_home("link");
+    fn project_install_adds_the_store_extension_once_and_keeps_other_settings() {
+        let home = temp_home("ext");
         let root = home.join("repo");
-        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(root.join(".omp")).unwrap();
+        let settings = root.join(".omp/settings.json");
+        std::fs::write(&settings, "{\"extensions\": [\"/opt/other\"], \"theme\": \"dark\"}").unwrap();
+
         install_pack(&home, &root, "vtiger-php", false).unwrap();
+        install_pack(&home, &root, "vtiger-php", false).unwrap();
+        let entry = format!("~/{}", store_dir(Path::new(""), "vtiger-php").display());
+        assert_eq!(extensions(&settings), vec!["/opt/other".to_string(), entry]);
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(v["theme"], "dark");
 
         let store = store_dir(&home, "vtiger-php");
-        for entry in ["rules/php-conventions.md", "skills/review-pr", "commands/review-pr.md", "RULES.md"] {
-            assert_eq!(std::fs::read_link(root.join(".omp").join(entry)).unwrap(), store.join(entry), "{}", entry);
+        for f in ["commands/review-pr.md", "rules/php-conventions.md", "agents/code-reviewer.md", "skills/review-pr/SKILL.md"] {
+            assert!(store.join(f).is_file(), "{}", f);
         }
-        assert!(root.join(".omp/skills/review-pr/SKILL.md").is_file());
-        assert!(!root.join(".omp/pack-vtiger-php.lock").exists());
-        assert_eq!(read_projects(&home, "vtiger-php"), vec![root.canonicalize().unwrap()]);
+        // omp would run a top-level .ts/.js or `*/index.*` of an extension as code
+        assert!(!store.join("RULES.md").exists());
+        assert!(std::fs::read_dir(&store).unwrap().flatten().all(|e| e.path().is_dir()));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn invalid_settings_json_is_reported_and_left_untouched() {
+        let home = temp_home("badjson");
+        let root = home.join("repo");
+        std::fs::create_dir_all(root.join(".omp")).unwrap();
+        let settings = root.join(".omp/settings.json");
+        std::fs::write(&settings, "{ // jsonc\n}").unwrap();
+        assert!(install_pack(&home, &root, "vtiger-php", false).is_err());
+        assert_eq!(std::fs::read_to_string(&settings).unwrap(), "{ // jsonc\n}");
         let _ = std::fs::remove_dir_all(&home);
     }
 
     #[cfg(unix)]
     #[test]
-    fn pack_links_stay_out_of_git_even_in_a_subdirectory_project() {
+    fn old_links_and_pristine_copies_are_retired_but_edits_stay_unless_forced() {
+        let home = temp_home("retire");
+        let root = home.join("repo");
+        let store = refresh_store(&home, "vtiger-php", false).unwrap();
+        let omp = root.join(".omp");
+        std::fs::create_dir_all(omp.join("rules")).unwrap();
+        std::fs::create_dir_all(omp.join("skills")).unwrap();
+        std::os::unix::fs::symlink(store.join("commands/review-pr.md"), omp.join("commands-link.md")).unwrap();
+        std::os::unix::fs::symlink(store.join("skills/field"), omp.join("skills/field")).unwrap();
+        std::os::unix::fs::symlink(store.join("RULES.md"), omp.join("RULES.md")).unwrap(); // dangling
+        std::fs::copy(store.join("rules/php83.md"), omp.join("rules/php83.md")).unwrap();
+        std::fs::write(omp.join("rules/migration-rules.md"), "local edit").unwrap();
+        std::fs::write(omp.join("rules/team-own.md"), "not a pack file").unwrap();
+
+        install_pack(&home, &root, "vtiger-php", false).unwrap();
+        for gone in ["commands-link.md", "skills/field", "RULES.md", "rules/php83.md"] {
+            assert!(std::fs::symlink_metadata(omp.join(gone)).is_err(), "{}", gone);
+        }
+        assert_eq!(std::fs::read_to_string(omp.join("rules/migration-rules.md")).unwrap(), "local edit");
+        assert_eq!(std::fs::read_to_string(omp.join("rules/team-own.md")).unwrap(), "not a pack file");
+
+        install_pack(&home, &root, "vtiger-php", true).unwrap();
+        assert!(!omp.join("rules/migration-rules.md").exists());
+        let backup = std::fs::read_dir(omp.join("removed")).unwrap().flatten().next().unwrap().path();
+        assert_eq!(std::fs::read_to_string(backup.join("rules/migration-rules.md")).unwrap(), "local edit");
+        assert!(omp.join("rules/team-own.md").exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn copies_of_files_the_pack_dropped_are_retired_by_their_lock_hash() {
+        let home = temp_home("dropped");
+        let root = home.join("repo");
+        let omp = root.join(".omp");
+        std::fs::create_dir_all(omp.join("rules")).unwrap();
+        std::fs::write(omp.join("rules/primary-workflow.md"), "old shipped body").unwrap();
+        std::fs::write(omp.join("rules/error-patterns-pending.md"), "shipped\n+ local draft").unwrap();
+        let lock = format!(
+            "{}\trules/primary-workflow.md\n{}\trules/error-patterns-pending.md\n",
+            fnv1a("old shipped body"),
+            fnv1a("shipped")
+        );
+        std::fs::write(omp.join("pack-vtiger-php.lock"), lock).unwrap();
+
+        install_pack(&home, &root, "vtiger-php", false).unwrap();
+        assert!(!omp.join("rules/primary-workflow.md").exists());
+        assert_eq!(std::fs::read_to_string(omp.join("rules/error-patterns-pending.md")).unwrap(), "shipped\n+ local draft");
+        assert!(!omp.join("pack-vtiger-php.lock").exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn settings_stay_out_of_git_and_the_old_per_entry_block_is_replaced() {
         let home = temp_home("gitx");
         let repo = home.join("repo");
         let root = repo.join("app");
@@ -749,81 +760,110 @@ mod tests {
         let git = |args: &[&str]| std::process::Command::new("git").arg("-C").arg(&repo).args(args).output().unwrap();
         assert!(git(&["init", "-q"]).status.success());
         std::fs::write(root.join("keep.txt"), "x").unwrap();
+        let exclude = repo.join(".git/info/exclude");
+        std::fs::write(
+            &exclude,
+            "# >>> ckit pack vtiger-php (machine-local symlinks) >>>\n/app/.omp/commands/review-pr.md\n# <<< ckit pack vtiger-php <<<\n*.log\n",
+        )
+        .unwrap();
 
-        install_pack(&home, &root, "vtiger-php", false).unwrap();
         install_pack(&home, &root, "vtiger-php", false).unwrap();
         let status = String::from_utf8(git(&["status", "--porcelain", "--untracked-files=all"]).stdout).unwrap();
         assert_eq!(status.trim(), "?? app/keep.txt");
-        let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
-        assert_eq!(exclude.matches("# >>> ckit pack vtiger-php").count(), 1);
-        assert!(exclude.contains("/app/.omp/skills/field\n"));
+        let body = std::fs::read_to_string(&exclude).unwrap();
+        assert_eq!(body.matches("# >>> ckit pack vtiger-php").count(), 1);
+        assert!(body.contains("/app/.omp/settings.json\n"));
+        assert!(!body.contains("review-pr.md"));
+        assert!(body.contains("*.log"));
         let _ = std::fs::remove_dir_all(&home);
     }
 
     #[cfg(unix)]
     #[test]
-    fn repo_initialised_after_linking_gets_its_exclude_on_the_next_launch() {
-        let home = temp_home("gitlate");
-        let root = home.join("repo");
-        std::fs::create_dir_all(root.join("agents")).unwrap();
-        std::fs::write(root.join("agents/skills.toml"), "[vtiger-php]\nsrc = \"pack:vtiger-php\"\n").unwrap();
-        install_pack(&home, &root, "vtiger-php", false).unwrap();
+    fn launch_installs_a_listed_pack_and_migrates_an_old_link_install_only() {
+        let home = temp_home("launch");
+        let (clone, linked, plain) = (home.join("clone"), home.join("linked"), home.join("plain"));
+        list_pack(&clone);
+        list_pack(&linked);
+        std::fs::create_dir_all(&plain).unwrap();
+        let store = refresh_store(&home, "vtiger-php", false).unwrap();
+        std::fs::create_dir_all(linked.join(".omp/commands")).unwrap();
+        std::os::unix::fs::symlink(store.join("commands/review-pr.md"), linked.join(".omp/commands/review-pr.md")).unwrap();
+        std::fs::write(linked.join(".omp/settings.json"), format!("{{\"extensions\":[\"{}\"]}}", store.display())).unwrap();
 
-        let git = |args: &[&str]| std::process::Command::new("git").arg("-C").arg(&root).args(args).output().unwrap();
-        assert!(git(&["init", "-q"]).status.success());
-        link_listed_packs(&home, &root);
-        let status = String::from_utf8(git(&["status", "--porcelain", "--untracked-files=all"]).stdout).unwrap();
-        assert_eq!(status.trim(), "?? agents/skills.toml");
+        for root in [&clone, &linked, &plain] {
+            ensure_listed_packs(&home, root);
+        }
+        assert!(has_extension(&clone.join(".omp/settings.json"), &home, &store));
+        assert!(std::fs::symlink_metadata(linked.join(".omp/commands/review-pr.md")).is_err());
+        assert_eq!(extensions(&linked.join(".omp/settings.json")).len(), 1);
+        assert!(!plain.join(".omp").exists());
         let _ = std::fs::remove_dir_all(&home);
     }
 
-    #[cfg(unix)]
     #[test]
-    fn copy_install_becomes_links_but_local_edits_stay_unless_forced() {
-        let home = temp_home("convert");
-        let root = home.join("repo");
-        install_pack_in(&PackScope::Project(&root), "vtiger-php", false).unwrap();
-        let rule = root.join(".omp/rules/php83.md");
-        std::fs::write(&rule, "local edit").unwrap();
-        std::fs::write(root.join(".omp/skills/field/notes.md"), "mine").unwrap();
+    fn up_migrates_recorded_projects_and_drops_the_record() {
+        let home = temp_home("record");
+        let (listed, dropped) = (home.join("listed"), home.join("dropped"));
+        list_pack(&listed);
+        std::fs::create_dir_all(&dropped).unwrap();
+        let record = legacy_projects_file(&home, "vtiger-php");
+        std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+        std::fs::write(&record, format!("{}\n{}\n", listed.display(), dropped.display())).unwrap();
 
-        install_pack(&home, &root, "vtiger-php", false).unwrap();
-        assert!(std::fs::read_link(root.join(".omp/rules/php-conventions.md")).is_ok());
-        assert!(std::fs::symlink_metadata(&rule).unwrap().is_file());
-        assert_eq!(std::fs::read_to_string(&rule).unwrap(), "local edit");
-        assert!(std::fs::symlink_metadata(root.join(".omp/skills/field")).unwrap().is_dir());
-
-        install_pack(&home, &root, "vtiger-php", true).unwrap();
-        assert!(std::fs::read_link(&rule).is_ok());
-        assert!(std::fs::read_link(root.join(".omp/skills/field")).is_ok());
-        let backup = std::fs::read_dir(root.join(".omp/removed")).unwrap().flatten().next().unwrap().path();
-        assert_eq!(std::fs::read_to_string(backup.join("rules/php83.md")).unwrap(), "local edit");
-        assert_eq!(std::fs::read_to_string(backup.join("skills/field/notes.md")).unwrap(), "mine");
-        let _ = std::fs::remove_dir_all(&home);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn refresh_relinks_listed_projects_and_drops_stale_links_and_unlisted_projects() {
-        let home = temp_home("relink");
-        let (root, other) = (home.join("repo"), home.join("other"));
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::create_dir_all(&other).unwrap();
-        install_pack(&home, &root, "vtiger-php", false).unwrap();
-        install_pack(&home, &other, "vtiger-php", false).unwrap();
-        std::fs::create_dir_all(root.join("agents")).unwrap();
-        std::fs::write(root.join("agents/skills.toml"), "[vtiger-php]\nsrc = \"pack:vtiger-php\"\n").unwrap();
-
+        refresh_stores(&home);
         let store = store_dir(&home, "vtiger-php");
-        let rule = root.join(".omp/rules/php83.md");
-        std::fs::remove_file(&rule).unwrap();
-        let retired = root.join(".omp/rules/retired.md");
-        std::os::unix::fs::symlink(store.join("rules/retired.md"), &retired).unwrap();
+        assert!(has_extension(&listed.join(".omp/settings.json"), &home, &store));
+        assert!(!dropped.join(".omp").exists());
+        assert!(!record.exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
 
-        refresh_linked_packs(&home);
-        assert_eq!(std::fs::read_link(&rule).unwrap(), store.join("rules/php83.md"));
-        assert!(std::fs::symlink_metadata(&retired).is_err());
-        assert_eq!(read_projects(&home, "vtiger-php"), vec![root.canonicalize().unwrap()]);
+    #[test]
+    fn old_global_copies_go_but_edited_ones_stay_reported() {
+        let home = temp_home("global");
+        let registry = home.join("skills.toml");
+        // an old `--global` copy: one pristine file, one edited
+        let lock = home.join(".omp/agent/pack-vtiger-php.lock");
+        std::fs::create_dir_all(home.join(".omp/skills/field/scripts")).unwrap();
+        std::fs::write(home.join(".omp/skills/field/SKILL.md"), "pack body").unwrap();
+        std::fs::create_dir_all(home.join(".omp/agent/rules")).unwrap();
+        std::fs::write(home.join(".omp/agent/rules/php83.md"), "local edit").unwrap();
+        std::fs::write(&lock, format!("{}\tskills/field/SKILL.md\n{}\trules/php83.md\n", fnv1a("pack body"), fnv1a("pack"))).unwrap();
+
+        retire_global_packs(&home, &registry);
+        assert!(!home.join(".omp/skills/field").exists());
+        assert!(home.join(".omp/skills").is_dir());
+        assert_eq!(std::fs::read_to_string(home.join(".omp/agent/rules/php83.md")).unwrap(), "local edit");
+        // the edited copy stays tracked, so later runs keep reporting it
+        assert_eq!(read_lock(&lock).into_keys().collect::<Vec<_>>(), ["rules/php83.md"]);
+        retire_global_packs(&home, &registry);
+        assert_eq!(read_lock(&lock).len(), 1);
+        std::fs::remove_file(home.join(".omp/agent/rules/php83.md")).unwrap();
+        retire_global_packs(&home, &registry);
+        assert!(!lock.exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn every_pack_global_row_and_global_extension_is_dropped_even_without_a_copy() {
+        let home = temp_home("globalrow");
+        let registry = home.join("skills.toml");
+        let settings = global_settings(&home);
+        std::fs::create_dir_all(home.join(".omp/agent")).unwrap();
+        std::fs::write(&settings, "{\"theme\": \"dark\"}").unwrap();
+        set_extension(&settings, &home, &store_dir(&home, "vtiger-php"), true).unwrap();
+        assert_eq!(extensions(&settings).len(), 1);
+        let rows = "[vtiger-php]\nsrc = \"pack-global:vtiger-php\"\n\n[karpathy]\nsrc = \"builtin:karpathy\"\nwhen = \"always\"\n";
+        std::fs::write(&registry, rows).unwrap();
+
+        retire_global_packs(&home, &registry);
+        let reg = super::super::discover::read_registry(&registry);
+        assert!(!reg.contains_key("vtiger-php"));
+        assert_eq!(reg["karpathy"].src, "builtin:karpathy");
+        let body = std::fs::read_to_string(&settings).unwrap();
+        assert!(!body.contains("extensions"));
+        assert!(body.contains("dark"));
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -831,7 +871,7 @@ mod tests {
     fn store_refresh_drops_retired_files_but_keeps_edited_ones() {
         let home = temp_home("prune");
         let dir = refresh_store(&home, "vtiger-php", false).unwrap();
-        let lock_path = PackScope::Store(&dir).lock_path("vtiger-php");
+        let lock_path = dir.with_file_name("vtiger-php.lock");
         std::fs::write(dir.join("rules/retired.md"), "old").unwrap();
         std::fs::write(dir.join("rules/edited-retired.md"), "edited").unwrap();
         let mut lock = read_lock(&lock_path);
@@ -842,24 +882,6 @@ mod tests {
         refresh_store(&home, "vtiger-php", false).unwrap();
         assert!(!dir.join("rules/retired.md").exists());
         assert_eq!(std::fs::read_to_string(dir.join("rules/edited-retired.md")).unwrap(), "edited");
-        let _ = std::fs::remove_dir_all(&home);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn listed_pack_in_a_fresh_clone_gets_linked_and_unlisted_repo_stays_untouched() {
-        let home = temp_home("clone");
-        let (clone, plain) = (home.join("clone"), home.join("plain"));
-        std::fs::create_dir_all(clone.join("agents")).unwrap();
-        std::fs::create_dir_all(&plain).unwrap();
-        std::fs::write(clone.join("agents/skills.toml"), "[vtiger-php]\nsrc = \"pack:vtiger-php\"\n").unwrap();
-
-        link_listed_packs(&home, &clone);
-        link_listed_packs(&home, &plain);
-        assert!(std::fs::read_link(clone.join(".omp/rules/php83.md")).is_ok());
-        assert!(is_linked(&home, &clone, "vtiger-php"));
-        assert!(!plain.join(".omp").exists());
-        assert_eq!(read_projects(&home, "vtiger-php"), vec![clone.canonicalize().unwrap()]);
         let _ = std::fs::remove_dir_all(&home);
     }
 }

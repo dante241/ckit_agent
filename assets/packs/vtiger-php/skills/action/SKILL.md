@@ -6,7 +6,7 @@ user-invocable: false
 
 # VTiger Action Controllers
 
-> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md`
+> **Conventions:** Follow `rule://cloudgo-development-rules`
 
 ## When to Use This Skill
 

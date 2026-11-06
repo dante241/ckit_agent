@@ -30,6 +30,15 @@ Specialist (open the body only when the task matches): **impeccable** (UI/design
 ## MCP config — follow the bundled `server.json` standard (never guess field shapes)
 When you write/edit an `mcp.json` server, or reason about a registry `server.json`, follow the on-disk standard at **`~/.omp/specs/mcp-server.md`** (MCP registry schema, machine-local ground truth) — do NOT invent fields. Non-negotiable invariants: `env`/`headers` are `{NAME: value}` **maps, never arrays of descriptors**; the runtime derives from `registryType` (npm→`npx -y` · pypi→`uvx` · oci→`docker run` · nuget→`dnx`); **pin `version`** (`@ver`, or `:ver` for docker images); a `streamable-http`/`sse` transport is a remote (`url`+`headers`), not stdio. `8sync harness` marketplace install already emits exactly this shape.
 
+## Baseline — every repo
+- Implement real behaviour: no fake data, mocks or temporary shortcuts just to pass a check. Never hide test / lint / type / build / syntax errors.
+- Never commit secrets: `.env`, tokens, private keys, DB credentials, personal data.
+- Keep scope to the request; keep public contracts unless the user accepted the change.
+- Never reverse a verified result (source/test/empirical) or a user decision (threshold, library, scope, schema, pricing, UX) on your own: present original decision + concern + tradeoff + options, then wait.
+- No plan IDs, phase numbers, audit/finding codes or ticket numbers in code comments, migrations, tests or commits — state the invariant.
+- Subagent prompts carry task · files to read · files to edit · acceptance criteria · constraints · work-context path. Never parallel-edit one file, migration sequence or shared config; never pass full history.
+- Docs: update only when user-visible behaviour / setup / architecture / public contract / security changes; read the old doc first, verify dates/links/claims after.
+
 ## Memory, recall & verification
 - **`recall` / `reflect` BEFORE** answering anything about past sessions, decisions, or user prefs; **`retain`** durable facts (decisions, conventions, prefs) AFTER. omp Mnemopi long-term memory — the recall hook also auto-injects the live STATE (Current/Next) every prompt; omp itself lists every skill.
 - **`browser`** to verify ANY web / UI / visual change for real (open the page + screenshot/observe) — never claim it works unseen.

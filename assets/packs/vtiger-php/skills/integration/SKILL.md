@@ -6,7 +6,7 @@ user-invocable: false
 
 # VTiger Integration Skill
 
-> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md`
+> **Conventions:** Follow `rule://cloudgo-development-rules`
 
 ## When to Use This Skill
 
@@ -89,7 +89,7 @@ class CPAPIIntegration_Facebook_Channel extends CPAPIIntegration_Channel {
 
 ```bash
 php -l <file>
-# Smoke API với payload thật (xem api-connector-rules.md cho auth):
+# Smoke API với payload thật:
 curl -s -X POST 'http://localhost/vtiger/api/IntegrationAPI/<Platform>/<action>' -H 'token: <access_token>' -H 'Content-Type: application/json' --data '<payload>' | head -c 500
 # Kỳ vọng: JSON đúng shape, error case trả structured error không phải 500 HTML
 ```

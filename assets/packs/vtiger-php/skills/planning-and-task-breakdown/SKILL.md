@@ -223,6 +223,46 @@ Before starting implementation, confirm:
 - [ ] Checkpoints exist between major phases
 - [ ] The human has reviewed and approved the plan
 
+## Plan Folder & TodoList (vtiger)
+
+Plans live in `.omp/plans/<ticket-id>-<slug>/` — mandatory for every complexity level:
+
+```text
+.omp/plans/<ticket-id>-<slug>/
+  plan.md              (medium/complex: status, phases, dependencies, acceptance criteria, links to phase files)
+  todolist.md          (all levels)
+  phase-01-<name>.md   (only when the plan needs phases: context links, requirements, files, steps, tests, risks/rollback)
+  reports/             (only when subagents write reports)
+```
+
+**Simple:** lite todolist only, no plan.md, no review gate. **Medium:** plan.md → user reviews → todolist. **Complex:** a `task` agent drafts plan.md (or run `/feature`) → user reviews → one todolist item per task, in dependency order.
+
+```markdown
+# <Feature Name> — TodoList
+
+**Date:** YYYY-MM-DD | **Ticket:** #XXXXX | **Complexity:** simple/medium/complex
+**Status:** In progress
+
+## Tasks
+- [ ] Task 1 — description
+- [ ] Code review
+- [ ] Verify/test (tier: verify-only / verify-sql / must-test / E2E)
+
+## Files to create/modify
+- path/to/file.php
+
+## Dependencies (medium/complex only)
+- Task 2 depends on Task 1
+
+## Test Results
+_(filled after testing)_
+
+## Completion Notes
+_(filled at completion)_
+```
+
+Docs a plan may need to update (only when behaviour, setup, architecture, security posture or public contracts change): `docs/code-standards.md`, `docs/system-architecture.md`, `docs/codebase-summary.md`, `docs/project-overview-pdr.md`, `CHANGELOG.md`.
+
 ## See Also
 
-Acceptance criteria are per-task and answer "did we build the right thing?". The end-to-end phases (plan → implement → verify → review) and where plans live (`.omp/plans/<ticket>-<slug>/`) are in `rule://primary-workflow`; test tiers and the test-case table are in the `testing` skill.
+Acceptance criteria are per-task and answer "did we build the right thing?". The end-to-end phases (plan → implement → verify → review) are in `/cook` (features) and the `fix` skill (bugs); test tiers and the test-case table are in the `testing` skill.

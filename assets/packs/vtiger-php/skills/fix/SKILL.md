@@ -6,7 +6,7 @@ description: "Fix a bug end-to-end following the debugging flow. Handles bug ana
 
 # Fix Skill
 
-> Fix a bug from report to verified resolution, following the debugging flow from primary workflow.
+> Fix a bug from report to verified resolution. Every bug: knowledge lookup → todolist → fix → test → update todolist.
 
 ## Usage
 
@@ -68,6 +68,10 @@ If missing info, ask user (use `ask`):
 - Which environment? (dev/staging/production)
 
 **Output:** 1-2 sentence root cause hypothesis before proceeding.
+
+### Knowledge Lookup (ALL bugs)
+
+Read `docs/knowledge/INDEX.md` → the module's knowledge file → the flow file in `docs/knowledge/flows/` when the bug crosses modules. No knowledge file yet → continue, and update it if you learn new business logic. Purpose: avoid "fixing" correct behaviour because of a business-logic misunderstanding.
 
 ## Step 2: Load Skills
 
@@ -197,7 +201,7 @@ _(filled in Step 8)_
 
 1. **Edit the minimum number of files** — fix the root cause, don't refactor surroundings
 2. Follow `cloudgo-development-rules.md` conventions strictly
-3. Add modification tracking comment per `rule://php-conventions` (ownership-based, English, NO ticket number). A few lines changed inside someone else's function:
+3. Add modification tracking comment per `rule://cloudgo-development-rules` § Modification Tracking Comments (ownership-based, English, NO ticket number). A few lines changed inside someone else's function:
    ```php
    // Modified by <Name> on YYYY-MM-DD - <reason>
    ...
@@ -324,7 +328,7 @@ If tests fail:
 
 ## Step 9: Error Pattern Capture (USER GATE — MANDATORY)
 
-> **NEVER write to `.omp/rules/error-patterns.md` without explicit user approval.**
+> **NEVER write to `~/.config/8sync/packs/vtiger-php/rules/error-patterns.md` (the pack file behind `rule://error-patterns`) without explicit user approval.**
 
 ### When to trigger
 
@@ -339,20 +343,16 @@ Skip if: one-off bug in module-specific business logic, small typo affecting a s
 
 ### Steps (two tiers: auto-draft PENDING — no question · promote CANONICAL — user approves)
 
-1. **Auto-draft to pending (no need to ask):** trigger matches → append to `.omp/rules/error-patterns-pending.md` (create if missing), temporary ID `PEND-<ticket>`:
+1. **Auto-draft to pending (no need to ask):** trigger matches → append to the project's own `.omp/rules/error-patterns-pending.md` (create the file if missing; the pack ships none), temporary ID `PEND-<ticket>`, same shape as the catalog:
    ```
-   ## PEND-<ticket>: <Short name>
-   **Ticket / MR:** #NNNNN / !NNN
-   **Date:** YYYY-MM-DD
-   **Module / Layer:** <...>
-   **Symptom:** <what happens>
-   **Root cause:** <technical cause>
-   **Rule:** <1-2 preventive sentences>
-   **Trigger keywords (review):** <greppable substrings from the buggy code — separated by ' · '>
+   ## PEND-<ticket> <Short name>
+   Trigger: `<literal code substring>` · `<another>` · <semantic hint outside backticks>
+   Rule: <1-2 preventive sentences>
+   Why: <one line: what broke + the canonical file/method>
    ```
-   Tell the user in one line: "Drafted PEND-<ticket>". Trigger keywords = literal code substrings that reviewers grep for, not abstract descriptions.
+   Tell the user in one line: "Drafted PEND-<ticket>". Backticked Trigger needles = literal substrings from the buggy code (≥3 chars) that `/review-pr` greps the diff for (`scripts/ep-hits.sh`), not abstract descriptions.
 
-2. **Promote (USER GATE):** at the end of the flow, show the pending entry via `ask`: `Promote` / `Edit then promote` / `Keep pending`. Approved → assign `EP-NNN` (max+1), append to `.omp/rules/error-patterns.md`, remove from pending. Reviewers (`code-reviewer`, `/review-pr`) then check its trigger keywords.
+2. **Promote (USER GATE):** at the end of the flow, show the pending entry via `ask`: `Promote` / `Edit then promote` / `Keep pending`. Approved → assign `EP-NNN` (max+1), append to `~/.config/8sync/packs/vtiger-php/rules/error-patterns.md` (the pack file behind `rule://error-patterns`), remove from pending. `/review-pr` then matches its Trigger needles against every MR diff.
 
 3. **NEVER write `error-patterns.md` directly before approval** — pending is free to write.
 
@@ -382,7 +382,7 @@ When `--resume` is passed:
 | Migration reminder | Alert user if migrations created |
 | No AI in commits | Never mention Claude in code/commits |
 | Backward compatible | Fix must not break existing functionality |
-| Error pattern user gate | Step 9 — NEVER write to `.omp/rules/error-patterns.md` without explicit user approval |
+| Error pattern user gate | Step 9 — NEVER write to `rule://error-patterns` without explicit user approval |
 
 ## Error Recovery
 

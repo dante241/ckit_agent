@@ -6,7 +6,7 @@ user-invocable: false
 
 # VTiger Fields
 
-> Conventions: `.omp/rules/cloudgo-development-rules.md`
+> Conventions: `rule://cloudgo-development-rules`
 > Số liệu bên dưới đo từ `modules/*/BlocksAndFieldsRegister.php` ngày 2026-10-29.
 
 ## Field Creation Flow (MANDATORY — đúng 3 bước)

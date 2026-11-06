@@ -6,14 +6,6 @@ condition: ".*"
 
 # Domain tests (`domains/<Domain>/tests/**`)
 
-## Luồng gọi & test lớp nào
-
-```
-Glue ── <Domain>::xxxService() ── XxxService ──┬─ XxxStore ── XxxRepository ── DB
-                                               └─ XxxGateway ── <Vendor>XxxGateway ── vendor
- Legacy/Golden          (Unit: SocialFactoryTest)   Unit          Integration        Unit (HTTP giả)
-```
-
 |Lớp|Suite|Dựng thế nào|
 |---|---|---|
 |Service|`Unit/`|`new XxxService(new FakeXxxStore(), new FakeXxxGateway(), new FixedClock(...))` — KHÔNG qua `<Domain>::` (factory lắp DB thật)|
@@ -26,7 +18,7 @@ Glue ── <Domain>::xxxService() ── XxxService ──┬─ XxxStore ─�
 
 - Vị trí `domains/<Domain>/tests/` (tracked); KHÔNG `test/` hay `.cache/` (gitignore).
 - PHPUnit **9.6** chạy bằng PHP **8.3** (D-019) (`tools/vendor/bin/phpunit`, `phpunit.xml.dist`); cài trong `tools/`, không `require-dev` ở composer gốc.
-- Fake implement **interface** của port, đặt `tests/Fake/` (vd `FakeCommentStore`, `FakeInboxGateway` có `callsTo()`, `FixedClock`). Class `final` không mock được — luôn fake theo interface.
+- Fake implement **interface** của port (class `final` không mock được), đặt `tests/Fake/` (vd `FakeCommentStore`, `FakeInboxGateway` có `callsTo()`, `FixedClock`).
 - Mỗi test kiểm hành vi người dùng thấy được: kết quả, trạng thái lưu, lời gọi ra ngoài, nhánh lỗi. Không test wiring/getter/chuỗi nguyên văn.
 - Có nhánh `throw`/fallback → có test cho nhánh đó. Có idempotency/đua → test chạy lại 2 lần cho cùng kết quả.
 - Integration test tự dọn dữ liệu; không phụ thuộc thứ tự chạy.

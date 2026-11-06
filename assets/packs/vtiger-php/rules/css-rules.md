@@ -6,40 +6,11 @@ condition: ".*"
 
 # CSS Conventions
 
-> Auto-loads when editing CSS/TPL files; also the review checklist for every CSS/TPL change.
+File location + no inline `<style>`/`<script>`: `cloudgo-development-rules.md` § File Separation Rules.
 
-## File Location
+## CSS Variables
 
-CSS **ALWAYS** lives at `modules/<Module>/resources/<ViewName>.css` — never inline in PHP/TPL. See File Separation Rules in `cloudgo-development-rules.md`.
-
-## Class Naming — kebab-case
-
-```css
-.last-campaign-container { }
-.last-campaign-link { }
-.btn-warranty-check { }
-```
-
-## CSS Variables (use existing tokens)
-
-```css
-.primary-button {
-    background-color: var(--primary-1);
-    color: var(--white-1);
-}
-```
-
-Common tokens: `--primary-1`, `--white-1`, `--gray-*`, `--success-1`, `--danger-1`. Check existing CSS files for the full palette before introducing new colors.
-
-## Text Overflow Pattern
-
-```css
-.truncate {
-    white-space: nowrap !important;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-```
+Use existing tokens (`--primary-1`, `--white-1`, `--gray-*`, `--success-1`, `--danger-1`); check existing CSS files for the full palette before introducing new colors.
 
 ## Selectors
 
@@ -48,15 +19,10 @@ Common tokens: `--primary-1`, `--white-1`, `--gray-*`, `--success-1`, `--danger-
 - No inline `style="..."` in TPL — move to CSS file
 - For filter/action bars using Bootstrap grid columns, size every item for its rendered content in the longest supported language. If buttons are kept on one line (`white-space: nowrap`), the button column must be wide enough at each breakpoint or the buttons must be allowed to wrap/stack.
 
-## TPL Reminders
+## TPL
 
-- NO `<style>` blocks inside TPL — extract to `<Module>/resources/<View>.css`
-- NO `<script>` blocks inside TPL — extract to JS controller and register via `getHeaderScripts()`
 - Use `{$VARIABLE|escape}` (HTML escape) when rendering user-controlled data
 
-## Comments & Modification Tracking
+## Comments
 
-Same comment + attribution conventions as `php-conventions.md` (§ Modification Tracking Comments) — applied to CSS/TPL (CSS `/* ... */`, TPL `{* ... *}`):
-- **Attribution by ownership.** Others' file → `/* Added by <Name> on <DATE> - <REASON> */` (editing → `Modified by`), close with `/* End <Name> */`; your own file → plain description or none. Owner = file's `Author:` header; no header → resolve via `git blame`, never assume you own it.
-- **Comment language: English.** ALL comments (attribution `<REASON>`, block, inline, TPL `{* *}`) MUST be in English. Legacy Vietnamese comments → rewrite in English when touched.
-- **≤ 2 lines per comment block; comment what the rule/section does** — not chat decisions/tradeoffs, and NO ticket / plan / phase refs.
+Attribution, English, ≤ 2 lines: `cloudgo-development-rules.md` § Modification Tracking Comments (CSS `/* */`, TPL `{* *}`).

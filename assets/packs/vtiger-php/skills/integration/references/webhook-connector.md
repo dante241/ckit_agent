@@ -1,6 +1,6 @@
 # Webhook Connector Pattern
 
-> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md`
+> **Conventions:** Follow `rule://cloudgo-development-rules`
 
 ## Architecture
 

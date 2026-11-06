@@ -1,318 +1,47 @@
 ---
-description: "PHP conventions — header, K&R brace (không PSR-12 Allman), autoload, modification-tracking comment, empty-line rules. Always-on: nhúng 100% khi code + review PHP (quyết định user 2026-09-10, chống vòng code-đi-sửa-lại của TTSR)."
+description: "PHP conventions — header, autoload, SQL/quote style, validate-once, blank-line/array style. Always-on cho code + review PHP (quyết định user 2026-09-10). Brace + attribution: cloudgo-development-rules § Style & Comments."
 alwaysApply: true
 ---
 
 # PHP Conventions
 
-> **Always-on** (alwaysApply — user decision 2026-09-10): embedded 100% khi code + review PHP. Pairs with `cloudgo-development-rules.md`.
-
 ## File Header (Required)
 
-```php
-<?php
+Every new PHP file starts with `<?php`, a blank line, then one docblock: `@author Your Name`, `@email your.email@company.vn`, `@create date YYYY.MM.DD`. One header per file — never duplicate the `@author` block (fold tags into the existing class docblock).
 
-/**
- * @author Your Name
- * @email your.email@company.vn
- * @create date YYYY.MM.DD
- */
-```
+## Brace Style
 
-## Brace Style (Required — codebase is K&R, NOT PSR-12)
+Shared rules: `cloudgo-development-rules` § Brace Style. Multi-line signature: `{` goes on the closing `): type {` line.
 
-> **Subagent trap:** Fresh LLM output defaults to PSR-12 (Allman — `{` on its own line for class/method). That is **WRONG** for this codebase. Match the K&R files next to you.
+## Class Naming & Autoload
 
-| Construct | Brace position | Example |
-|-----------|----------------|---------|
-| **Class** | K&R — same line | `class Foo_Bar_Model extends Vtiger_Base_Model {` |
-| **Method / function** | K&R — same line | `public function getName(): string {` |
-| **Control (if/for/foreach/while/switch)** | K&R — same line | `if ($id > 0) {` |
-| **`else`/`elseif`/`catch`/`finally`** | Stroustrup — OWN line after `}` | see below |
+- Path: `modules/<Module>/<types>/<Component>.php` (models, views, actions, helpers, crons) — `GeminiAudit.php`, not `GeminiAuditHelper.php`.
+- These classes are autoloaded — no `require_once`. `require_once` only for non-module paths (`include/utils/`, `include/Webservice/`, …) and report handlers in `modules/Reports/custom/` (plain class names).
 
-Classes/methods are K&R across the codebase. `else`/`catch` placement is mixed in existing code (cuddled `} else` / `} catch` is about as common as the own-line form) — new and edited code uses the own-line form; don't copy the cuddled style from nearby legacy code.
+## Database & SQL Conventions
 
-```php
-// CORRECT
-class ModuleName_ClassName_Helper {
+- ALL queries use prepared statements (`pquery` + `?`), no string concatenation. Every JOIN on `vtiger_crmentity` includes `deleted = 0` in its ON clause.
+- Plain strings: single quotes. Queries or strings with variables: double quotes, variables as `{$var}`.
+- SQL keywords UPPERCASE; long queries: one clause (FROM, JOIN, WHERE, ORDER BY…) per line.
+- JOIN conditions on the JOIN line in parentheses; WHERE holds only main-table conditions (except LEFT/RIGHT JOIN null checks). Very long query → split into smaller queries with PHP logic between.
 
-    public function list(array $params): array {
-        if (empty($params)) {
-            return [];
-        }
-        try {
-            return $this->run($params);
-        }
-        catch (Throwable $e) {        // catch on its OWN line (Stroustrup)
-            return [];
-        }
-    }
-}
+## Type Casting
 
-// WRONG (PSR-12 Allman — do NOT use)
-class ModuleName_ClassName_Helper
-{
-    public function list(array $params): array
-    {
-        ...
-    }
-}
-```
+Cast request/external data when you assign it (`(int)`, `(string)`, `(float)`) — `php83` V3.
 
-Multi-line method signatures: put `{` on the line with the closing `) : type`:
-```php
-private function serializeRow(
-    Vtiger_Record_Model $record,
-    array $fields
-): array {
-```
+## PHP 8.3
 
-One file header per file — never duplicate the `@author` block (fold tags into the existing class docblock).
-
-## Class Naming: `<Module>_<Component>_<Type>`
-
-VTiger autoloads classes — class name maps to file path:
-`<Module>_<Component>_<Type>` → `modules/<Module>/<types>/<Component>.php`
-
-```php
-// Models → modules/<Module>/models/<Component>.php
-class Accounts_Record_Model extends Vtiger_Record_Model { }
-class Accounts_Module_Model extends Vtiger_Module_Model { }
-
-// Views → modules/<Module>/views/<Component>.php
-class Accounts_Detail_View extends Vtiger_Detail_View { }
-class Products_CheckWarranty_View extends Vtiger_Index_View { }
-
-// Actions → modules/<Module>/actions/<Component>.php
-class Accounts_Save_Action extends Vtiger_Save_Action { }
-class Products_CheckWarrantyAjax_Action extends Vtiger_Action_Controller { }
-
-// Helpers → modules/<Module>/helpers/<Component>.php
-class CPBranch_Logic_Helper { }
-
-// Crons → modules/<Module>/crons/<Component>.php (rare — most cron logic lives in models called from cron/modules/<Module>/*.service)
-class Project_CalculateProjectCost_Cron { }
-```
-
-**File name = `<Component>` part only.** Do NOT include type suffix (e.g., `GeminiAudit.php` not `GeminiAuditHelper.php`).
-
-## Autoload Rules
-
-- Classes following `<Module>_<Component>_<Type>` convention are **autoloaded** — do NOT use `require_once`
-- Only use `require_once` for files in `include/utils/`, `include/Webservice/`, or other non-module paths
-- Exception: Report handlers in `modules/Reports/custom/` use plain class names and need `require_once`
-
-## Method Naming: camelCase with verb prefix
-
-```php
-public function getAccountName(): string { }   // Getters: get*
-public function setMode(string $mode): self { } // Setters: set*
-public function createNewRecord(): int { }      // Actions: verb prefix
-public function isEnabled(): bool { }           // Boolean: is*/has*/can*
-public function up(): int { }                   // Migration: up/down
-```
-
-## Naming — fields, picklists, files, HTML (nguồn: DevKit nội bộ)
-
-| Element | Rule | Example |
-|---------|------|---------|
-| Module name | Danh từ số ít, tiếng Anh, PascalCase | `Tour`, `TourBooking` |
-| Picklist field name | lowercase + `_`, prefix tên module, kết thúc danh từ số nhiều | `tour_types` |
-| Picklist value key / array key | snake_case toàn thường | `new_customer`, `existing_customer` |
-| Field / DB column | danh từ hoặc tính từ, snake_case | `module_name`, `is_primary`, `can_delete` |
-| CSS/JS/TPL filename | danh từ, PascalCase | `EditView.js`, `BusinessType.tpl` |
-| HTML id/class | kebab-case (khuyến khích) | `btn-submit`, `form-register` |
-| input name | được dùng `_` (trùng tên field) | `account_name` |
-
-## String Quotes & SQL Style (nguồn: DevKit nội bộ)
-
-- Chuỗi thường: **nháy đơn**. Query hoặc chuỗi chèn biến: **nháy đôi**, biến bọc `{$var}`.
-- SQL keywords viết **HOA** (SELECT, FROM, WHERE, JOIN, ORDER BY, GROUP BY...).
-- Query dài hơn màn hình: mỗi statement (FROM, JOIN, WHERE, ORDER BY...) xuống dòng riêng.
-- Điều kiện JOIN nằm cùng hàng statement JOIN, bọc ngoặc tròn; WHERE chỉ chứa điều kiện bảng chính — điều kiện JOIN KHÔNG để trong WHERE (trừ null-check của LEFT/RIGHT JOIN).
-- Query quá dài → tách nhiều query nhỏ xen kẽ PHP logic.
-
-## Type Casting (Security — REQUIRED for request/external data)
-
-```php
-$moduleName = (string) $request->getModule();
-$recordId = (int) $request->get('record');
-$adsAccountId = (string) $adsAccount->get('account_id');
-$expiresIn = (int) $token['expires_in'];
-```
-
-## PHP 8.3: class, function input/output, checks before calling, variables, errors
-
-Full standard (MUST): rule `php83.md` = verbatim copy of `docs/php83-coding-rules.md`; cite rule codes (C/F/P/V/E/R/S) in review findings. In short: typed properties with defaults, typed parameters + return types on new functions (callers cast first), `null` / `[]` / `bool` / `throw` instead of `array|false`, check record existence + permission + `false`/`null` before calling, `===`, `catch (Throwable)` at entry points.
+Full standard (MUST): `rule://php83` (copy of `docs/php83-coding-rules.md`) — class layout C1-C10, typed params/returns F, checks before calling P, variables V, errors E; cite rule codes in review findings.
 
 ## Validate Once, Then Trust (user rule 2026-10-26)
 
-Trong một hàm, một biến chỉ được "đảm bảo kiểu" MỘT lần — tại chỗ xác lập nó; sau đó dùng trần, KHÔNG lặp lại guard:
+Ensure a variable's type ONCE, where it is assigned (`?? []` / `is_array()` on data from request/DB/API); afterwards use it bare. After `array_map/array_filter/explode/array_keys` or `?? []`, call `count($x)` — never `count($x ?? [])`. Functions taking arrays declare `array $param`.
 
-```php
-$participants = $participantsData['participants'] ?? [];           // đảm bảo một lần tại nguồn
-$participantIds = array_map(fn($p) => $p['id'], $participants);    // array_map luôn trả array
-$total = count($participantIds);                                   // KHÔNG count($participantIds ?? [])
-```
+## Idioms
 
-- `?? []` / `is_array()` đặt ở chỗ GÁN (dữ liệu từ request/DB/API vào), không rải theo mỗi lần dùng.
-- Biến đã qua `array_map/array_filter/explode/array_keys...` hoặc đã gán `?? []` → dùng `count($x)` trần.
-- Hàm nhận mảng → khai báo `array $param` (hoặc guard đầu hàm một lần) thay vì phòng thủ ở từng dòng.
-
-## Early Return Pattern
-
-Guard clauses at function start; never deep-nest:
-
-```php
-public function processRequest(Vtiger_Request $request): bool {
-    if (!$this->isEnabled()) return false;
-    if (!$this->hasPermission()) return false;
-
-    $recordId = (int) $request->get('record');
-    if (empty($recordId)) return false;
-
-    try {
-        return $this->processRecord($recordId);
-    }
-    catch (Throwable $e) {    // entry point: Exception does not catch TypeError/ValueError on PHP 8
-        error_log('Error: ' . $e->getMessage());
-        return false;
-    }
-}
-
-// Empty / short-circuit guards
-if (empty($adsAccountId)) return [];
-if (empty($connector) || !$connector instanceof BaseConnector) return [];
-if ($id === 0) return;
-```
-
-## Logical AND Short-Circuit (codebase convention)
-
-```php
-// Conditional assignment
-!empty($campaignId) && $recordModel = Vtiger_Record_Model::getInstanceById($campaignId);
-
-// Conditional record retrieval
-$campaignId > 0 && $sourceCampaign = Vtiger_Record_Model::getInstanceByConditions('Campaigns', ['crmid' => $campaignId]);
-
-// Short inline operations
-!empty($data['start_time']) && $data['start_time'] = date('Y-m-d', strtotime($data['start_time']));
-```
-
-## Null Coalescing
-
-```php
-$campaign[$crmField] = $socialCampaign[$externalField] ?? '';
-$insights = $campaignInsights[$campaignId] ?? [];
-$campaign['ads'] = !empty($socialCampaign['ads']['data']) ? $socialCampaign['ads']['data'] : [];
-```
-
-## Date / Time Formatting
-
-```php
-date('Y-m-d H:i:s')
-date('Y-m-d H:i:s', strtotime("+ $expiresIn seconds"))
-date('Y-m-d', strtotime($dateString))
-
-// Always reject invalid datetimes
-!in_array($lastSyncDateTime, ['', '0000-00-00 00:00:00'], true)
-```
-
-## Instance Check Pattern
-
-```php
-if (empty($adsAccountRecord) || !$adsAccountRecord instanceof CPAdvertisingAccount_Record_Model) return;
-if ($sourceCampaign && $sourceCampaign instanceof Campaigns_Record_Model) { /* ... */ }
-```
-
-## Modification Tracking Comments (ownership-based, decided 2026-07-07; attribution placement decided 2026-11-03)
-
-**No ticket numbers in comments, ever** (default — the 2026-07-03 "ticket ID required" rule is reversed). `/feature` (GSD) workflow always follows this. Other workflows (`/cook`, `/fix`) may still require a ticket ID per their own command/skill — check there first.
-
-Which comment to write depends on **whose class/function you're touching** and **whether the function is new**:
-
-| Situation | Comment |
-|---|---|
-| New function, class you (the file's `@author`) own | Plain 1-line description of what it does. No `Added by <name>`. |
-| New function, class owned by someone else | First line of the function's docblock: `Added by <Name> on <DATE> - <REASON>`. No `// End`. |
-| Rewriting most of an existing function someone else wrote (body and/or signature) | First line of the function's docblock: `Modified by <Name> on <DATE> - <REASON>`. No `// End`. |
-| Changing a few lines inside a function someone else wrote | `// Modified by <Name> on <DATE> - <REASON>` right above the changed lines, closed by `// End <Name>`. |
-| Editing an existing function **you** originally wrote | No comment at all — not even a summary line. |
-
-**Docblock attribution.** The line is plain text, NEVER an `@` tag (`@author` belongs to the file header): PHPStan only reads `@` tags, so the line is a description and `@param`/`@return` stay checked. It goes above any other description and the tags; a function with no docblock gets one (`/** Added by … */`). A later attribution on the same function adds its own line under the existing ones. The docblock covers the whole function, so there is no `// End` marker.
-
-"Owner" of a class = the file's `@author`/`Author:` header. "Originally wrote a function" = check `git blame`/`git log` on that function if the file has multiple contributors — don't assume file-level ownership extends to every function in a multi-author file.
-
-**No `@author`/`Author:` header = no defined owner.** Do NOT assume you own an unheadered file. Determine who wrote the touched function via `git blame`/`git log` and attribute accordingly (`Added by` for a new function, `Modified by` for editing someone else's). Only skip attribution when blame confirms the function is yours. When adding an `@author`/`Author:` header is warranted (brand-new file), you become the owner.
-
-Close `//` attribution blocks with `// End <Name>` (docblock attributions, own-class new functions and own-function edits have no block to close).
-
-Do not insert a visual spacer between an attribution end marker and the structural block close it belongs to. Example: `// End <Name>` immediately followed by `}` stays adjacent; add blank lines only between logical statements/sections, not before a closing delimiter.
-
-**Comment language: English.** ALL code comments MUST be written in English — the attribution `<REASON>`, docblocks (`/** ... */`, `@param`/`@return` descriptions), and inline `//` comments alike. Existing Vietnamese comments are legacy: when you touch a comment, rewrite it in English. New comments are English only.
-
-**Comment length + intent.** Each comment block is **at most 2 lines** (in a docblock: attribution + description lines, `@` tags not counted). Comment the function's actual meaning/behaviour/invariant — NOT decisions, tradeoffs, or negotiation from the chat/discussion (no "user chose X", "we decided Y", plan/phase/ticket refs). If the reason isn't self-evident from the code, state the invariant, not the conversation.
-
-```php
-/**
- * Added by Tung Nguyen on 2026-11-03 - employee and project ids are spliced into the detail SQL: integers only
- * @param array<string, mixed> $params report filter
- * @return array<string, mixed>
- */
-public function getDetailFilter(array $params): array {
-    // Implementation — new function in Vu Mai's class
-}
-
-public function getFilteredData(array $modules = []): array {
-    $sql = $this->getBaseQuery();
-
-    // Modified by Tung Nguyen on 2026-11-03 - support filter by modules
-    if (!empty($modules)) {
-        $sql .= ' AND setype IN (' . generateQuestionMarks($modules) . ')';
-    }
-    // End Tung Nguyen
-
-    return $this->fetchRows($sql, $modules);
-}
-
-// Get all active social campaign ids
-public function getActiveSocialCampaignIds(): array {
-    // Implementation — this is a new function in a class I own, so: summary only, no author
-}
-```
-
-## Class Structure Pattern
-
-```php
-final class ModuleName_ClassName_Helper {
-
-    // 1. Typed constants
-    public const string STATUS_ACTIVE = 'ACTIVE';
-
-    // 2. Static properties (keyed cache only)
-    /** @var array<int, self> */
-    private static array $instances = [];
-
-    // 3. Properties: visibility + type + default
-    /** @var list<int> */
-    private array $recordIds = [];
-
-    // 4. Constructor, then static factory
-    public function __construct(private readonly int $userId) {}
-
-    public static function getInstance(int $userId): self {
-        return self::$instances[$userId] ??= new self($userId);
-    }
-
-    // 5. Public methods
-    public function isEnabled(): bool { }
-
-    // 6. Protected / private methods
-    protected function internalMethod(): void { }
-}
-```
-
-Order: Constants → static properties → properties → `__construct` → static factory (`getInstance`, `fromRow`) → public → protected → private. Property/const typing rules: `php83.md` C1-C10.
+- `&&` short-circuit for conditional assignment is allowed (`!empty($id) && $x = …;`), still subject to php83 P checks.
+- Datetimes: reject `''` and `'0000-00-00 00:00:00'` (`in_array($v, ['', '0000-00-00 00:00:00'], true)`).
+- Entity writes via `set('mode', 'edit')` + `save()` or `updateData($data)->save()`; direct `pquery` UPDATE only on hot paths where save handlers are unnecessary.
 
 ## Empty Line Rules
 
@@ -320,136 +49,4 @@ Add a blank line: (1) before first method of class, (2) between methods, (3) bef
 
 ## Array Style
 
-**NO aligned `=>`** — single space before and after `=>`. Aligned arrows create noisy diffs and are inconsistent.
-
-```php
-// CORRECT
-return [
-    'msg_id' => (string) ($data['message']['msg_id'] ?? ''),
-    'icon' => $this->rawToCrm($rawIcon),
-    'action' => $action,
-    'sender_type' => $isPage ? 'oa' : 'user',
-    'timestamp' => (int) ($data['timestamp'] ?? 0),
-];
-
-// WRONG — do NOT align =>
-return [
-    'msg_id'      => ...,
-    'icon'        => ...,
-    'sender_type' => ...,
-];
-```
-
-## Data Transformation Patterns
-
-### Field Mapping (external → CRM)
-
-```php
-$fieldMapping = [
-    'id' => 'social_campaign_id',
-    'status' => 'campaignstatus',
-    'name' => 'campaignname',
-    'start_time' => 'start_date',
-    'stop_time' => 'closingdate',
-    'reach' => 'reach_count',
-    'spend' => 'actualcost',
-];
-
-foreach ($fieldMapping as $externalField => $crmField) {
-    $campaign[$crmField] = $socialCampaign[$externalField] ?? '';
-}
-```
-
-### Status Mapping
-
-```php
-$campaignStatusMapping = [
-    'ACTIVE' => 'Active',
-    'PAUSED' => 'Inactive',
-    'ARCHIVED' => 'Inactive',
-    'DELETED' => 'Cancelled',
-    'DRAFT' => 'Planning',
-    'ENDED' => 'Completed',
-];
-$socialCampaign['status'] = $campaignStatusMapping[$socialCampaign['status']] ?? '';
-```
-
-### Array Merge for Record Data
-
-```php
-$campaign = array_merge($campaign, [
-    'campaigntype' => capitalizeFirstLetter($channel) . ' Ads',
-    'source' => capitalizeFirstLetter($channel) . ' Ads',
-    'related_cpadvertisingaccount' => $adsAccountRecord->getId(),
-    'assigned_user_id' => $accountMainOwner,
-]);
-```
-
-## Database & SQL Conventions
-
-**ALL queries MUST use prepared statements** — NO string concatenation:
-
-```php
-$sql = "UPDATE vtiger_cpadvertisingaccount SET last_sync_datetime = ? WHERE cpadvertisingaccountid = ?";
-$GLOBALS['adb']->pquery($sql, [date('Y-m-d H:i:s'), $id]);
-```
-
-### SQL with COALESCE (handle nullable fields)
-
-```php
-WHERE c.social_campaign_id IS NOT NULL
-  AND (COALESCE(c.closingdate, '') = '' OR c.closingdate > NOW())
-```
-
-### JOIN with Soft Delete Check (REQUIRED)
-
-Always include `deleted = 0` when joining `vtiger_crmentity`:
-
-```php
-INNER JOIN vtiger_crmentity ON (crmid = cpsocialfeedbackid AND deleted = 0)
-INNER JOIN vtiger_crmentity AS e ON (e.crmid = c.campaignid AND e.deleted = 0)
-```
-
-## Record Model Patterns
-
-### Standard Update
-
-```php
-$record->set('mode', 'edit');
-$record->set('field_name', $value);
-$record->save();
-```
-
-### Bulk / Update Data Pattern
-
-```php
-$adsAccount['last_sync_datetime'] = date('Y-m-d H:i:s');
-$recordModel->updateData($adsAccount)->save();
-```
-
-### Direct SQL Update (Performance — skips event handlers)
-
-Use when triggering save handlers is expensive or unnecessary:
-
-```php
-public function updateLastSyncDateTime() {
-    $id = (int) $this->getId();
-    if ($id === 0) return;
-
-    $sql = "UPDATE vtiger_table SET last_sync_datetime = ? WHERE id = ?";
-    $GLOBALS['adb']->pquery($sql, [date('Y-m-d H:i:s'), $id]);
-}
-```
-
-## Common Patterns
-
-| Task | Pattern |
-|------|---------|
-| Get record | `Vtiger_Record_Model::getInstanceById($id)` |
-| Create record | `Vtiger_Record_Model::getCleanInstance($module)` |
-| Update record | `$record->set('mode', 'edit'); $record->save();` |
-| Update record data | `$record->updateData($data)->save();` |
-| Translation (PHP) | `vtranslate('LBL_KEY', $module)` |
-| SQL query | `$GLOBALS['adb']->pquery($sql, $params)` |
-| Field mapping | `foreach ($map as $ext => $crm) { $data[$crm] = $src[$ext] ?? ''; }` |
-| Status mapping | `$status = $statusMap[$externalStatus] ?? '';` |
+**NO aligned `=>`** — single space before and after `=>`.

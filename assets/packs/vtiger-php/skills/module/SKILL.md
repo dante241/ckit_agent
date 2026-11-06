@@ -5,7 +5,7 @@ description: "VTiger module structure — MVC, Record/Module model, Data/Logic h
 
 # VTiger Module Structure
 
-> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md`
+> **Conventions:** Follow `rule://cloudgo-development-rules`
 
 ## When to Use This Skill
 

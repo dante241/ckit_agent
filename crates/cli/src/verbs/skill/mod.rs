@@ -34,11 +34,10 @@ pub(crate) use inject::inject_agents_md;
       8sync skill add gh:owner/repo                              same, short form
       8sync skill add path:/abs/path#better-name                 register a local dir (symlink), optionally renamed
       8sync skill add builtin:karpathy                           register a builtin skill (already shipped)
-      8sync skill add pack:vtiger-php                             install a domain skill+rule pack (project-local: .omp/skills + .omp/rules)
-      8sync skill add pack:vtiger-php --global                    same pack into ~/.omp for every repo (its always-on rules load in EVERY session)
+      8sync skill add pack:vtiger-php                             install a domain pack in this project (omp extension via .omp/settings.json)
       8sync skill gen 1 2                                        FUSE local skill #1 and #2 into one combined SKILL.md
       8sync skill gen karpathy-guidelines codegraph              same, but by name
-      8sync skill update [name]                                  re-pull registered skills from their source (git/builtin/path), refresh --global packs; inside a project also refresh its pack
+      8sync skill update [name]                                  re-pull registered skills from their source (git/builtin/path); inside a project also refresh its pack
       8sync skill update vtiger-php --force                      refresh the pack, overwriting locally edited files (old copy kept as .bak)
 
     NOTE

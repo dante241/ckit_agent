@@ -13,7 +13,7 @@ description: VTiger/PHP skill routing table for this repo — which project skil
 - `read` raw files only when about to edit them.
 
 ## Project rules
-`.omp/rules/` (path-scoped, auto-inject on edit; read them yourself when reviewing). Full list + globs: the rules table in `.omp/rules/cloudgo-development-rules.md` — don't maintain a second copy here. `php-conventions` (K&R braces, NOT PSR-12 Allman) and `error-patterns` are mandatory before writing/reviewing PHP.
+pack rules `rule://<name>` (path-scoped, auto-inject on edit; read them yourself when reviewing). Full list + globs: the rules table in `rule://cloudgo-development-rules` — don't maintain a second copy here. `php-conventions` (K&R braces, NOT PSR-12 Allman) is mandatory before writing/reviewing PHP; grep the diff/touched code against the `Trigger` lines of `rule://error-patterns` before coding or reviewing PHP.
 
 ## On-demand VTiger/PHP skills
 Read the matching `skill://<name>` before touching code:
@@ -69,5 +69,5 @@ Read the matching `skill://<name>` before touching code:
 - Smallest working diff; no speculative abstraction.
 - Cite code as `path:line` or `path:start-end`.
 - `agents/STATE.md`: read first, rewrite at phase boundaries; learnings → `agents/KNOWLEDGE.md` (`validated:` / `failure:`), per APPEND_SYSTEM.
-- `CHANGELOG.md` Unreleased entry per change; other docs only when behaviour/setup/contract changes (`rule://documentation-management`).
+- `CHANGELOG.md` Unreleased entry per change; other docs (`docs/code-standards.md`, `system-architecture.md`, `codebase-summary.md`, `project-overview-pdr.md`) only when behaviour, setup, architecture, security posture or a public contract changes — read the doc first, then verify dates/links/claims after editing.
 - Verify before claiming done.

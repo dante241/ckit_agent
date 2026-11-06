@@ -1,21 +1,12 @@
 ---
-description: "PHP 8.3 rules có mã (C class, F input/output hàm, P kiểm tra trước khi gọi, V biến, E lỗi, R builtin 8.3, S cú pháp 8.x). BẮT BUỘC khi code PHP; là tiêu chí review (trích mã rule trong finding). Bản sao nguyên văn docs/php83-coding-rules.md."
+description: "PHP 8.3 rules có mã (C class, F input/output hàm, P kiểm tra trước khi gọi, V biến, E lỗi, R builtin 8.3, S cú pháp 8.x). BẮT BUỘC khi code PHP; là tiêu chí review (trích mã rule trong finding). Rút gọn từ docs/php83-coding-rules.md; tự đủ khi repo không có doc."
 scope: "tool:edit(**/*.php), tool:write(**/*.php), tool:edit(**/*.inc), tool:write(**/*.inc), tool:edit(**/*.service), tool:write(**/*.service)"
 condition: ".*"
 ---
 
-<!-- Verbatim copy of docs/php83-coding-rules.md (team source, tracked in git). Edit the doc, then regenerate this file. -->
-
 # Rules: viết code PHP 8.3
 
-**Cập nhật:** 2026-11-02 · Runtime: **PHP 8.3** (D-019) · Phạm vi: code **mới** và **đoạn code được sửa** trong `modules/`, `include/`, `includes/`, `api/`, `cron/`, `domains/`, `integrations/`. Không sửa format hàng loạt code cũ.
-
-- **PHẢI** / **KHÔNG** = bắt buộc. Vi phạm là finding khi review: ghi mã rule (vd `F7`) trong comment review.
-- Style chung (header, K&R, đặt tên, comment): `docs/code-standards.md`. Gate PHPStan: `docs/phpstan.md`.
-- Mọi hành vi ghi ở cột "Trên 8.3" đã chạy thử trên PHP 8.3: **request chết** (`TypeError` / `ValueError` / `Error`).
-- Agent dùng cùng file này, cùng mã rule (`.omp/rules/php83.md`).
-
----
+Rút gọn từ `docs/php83-coding-rules.md` (bỏ ví dụ, checklist, cột hậu quả); repo không có doc (vd pms2019) → file này là nguồn đủ, mã rule tự đứng. Runtime **PHP 8.3** (D-019). Phạm vi: code **mới** và **đoạn code được sửa**; không sửa format hàng loạt code cũ. **PHẢI** / **KHÔNG** = bắt buộc; vi phạm là finding khi review, ghi mã rule (vd `F7`). Cột "Trên 8.3" = hành vi đã chạy thử: **request chết**.
 
 ## C. Khai báo class
 
@@ -23,7 +14,7 @@ condition: ".*"
 |---|---|
 | **C1** | Thứ tự PHẢI là: hằng → thuộc tính static → thuộc tính → `__construct` → hàm static tạo instance (`getInstance`, `fromRow`) → `public` → `protected` → `private`. |
 | **C2** | Hằng PHẢI có phạm vi + kiểu: `public const string STATUS_ACTIVE = 'Active';`. Giá trị cứng (trạng thái, loại, giới hạn) PHẢI là hằng, KHÔNG lặp chuỗi ở nhiều chỗ. |
-| **C3** | Thuộc tính PHẢI có phạm vi + kiểu + giá trị mặc định, trừ khi constructor luôn gán. KHÔNG `var $x;`, KHÔNG thuộc tính thiếu kiểu trong class mới. |
+| **C3** | Thuộc tính PHẢI có phạm vi + kiểu + giá trị mặc định, trừ khi constructor luôn gán. KHÔNG `var $x;`, KHÔNG thuộc tính thiếu kiểu trong class mới. Trên 8.3: đọc khi chưa gán → `Error`; gán `''`/`null` vào `int` → `TypeError` (`'12'` tự thành 12); gán lại `readonly` → `Error`. |
 | **C4** | Thuộc tính `array` PHẢI có `@var`: `list<int>`, `array<int, string>`, `array{id: int, name: string}`. |
 | **C5** | Thuộc tính chỉ gán trong constructor → `readonly`. Class nhận phụ thuộc / giá trị đơn giản → constructor promotion. |
 | **C6** | KHÔNG tạo thuộc tính động (`$this->x = …` khi chưa khai báo). Class legacy đang dựa vào thuộc tính động thì giữ `#[\AllowDynamicProperties]`, KHÔNG gỡ. |
@@ -31,42 +22,6 @@ condition: ".*"
 | **C8** | Thuộc tính `static` chỉ dùng làm cache **có khoá**, có kiểu: `private static array $cache = [];`. KHÔNG singleton bỏ qua tham số (instance của user 7 bị trả cho user 9). |
 | **C9** | Helper / service / utils mới không có lớp con → `final class`. KHÔNG thêm hàm global mới vào `include/utils/*`; đặt thành method static trong helper của module. |
 | **C10** | Override PHẢI tương thích chữ ký class cha: cùng số tham số, tham số cha có default thì con cũng PHẢI có default. Bỏ default (`f($a, $b)` override `f($a, $b = 1)`) → **fatal ngay khi nạp class**. |
-
-| Trên 8.3 (đã đo) | Kết quả |
-|---|---|
-| Đọc thuộc tính có kiểu chưa gán | `Error: must not be accessed before initialization` |
-| Gán `''` hoặc `null` vào thuộc tính `int` | `TypeError` (`'12'` thì tự đổi thành 12) |
-| Gán lại thuộc tính `readonly` | `Error: Cannot modify readonly property` |
-| Tạo thuộc tính động | deprecated (8.2+) |
-
-```php
-final class CPExample_Report_Helper {
-
-	public const string STATUS_ACTIVE = 'Active';
-	private const int MAX_ROWS = 100;
-
-	/** @var array<int, self> instance per account */
-	private static array $instances = [];
-
-	/** @var list<int> */
-	private array $employeeIds = [];
-
-	private ?Vtiger_Record_Model $recordModel = null;
-
-	public function __construct(
-		private readonly int $accountId,
-		private readonly string $fromDate,
-		private readonly ?string $toDate = null
-	) {
-	}
-
-	public static function getInstance(int $accountId, string $fromDate): self {
-		return self::$instances[$accountId] ??= new self($accountId, $fromDate);
-	}
-}
-```
-
----
 
 ## F. Hàm: input / output
 
@@ -84,79 +39,32 @@ final class CPExample_Report_Helper {
 | **F10** | Kiểm tra đầu vào ở đầu hàm, `return` sớm, không lồng `if` sâu. KHÔNG biến `global` mới (đọc `$adb`, `$current_user`, `$log` sẵn có được; code mới ưu tiên `PearDatabase::getInstance()`, `Users_Record_Model::getCurrentUserModel()`). KHÔNG `@` nuốt lỗi (trừ `@unlink`), `extract`, `compact`, `$$name`, `eval`. |
 | **F11** | Không đổi chữ ký hàm public chỉ để "hiện đại hoá". Đổi chữ ký = đổi contract → sửa mọi nơi gọi trong cùng MR. |
 
-```php
-/**
- * Worked hours per employee in a date range.
- *
- * @param list<int> $employeeIds
- * @return array<int, float> hours keyed by employee id
- * @throws AppException when the date range is invalid
- */
-public static function getWorkedHours(array $employeeIds, string $fromDate, ?string $toDate = null): array {
-	if (empty($employeeIds)) return [];
-	...
-}
-
-// caller (action): cast before calling
-$hours = CPTimeSheets_Data_Helper::getWorkedHours(array_map('intval', $request->get('ids') ?: []), (string) $request->get('from'));
-```
-
----
-
 ## P. Kiểm tra trước khi gọi
 
 **P0.** Kiểm **một lần** ở chỗ dữ liệu đi vào (đầu action, đầu hàm public), rồi dùng thẳng. KHÔNG lặp cùng một kiểm tra ở nhiều tầng.
 
-| Mã | Trước khi gọi | PHẢI kiểm | Nếu bỏ qua |
-|---|---|---|---|
-| **P1** | `Vtiger_Record_Model::getInstanceById($id, $module)` | `$id > 0 && isRecordExists($id)`; id từ request thêm `getSalesEntityType($id) === $module` | Exception `LBL_RECORD_NOT_FOUND` / `LBL_RECORD_DELETE` (`data/CRMEntity.php`) |
-| **P2** | Đọc / sửa / xoá record | `Users_Privileges_Model::isPermitted($module, 'DetailView' \| 'EditView' \| 'Delete', $id)` | lộ / sửa dữ liệu không có quyền |
-| **P3** | `Vtiger_Module_Model::getInstance($name)` | `instanceof Vtiger_Module_Model`; module có thể tắt → `vtlib_isModuleActive($name)` | trả `false` → `Error` |
-| **P4** | `->method()` trên giá trị có thể `null` / `false` | `instanceof` hoặc `!== null` | `Error: Call to a member function … on null` |
-| **P5** | `fetchByAssoc` / `num_rows` / `query_result` sau `pquery` | `if (!$result)` | SQL lỗi → `false` → `fetchByAssoc(false)` chết |
-| **P6** | Dùng `$row` từ `fetchByAssoc()` | `if (!$row)` | hết dòng → `null` |
-| **P7** | Key mảng từ request / DB / API / JSON | `$row['key'] ?? $default` | `null` lan xuống dưới |
-| **P8** | `json_decode($json, true)` | `is_array($decoded)` | JSON hỏng → `null` |
-| **P9** | `strtotime()`, `DateTime::createFromFormat()` | `!== false` | `false->format()` → `Error` |
-| **P10** | `fopen`, `fsockopen`, `curl_init`, `file_get_contents` | `!== false` | `fwrite(false)` → `TypeError` |
-| **P11** | `fread($fp, $len)` | `$len > 0` (file rỗng, Range ngược) | `ValueError` |
-| **P12** | `/`, `%`, `intdiv` | mẫu số `!= 0` | `DivisionByZeroError` |
-| **P13** | Toán trên giá trị từ DB / request | đã ép `(int)` / `(float)` | `'' + 1` → `TypeError` |
-| **P14** | `count`, `in_array`, `implode`, `array_*` | đã là mảng (`is_array` hoặc `?: []` lúc gán) | `null` / `false` / chuỗi → `TypeError` |
-| **P15** | Gọi API bên ngoài | timeout; HTTP status; key trong response tồn tại | treo request; dữ liệu rỗng thành dữ liệu thật |
-| **P16** | `new $cls`, `$obj->$method()` | `class_exists`, `method_exists`, `is_callable` | `Error` |
-| **P17** | Config (`$GLOBALS[...]`, `vglobal()`, `config_override`) | `?? $default` | site thiếu config → `null` |
-| **P18** | User hiện tại trong cron / webhook | `Users_Record_Model::getCurrentUserModel()` có id | cron không có user đăng nhập |
+| Mã | Trước khi gọi | PHẢI kiểm |
+|---|---|---|
+| **P1** | `Vtiger_Record_Model::getInstanceById($id, $module)` | `$id > 0 && isRecordExists($id)`; id từ request thêm `getSalesEntityType($id) === $module` |
+| **P2** | Đọc / sửa / xoá record | `Users_Privileges_Model::isPermitted($module, 'DetailView' \| 'EditView' \| 'Delete', $id)` |
+| **P3** | `Vtiger_Module_Model::getInstance($name)` | `instanceof Vtiger_Module_Model`; module có thể tắt → `vtlib_isModuleActive($name)` |
+| **P4** | `->method()` trên giá trị có thể `null` / `false` | `instanceof` hoặc `!== null` |
+| **P5** | `fetchByAssoc` / `num_rows` / `query_result` sau `pquery` | `if (!$result)` |
+| **P6** | Dùng `$row` từ `fetchByAssoc()` | `if (!$row)` |
+| **P7** | Key mảng từ request / DB / API / JSON | `$row['key'] ?? $default` |
+| **P8** | `json_decode($json, true)` | `is_array($decoded)` |
+| **P9** | `strtotime()`, `DateTime::createFromFormat()` | `!== false` |
+| **P10** | `fopen`, `fsockopen`, `curl_init`, `file_get_contents` | `!== false` |
+| **P11** | `fread($fp, $len)` | `$len > 0` (file rỗng, Range ngược) |
+| **P12** | `/`, `%`, `intdiv` | mẫu số `!= 0` |
+| **P13** | Toán trên giá trị từ DB / request | đã ép `(int)` / `(float)` |
+| **P14** | `count`, `in_array`, `implode`, `array_*` | đã là mảng (`is_array` hoặc `?: []` lúc gán) |
+| **P15** | Gọi API bên ngoài | timeout; HTTP status; key trong response tồn tại |
+| **P16** | `new $cls`, `$obj->$method()` | `class_exists`, `method_exists`, `is_callable` |
+| **P17** | Config (`$GLOBALS[...]`, `vglobal()`, `config_override`) | `?? $default` |
+| **P18** | User hiện tại trong cron / webhook | `Users_Record_Model::getCurrentUserModel()` có id |
 
-```php
-public function process(Vtiger_Request $request) {
-	$response = new Vtiger_Response();
-	$moduleName = $request->getModule();	// used in catch too: assign before try
-
-	try {
-		$recordId = (int) $request->get('record');
-
-		if ($recordId <= 0 || !isRecordExists($recordId) || getSalesEntityType($recordId) !== $moduleName) {
-			throw new AppException(vtranslate('LBL_RECORD_NOT_FOUND'));
-		}
-
-		if (!Users_Privileges_Model::isPermitted($moduleName, 'EditView', $recordId)) {
-			throw new AppException(vtranslate('LBL_PERMISSION_DENIED'));
-		}
-
-		$recordModel = Vtiger_Record_Model::getInstanceById($recordId, $moduleName);
-		$response->setResult(CPExample_Report_Helper::summary($recordModel));
-	}
-	catch (Throwable $e) {	// Exception does not catch TypeError / ValueError / Error on PHP 8
-		saveLog('CPExample', 'summary failed', ['record' => $request->get('record'), 'error' => $e->getMessage()]);
-		$response->setError(vtranslate('LBL_SUMMARY_FAILED', $moduleName));	// key declared in languages/*/CPExample.php
-	}
-
-	$response->emit();
-}
-```
-
----
+Mẫu điểm vào (action): biến dùng trong `catch` gán trước `try` (V1); kiểm id + module + quyền trước `getInstanceById` (P1/P2); `catch (Throwable $e)` → `saveLog(...)` kèm id/module → `setError(vtranslate(...))`, không trả message thô (E1/E2).
 
 ## V. Biến
 
@@ -170,8 +78,6 @@ public function process(Vtiger_Request $request) {
 | **V6** | Mảng tạo bằng `[]`. List giữ là list, map giữ là map, không trộn. | `$x = ''; $x[] = 1;` → `Error`; `$x = false; $x[] = 1;` → deprecated |
 | **V7** | `??` không xử lý `false`: giá trị có thể `false` / `''` / `null` → `?:`; không chắc kiểu → `is_array($x) ? $x : []`. | `count($x ?? [])` với `$x = false` → `TypeError` |
 
----
-
 ## E. Lỗi và ngoại lệ
 
 | Mã | Rule |
@@ -180,8 +86,6 @@ public function process(Vtiger_Request $request) {
 | **E2** | `catch (Exception $e)` KHÔNG bắt `TypeError`, `ValueError`, `Error`, `DivisionByZeroError`: ở điểm vào PHẢI là `Throwable`. |
 | **E3** | Vòng lặp cron / queue: bắt lỗi **từng phần tử**, một bản ghi lỗi không làm dừng cả lô. |
 | **E4** | KHÔNG `catch {}` rỗng; KHÔNG nuốt lỗi rồi trả `false` âm thầm. Sự cố → `throw`; kết quả bình thường (không thấy, rỗng) → `return`. |
-
----
 
 ## R. Hàm có sẵn của PHP trên 8.3
 
@@ -200,8 +104,6 @@ public function process(Vtiger_Request $request) {
 | **R11** | `substr(null, …)`, `explode(',', null)`, `null` vào tham số chuỗi của hàm có sẵn | deprecated | `(string) $x` / `$x ?? ''` |
 | **R12** | `declare(strict_types=1)` trong file `modules/` | mọi hàm có sẵn nhận chuỗi DB → `TypeError` | `strict_types` chỉ trong `domains/` |
 
----
-
 ## S. Cú pháp PHP 8.x cho code mới
 
 | Mã | Rule |
@@ -210,25 +112,6 @@ public function process(Vtiger_Request $request) {
 | **S2** | `?->` chỉ dùng khi **đọc**, KHÔNG dùng cho lệnh có tác dụng phụ (`$model?->save()` im lặng bỏ qua). |
 | **S3** | KHÔNG dùng named argument khi gọi hàm vtiger / legacy (tên tham số của chúng không ổn định). |
 
----
+## Trước khi commit
 
-## Checklist trước khi commit
-
-1. Class: C1-C10 (thuộc tính có phạm vi + kiểu + mặc định; mảng có `@var`; override giữ chữ ký).
-2. Hàm mới: F1-F8 (kiểu tham số + trả về; nơi gọi đã ép kiểu; mọi nhánh đúng kiểu; mảng có shape).
-3. Đầu vào: V3 (ép kiểu khi gán); P1-P18 (record, quyền, `false` / `null` đã kiểm).
-4. Điểm vào: E1-E2 (`catch (Throwable)`).
-5. `php -l <file>` bằng PHP 8.3.
-6. PHPStan trên các file đã sửa → `[OK] No errors` (`docs/phpstan.md`).
-7. Chạy thử luồng đã sửa trên PHP 8.3.
-
-Tự rà nhanh:
-```bash
-php -l <file>                                                    # PHP 8.3
-grep -nE "^\s*(var |function )" <file>                           # C3/F1: thiếu phạm vi (class mới)
-grep -nE "count\(\\\$[a-zA-Z_]+ \?\? \[\]\)" <file>               # V7: ?? không bắt false
-grep -nE "\b(split|each|create_function)\(|/e['\"]" <file>       # R8: hàm đã xoá
-grep -nE "catch \(Exception " <file>                             # E2: điểm vào cần Throwable
-grep -nE "getInstanceById\(" <file>                              # P1/P2: rà từng chỗ
-grep -nE "\(array\) ?\\\$request" <file>                          # V3: (array) trên request
-```
+`php -l <file>` bằng PHP 8.3; gate PHPStan (`rule://phpstan`); chạy thử luồng đã sửa trên PHP 8.3.

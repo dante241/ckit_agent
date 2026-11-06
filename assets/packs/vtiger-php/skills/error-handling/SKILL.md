@@ -5,7 +5,7 @@ description: "VTiger error handling — Vtiger_Response setError, AppException, 
 
 # VTiger Error Handling
 
-> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md`
+> **Conventions:** Follow `rule://cloudgo-development-rules`
 
 ## When to Use
 

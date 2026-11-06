@@ -6,8 +6,6 @@ condition: ".*"
 
 # Migration File Conventions
 
-> Auto-loads when editing migration files; also the review checklist for every migration change.
-
 ## File Naming
 
 `YYYY.MM.DD.HH.mm.ss_DescriptiveName.php`
@@ -41,37 +39,21 @@ return new class extends CPMigration_Base_Model {
 };
 ```
 
+Migration header keeps `@create date YYYY-MM-DD HH:mm:ss` (skill `migration` + existing migrations), not the `YYYY.MM.DD` of php-conventions.
+
 ## Helper Methods
 
 - `$this->pquery($sql, $params)` — prepared SQL
-- `$this->createCronjob($name, $frequencySeconds, $moduleName, $handlerFile)` — register cron job
+- `$this->createCronjob($name, $frequencySeconds, $moduleName, $handlerFile, $runBy = 'Cronjob')` — register cron job (`$handlerFile` = `.service` under `cron/modules/<Module>/`)
 - `$this->createPicklistValues($fieldName, $moduleName, $options, $idFieldName = '', $isOverride = false)` — add picklist values; `$isOverride = true` runs `DELETE FROM <picklist table>` first (wipes every existing value)
 - Idempotent helpers: `isTableExists`, `isColumnExists`, `isIndexExists`, `addColumnIfMissing`, `addIndexIfMissing`, `dropIndexIfExists`
 
-### Examples
-
-```php
-// 1. Schema change
-$this->pquery("ALTER TABLE vtiger_campaign ADD social_campaign_id VARCHAR(255)");
-
-// 2. Register cron job — (name, frequency_seconds, module, handler .service file under cron/modules/<Module>/)
-$this->createCronjob('SyncSocialCampaigns', 900, 'Campaigns', 'cron/modules/Campaigns/SyncSocialCampaigns.service');
-
-// 3. Add picklist values — (fieldname, module, [['key' => ..., 'color' => '#hex'], ...]); keeps existing values (isOverride = false)
-$this->createPicklistValues('campaigntype', 'Campaigns', [
-    ['key' => 'Facebook Ads', 'color' => '#1877F2'],
-    ['key' => 'Zalo Ads', 'color' => '#0068FF'],
-]);
-```
+Examples: skill `migration`.
 
 ## Return Codes
 
-- `self::UP_SUCCESS` — migration applied
-- `self::UP_FAILED` — migration failed
-- `self::DOWN_NOT_SUPPORTED` — rollback not implemented (default)
-- `self::DOWN_SUCCESS` — rollback applied
-- `self::DOWN_FAILED` — rollback failed
+`self::UP_SUCCESS` / `self::UP_FAILED`; `self::DOWN_NOT_SUPPORTED` (default) / `self::DOWN_SUCCESS` / `self::DOWN_FAILED`.
 
 ## Reminder
 
-After creating migration, **alert user** to run pending migrations (per `primary-workflow.md` Phase 10).
+After creating a migration, **alert the user** to run pending migrations.

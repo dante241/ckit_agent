@@ -6,8 +6,7 @@ condition: ".*"
 
 # PHPStan — gate cho mọi thay đổi PHP
 
-> Tài liệu team: `docs/phpstan.md` (cơ chế, phạm vi, baseline). Quy tắc runtime 8.3: `php83.md`.
-> Auto-load khi sửa `*.php`/`*.inc`/`*.service`, config PHPStan, `tools/composer.*`; đồng thời là checklist khi review.
+Tài liệu team: `docs/phpstan.md` (cơ chế, phạm vi, baseline). Quy tắc runtime 8.3: `rule://php83`.
 
 ## Gate (MUST, trước khi báo xong hoặc commit code PHP)
 
@@ -17,57 +16,41 @@ php -d memory_limit=4G tools/vendor/bin/phpstan analyse -c tools/phpstan/phpstan
 # domains/
 php -d memory_limit=4G tools/vendor/bin/phpstan analyse -c tools/phpstan/phpstan-domains.neon.dist <các file đã sửa>
 ```
-- Kết quả phải là `[OK] No errors`. `[ERROR]` → sửa code, chạy lại. Báo kết quả gate trong phần tổng kết.
-- PHPStan chỉ báo lỗi trong file được truyền vào. Đổi chữ ký hàm/method (tham số, kiểu, return, tên) → MUST chạy kèm mọi file gọi hàm đó (`lsp references` / `git grep`) hoặc chạy toàn bộ (không truyền file); chỉ chạy file chứa hàm = `[OK]` giả.
-- `tools/phpstan/phpstan-domains.neon.dist` hiện có 10 lỗi có sẵn trong `domains/Social` (không do code mới): chỉ cần không phát sinh thêm lỗi.
-- Ngoài phạm vi gate của `phpstan.neon.dist` (chỉ scan symbol, KHÔNG báo lỗi): phần còn lại của `include/`, `includes/`, `vtlib/`, `libraries/`, `data/`, `modules/com_vtiger_workflow`, `modules/Webforms`, `modules/WSAPP`, `include/Webservice/*/tests/*`, `modules/MailManager/models/Message.php`. `include/Webservice/CloudWorkApi/v1/*` bị loại hẳn (không scan cả symbol). `integrations/` chỉ được `phpstan-domains.neon.dist` scan symbol. Sửa file ở đó → gate không bảo vệ; tự review + chạy thử.
+- Phải ra `[OK] No errors` (`[ERROR]` → sửa, chạy lại); báo kết quả gate trong tổng kết. MR thường: diff `phpstan-baseline.php` rỗng.
+- PHPStan chỉ báo lỗi trong file được truyền vào. Đổi chữ ký hàm/method → MUST chạy kèm mọi file gọi (`lsp references` / `git grep`) hoặc chạy toàn bộ; chỉ chạy file chứa hàm = `[OK]` giả.
+- `phpstan-domains.neon.dist` có sẵn lỗi cũ trong `domains/Social` (không do code mới): chỉ cần không phát sinh thêm lỗi.
+- Ngoài gate `phpstan.neon.dist` (chỉ scan symbol, không báo lỗi): phần còn lại của `include/`, `includes/`, `vtlib/`, `libraries/`, `data/`, `modules/com_vtiger_workflow`, `modules/Webforms`, `modules/WSAPP`, `include/Webservice/*/tests/*`, `modules/MailManager/models/Message.php`. `include/Webservice/CloudWorkApi/v1/*` loại hẳn; `integrations/` chỉ được `phpstan-domains.neon.dist` scan symbol. Sửa file ở đó → gate không bảo vệ; tự review + chạy thử.
 
 ## Môi trường (MUST)
 
 | # | Quy tắc |
 |---|---|
-| E1 | Chỉ dùng `tools/vendor/bin/phpstan`, ghim **2.2.17** (`tools/composer.json` + lock). KHÔNG dùng phar/bản khác: baseline khớp câu chữ của đúng bản này (bản 2.3.2 từng báo 75 lỗi oan). |
+| E1 | Chỉ dùng `tools/vendor/bin/phpstan`, ghim **2.2.17** (`tools/composer.json` + lock; `--version` phải ra 2.2.17). KHÔNG dùng phar/bản khác: baseline khớp câu chữ của đúng bản này. |
 | E2 | Cài: `composer install -d tools`. KHÔNG `composer update` trong `tools/` trừ khi chủ động nâng PHPStan. |
-| E3 | Cần `include/utils/utils.php8.php` (untracked, machine-local, bản giải mã ionCube; KHÔNG commit, `.gitignore` chặn `*.php8.php`). Thiếu → ~2.400 lỗi "function not found": đó là lỗi môi trường, không phải lỗi code. |
-| E4 | Chạy từ gốc repo bằng PHP 8.3 (kiểm `php -v`), `-d memory_limit=4G`. PHPStan lấy class/hàm built-in từ chính bản PHP chạy nó. |
-| E5 | Mỗi lúc chỉ MỘT tiến trình PHPStan (3–4GB RAM; máy 16GB đã từng sập khi chạy 3 cái song song). Subagent song song phải xếp hàng (lock file). |
+| E3 | Cần `include/utils/utils.php8.php` (untracked, bản giải mã ionCube; KHÔNG commit). Thiếu → ~2.400 lỗi "function not found" = lỗi môi trường, không phải lỗi code. |
+| E4 | Chạy từ gốc repo bằng PHP 8.3 (`php -v`; PHPStan lấy built-in từ chính bản PHP chạy nó), `-d memory_limit=4G`. |
+| E5 | Mỗi lúc chỉ MỘT tiến trình PHPStan (3–4GB RAM mỗi tiến trình). Subagent song song phải xếp hàng (lock file). |
 
 ## Viết code để PHPStan hiểu (MUST)
 
 | # | Quy tắc |
 |---|---|
-| W1 | Docblock = kiểu PHP thật: `@return array\|false`, `@param int $recordId`, `@return Vtiger_Record_Model\|null`. KHÔNG `@return <Array>`, `@param type $x`, `@return The ...`. |
+| W1 | Docblock = kiểu PHP thật (`@return Vtiger_Record_Model\|null`), có cả nhánh `false`/`null`. KHÔNG `@return <Array>`, `@param type $x`, `@return The ...`. |
 | W2 | Tên class trong docblock đúng chính tả (`Users_Privileges_Model`, `EmailTemplates_Record_Model`). |
-| W3 | Hàm có nhánh trả `false`/`null` → ghi vào `@return` để PHPStan bắt người gọi kiểm tra. |
-| W4 | Hàm/method MỚI, tham số MỚI, hàm đổi tên: MUST khai báo kiểu param + return (`function getName(int $id): string`) và nội dung mảng trong docblock (`@param list<int> $ids`, `@return array{id: int, name: string}`) — gate báo `missingType.parameter`/`missingType.return`/`missingType.iterableValue`. KHÔNG lách bằng `array<mixed>`. Hàm cũ chưa có kiểu: KHÔNG tự thêm kiểu PHP khi chưa rà nơi gọi + lớp con (thêm return type ở lớp cha khi lớp con override chưa có kiểu = fatal; thêm param type ở lớp con khi cha chưa có = fatal). |
+| W4 | = php83 F1/F5/F8 (kiểu param + return + shape mảng cho hàm/tham số mới; không tự thêm kiểu vào hàm cũ). Gate báo `missingType.parameter`/`missingType.return`/`missingType.iterableValue`; KHÔNG lách bằng `array<mixed>`. |
 | W5 | KHÔNG tạo hai class cùng tên trong vùng quét (PHPStan chọn ngẫu nhiên → kết quả lệch giữa các máy). |
-| W6 | Hạn chế gọi động (`new $cls`, `$obj->$m()`, `call_user_func`); bắt buộc thì kiểm `class_exists`/`method_exists`. |
-| W7 | `method.notFound` trên kiểu cha (vd `Vtiger_Record_Model::getProducts()`): nếu object thật là class con có method → sửa `@var`/`@return` cho đúng; KHÔNG thêm `method_exists()` chỉ để im lỗi. |
+| W7 | `method.notFound` trên kiểu cha (vd `Vtiger_Record_Model::getProducts()`): nếu object thật là class con có method → sửa `@var`/`@return` cho đúng; KHÔNG thêm `method_exists()` chỉ để im lỗi. Gọi động: php83 P16. |
 
 ## Cấm (MUST NOT)
 
 - Thêm `@phpstan-ignore` / `@phpstan-ignore-next-line` / mục `ignoreErrors` mới để lấp lỗi code mới.
 - Ép kiểu, nới kiểu, `assert()`, `@var` inline chỉ để cảnh báo biến mất.
-- Sinh lại `tools/phpstan/phpstan-baseline.php` để lấp lỗi mới. Baseline = nợ cũ đã kiểm kê, chỉ được **giảm** (sửa xong lỗi cũ thì xoá mục). Baseline bỏ qua từng lỗi cụ thể, KHÔNG bỏ qua cả file: code mới trong file cũ vẫn bị kiểm.
-- Thêm `excludePaths` / `ignoreErrors` cho file vì class hay file nó cần không tồn tại (`class.notFound`, `vtiger.includeNotFound`, `vtiger.classNotLoaded`): phải sửa, hoặc nêu thành finding trong review/báo user. `excludePaths` chỉ cho test, code không còn chạy, bản giải mã ionCube. Exclude tạm duy nhất: `modules/MailManager/models/Message.php` (chờ team thêm `MailRecordIMAP.php`).
+- Sinh lại `tools/phpstan/phpstan-baseline.php` để lấp lỗi mới. Baseline = nợ cũ, chỉ được **giảm** (sửa xong lỗi cũ thì xoá mục); nó bỏ qua từng lỗi, không cả file: code mới trong file cũ vẫn bị kiểm.
+- Thêm `excludePaths` / `ignoreErrors` vì class/file cần không tồn tại (`class.notFound`, `vtiger.includeNotFound`, `vtiger.classNotLoaded`): sửa, hoặc nêu finding/báo user. `excludePaths` chỉ cho test, code chết, bản giải mã ionCube. Exclude tạm duy nhất: `modules/MailManager/models/Message.php` (chờ team thêm `MailRecordIMAP.php`).
 - Thêm mục vào `tools/phpstan/baseline-loadcheck.php` (nợ của 2 rule vtiger lúc thêm rule): chỉ được xoá mục khi đã sửa; chạy toàn bộ để thấy `ignore.unmatched`.
 
-Chỉ được sinh lại baseline khi (a) user chấp nhận một lỗi cũ, hoặc (b) nâng PHPStan (sửa `tools/composer.json`, sinh lại bằng chính bản mới, cùng MR). Diff baseline phải được review:
-```bash
-php -d memory_limit=4G tools/vendor/bin/phpstan analyse -c tools/phpstan/phpstan.neon.dist --generate-baseline tools/phpstan/phpstan-baseline.php
-php tools/phpstan/baseline-eol.php   # MUST: line breaks/offsets in messages -> \R / \d+, else CRLF/LF checkouts fail the gate
-```
+Chỉ được sinh lại baseline khi (a) user chấp nhận một lỗi cũ, hoặc (b) nâng PHPStan (sửa `tools/composer.json`, sinh lại bằng chính bản mới, cùng MR); diff baseline phải được review. Lệnh: `docs/phpstan.md` (`--generate-baseline`), sau đó MUST chạy `php tools/phpstan/baseline-eol.php` (không thì checkout CRLF/LF khác làm gate báo lỗi oan).
 
-## Giới hạn (đừng coi `[OK]` là đủ)
+## Giới hạn
 
-- Level 8 KHÔNG kiểm giá trị `mixed` (`$request->get()`, DB, JSON API): `count($request->get('ids') ?: false)` không bị báo → vẫn phải theo `php83.md` R2 / P14.
-- Không kiểm SQL, bảo mật, nghiệp vụ, `.tpl`, JS → `security-rules.md`, test, review.
-
-## Self-check
-
-```bash
-php -d memory_limit=4G tools/vendor/bin/phpstan analyse -c tools/phpstan/phpstan.neon.dist <file>   # → [OK] No errors
-git diff --stat tools/phpstan/phpstan-baseline.php                                                      # phải rỗng trong MR thường
-grep -n "@phpstan-ignore" <file>                                                                 # phải rỗng
-tools/vendor/bin/phpstan --version                                                               # 2.2.17
-```
+`[OK]` ≠ an toàn: level 8 KHÔNG kiểm giá trị `mixed` (`$request->get()`, DB, JSON API) → vẫn theo php83 R2/P14; không kiểm SQL, bảo mật, nghiệp vụ, `.tpl`, JS → `rule://security-rules`, test, review.

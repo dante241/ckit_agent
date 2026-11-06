@@ -2,7 +2,7 @@
 
 > Asset loading for VTiger Views
 
-File separation (no inline CSS/JS, no HTML in PHP) and CSS/JS/TPL locations: see **File Separation Rules** in `.omp/rules/cloudgo-development-rules.md` (always loaded) — not repeated here. `app.request` / `app.helper` / `app.vtranslate` reference: `.omp/rules/javascript-rules.md` ("Key JavaScript Objects").
+File separation (no inline CSS/JS, no HTML in PHP) and CSS/JS/TPL locations: see **File Separation Rules** in `rule://cloudgo-development-rules` (always loaded) — not repeated here. `app.request` / `app.helper` / `app.vtranslate` reference: `rule://javascript-rules` ("Key JavaScript Objects").
 
 ### Real Example Paths
 

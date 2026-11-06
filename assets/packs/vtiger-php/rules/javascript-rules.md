@@ -1,38 +1,15 @@
 ---
-description: "jQuery/JS conventions — header, app.request, không inline JS, attribution comment. Always-on: nhúng 100% khi code + review JS (quyết định user 2026-09-10, chống vòng code-đi-sửa-lại của TTSR)."
+description: "jQuery/JS conventions — header, controller, app.request, Vue naming, XSS. Always-on cho code + review JS (quyết định user 2026-09-10)."
 alwaysApply: true
 ---
 
 # jQuery / JavaScript Conventions
 
-> **Always-on** (alwaysApply — user decision 2026-09-10): embedded 100% khi code + review JS.
-
-## Brace Style — K&R open, Stroustrup else (identical to php-conventions)
-
-- Opening brace on the **same line**: `if (cond) {`, `function () {`, `for (…) {`.
-- **`else` / `else if` / `catch` / `finally` on their OWN line** after the closing `}` — same as php-conventions, no divergence:
-
-```javascript
-if (isProject) {
-    avgText = total;
-}
-else if (hours) {
-    avgText = sum;
-}
-else {
-    avgText = avg;
-}
-```
-
-Single-statement inline guards (`if (x) { a(); } else { b(); }` on one line) may stay inline.
-- Tabs for indentation; match the file's existing line endings.
+Brace, attribution (JSDoc) and comment rules: `cloudgo-development-rules` § Style & Comments.
 
 ## Block Spacing
 
-Blocks must breathe — never pack them wall-to-wall:
-- One blank line **between methods / functions** (object methods, class methods, standalone functions).
-- One blank line **after the opening `{`** of a class / large object literal.
-- One blank line **between logical statement groups** inside a function (setup → main logic → return). No blank line right before a closing `}`/`)`.
+One blank line between methods/functions, after the opening `{` of a class or large object literal, and between logical statement groups (setup → logic → return). No blank line right before a closing `}`/`)`.
 
 ## File Header
 
@@ -45,141 +22,18 @@ Blocks must breathe — never pack them wall-to-wall:
 */
 ```
 
-## Controller Pattern: `Vtiger.Class()`
+## Controller Pattern
 
-`CustomView_BaseController_Js` (and `Vtiger_Index_Js`) define no `getContainer()` — the subclass defines its own root selector:
-
-```javascript
-CustomView_BaseController_Js('ModuleName_ViewName_Js', {}, {
-
-    getContainer: function() {
-        return jQuery('#module-view-container');  // root element of the view's TPL
-    },
-
-    registerEvents: function() {
-        this._super();
-        var self = this;
-        var container = this.getContainer();  // Cache DOM
-
-        container.find('#btnSave').on('click', function() {
-            self.handleSave();
-            return false;
-        });
-    }
-});
-```
-
-**Controller naming:** `<Module>_<View>_Js`. Parent classes: `Vtiger_List_Js`, `Vtiger_Edit_Js`, `Vtiger_Detail_Js`, `CustomView_BaseController_Js`.
-
-```javascript
-// Custom views — extend CustomView_BaseController_Js
-CustomView_BaseController_Js('Products_CheckWarranty_Js', {}, { });
-
-// Core views — extend matching Vtiger parent controller
-Vtiger_List_Js('Accounts_List_Js', {}, { });
-Vtiger_Edit_Js('Contacts_Edit_Js', {}, { });
-Vtiger_Detail_Js('Accounts_Detail_Js', {}, { });
-```
-
-## DOM Selection Caching
-
-Cache jQuery selectors at the top of `registerEvents()` — never re-query inside loops/callbacks (`getContainer()` = the subclass method defined above):
-
-```javascript
-registerEvents: function() {
-    var self = this;
-    var container = this.getContainer();   // Cache root
-    var form = container.find('form');     // Cache form
-    var btnSubmit = form.find('#btnSubmit');
-
-    btnSubmit.on('click', function() {
-        self.handleSubmit(form);
-    });
-}
-```
-
-## File Location
-
-| View Type | Location |
-|-----------|----------|
-| Core views (List, Edit, Detail — inherit parent controller) | `layouts/v7/modules/<Module>/resources/<View>.js` |
-| Custom views (Config, Report, custom pages — standalone) | `modules/<Module>/resources/<View>.js` |
-
-## AJAX Pattern: `app.request.post()`
-
-```javascript
-app.helper.showProgress();
-var params = { module: 'Products', action: 'SaveAjax', record: recordId };
-
-app.request.post({ data: params }).then(function(error, data) {
-    app.helper.hideProgress();
-
-    if (error) {
-        app.helper.showErrorNotification({ message: app.vtranslate('JS_ERROR') });
-        return;
-    }
-
-    app.helper.showSuccessNotification({ message: app.vtranslate('JS_SAVE_SUCCESSFULLY') });
-});
-```
+`Vtiger.Class()` controllers (naming: core § Naming Conventions) extend `Vtiger_List_Js` / `Vtiger_Edit_Js` / `Vtiger_Detail_Js` (core views) or `CustomView_BaseController_Js` (custom views). Parents define no `getContainer()` — the subclass returns its TPL root; cache it and other selectors at the top of `registerEvents()`, never re-query inside loops/callbacks.
 
 ## Key JavaScript Objects
 
-| Object | Methods | Purpose |
-|--------|---------|---------|
-| `app.request` | `post()`, `get()` | AJAX requests |
-| `app.helper` | `showProgress()`, `hideProgress()`, `showSuccessNotification()`, `showErrorNotification()`, `showModal()`, `hideModal()` | UI helpers |
-| `app` | `vtranslate(key)` | JS translation |
+AJAX via `app.request.post()` / `.get()` only (never `$.ajax` / `$.post` / `$.get`), callback `(error, data)`; UI via `app.helper.showProgress/hideProgress/showSuccessNotification/showErrorNotification/showModal/hideModal`; strings via `app.vtranslate('JS_…')`.
 
 ## Vue.js Data Properties
 
-Mirror PHP naming (`php-conventions.md` § Naming): **camelCase** for client-only UI state and methods; **snake_case only for keys that mirror a backend payload / DB column** — the JS analog of PHP's camelCase variables vs snake_case DB columns. Never blanket-snake_case local state.
-
-```javascript
-data: function () {
-    return {
-        openFilter: null, insightLoading: false,                          // client UI state -> camelCase
-        filters: { department: [], project_ids: [], employee_ids: [] }    // backend payload keys -> snake_case
-    };
-}
-```
-
-Requests keep the backend key casing:
-
-```javascript
-api('getSummary', { filters: this.filters, from_date: r.from, to_date: r.to });
-```
-
-### Conditional Data Assignment (Vue.js)
-
-```javascript
-if (this.active_customer_profile.last_campaign_id) {
-    customerProfileForm.related_campaign       = this.active_customer_profile.last_campaign_id;
-    customerProfileForm.related_campaign_label = this.active_customer_profile.last_campaign_name;
-}
-```
-
-## Comments & Modification Tracking
-
-Same comment + attribution conventions as `php-conventions.md` (§ Modification Tracking Comments) — applied identically to JS:
-- **Attribution by ownership.** New function in a file someone else owns, or rewriting most of someone else's function → first line of the function's JSDoc: `Added by <Name> on <DATE> - <REASON>` / `Modified by <Name> on <DATE> - <REASON>` (plain text, not an `@` tag, no `End` marker). Changing a few lines inside someone else's function → `// Modified by <Name> on <DATE> - <REASON>` above them, closed by `// End <Name>`. Your own file/function → plain description or none. Owner = file's `Author:` header; no header → resolve via `git blame`, never assume you own it.
-- **Comment language: English.** ALL comments (attribution `<REASON>`, block, inline) MUST be in English. Legacy Vietnamese comments → rewrite in English when touched.
-- **≤ 2 lines per comment block; comment the meaning/behaviour** — not chat decisions/tradeoffs, and NO ticket / plan / phase refs.
-
-```javascript
-/**
- * Added by Nguyen Tung on 2026-03-06 - cancel link must not submit the form
- */
-registerCancelLink: function (container) {
-    container.find('.cancelLink').on('click', function (e) {
-        e.preventDefault();
-    });
-},
-```
+camelCase for client-only UI state and methods; snake_case only for keys mirroring a backend payload / DB column (requests keep backend casing). Never blanket-snake_case local state.
 
 ## Security
 
-- Use `.text()` not `.html()` for dynamic content (prevent XSS)
-- Cache DOM with `container = this.getContainer()` (defined in your controller — see Controller Pattern)
-- Match existing line endings (`\r\n` in some files)
-- Tabs for indentation
+Render dynamic content with `.text()`, not `.html()` (XSS).

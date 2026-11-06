@@ -1,13 +1,12 @@
 ---
-description: "Performance — tránh N+1, bounded query + LIMIT, index. BẮT BUỘC khi code PHP. Auto-load (TTSR) khi sửa file khớp."
-scope: "tool:edit(**/*.php), tool:write(**/*.php)"
-condition: ".*"
+description: "Performance — tránh N+1, bounded query + LIMIT, index. BẮT BUỘC khi code PHP có SQL/vòng lặp/load record. Auto-load (TTSR) khi edit thêm SQL, loop hoặc load record."
+scope: "tool:edit(**/*.php), tool:write(**/*.php), tool:edit(**/*.inc), tool:write(**/*.inc), tool:edit(**/*.service), tool:write(**/*.service)"
+condition: ["\\b(SELECT|select|UPDATE|update|DELETE\\s+FROM|delete\\s+from|INSERT\\s+INTO|insert\\s+into|LIMIT|limit)\\b", "pquery\\(|->query\\(|getInstanceById\\(|getQuery\\(", "\\b(foreach|while|for)\\s*\\("]
 ---
 
-# Performance Rules — MANDATORY for all PHP
+# Performance Rules — MANDATORY for PHP touching SQL, loops or record loads
 
-> Path-scoped sibling of `cloudgo-development-rules.md`. Loads when editing `**/*.php`.
-> `code-reviewer` MUST load this before reviewing PHP. A clear violation (N+1 on a list path, unbounded query) is a HIGH/PERF finding.
+A clear violation (N+1 on a list path, unbounded query) is a HIGH/PERF finding.
 
 ## Checklist
 
@@ -19,7 +18,7 @@ condition: ".*"
 ### Bounded queries
 - [ ] Every list endpoint applies a `LIMIT` / page size (clamped to a sane max, e.g. 1..100). No unbounded `SELECT`.
 - [ ] Prefer **keyset (cursor) pagination** over `OFFSET` for large/append-heavy tables; offset only where arbitrary sort needs it. Deterministic sort needs a unique tie-breaker (`crmid`).
-- [ ] `getQuery()` (QueryGenerator) is called **once** — add all conditions first, then splice cursor WHERE + ORDER BY + LIMIT onto the returned SQL. Re-running the generator per request is wasteful and risks double ACL.
+- [ ] QueryGenerator `getQuery()` once (security-rules → SQL Injection); re-running it per request is wasteful.
 
 ### Index-backed access
 - [ ] WHERE/ORDER columns are index-backed. On `vtiger_crmentity` rely on `deleted`, `modifiedtime`, `smownerid`, `setype`; avoid sorting/filtering on un-indexed text columns at scale.
@@ -29,8 +28,5 @@ condition: ".*"
 - [ ] Cache expensive per-request lookups (module/field metadata, role-aware field permissions). Respect existing cache-key discipline — e.g. `preFetchModuleFieldPermission` is keyed `{tabId}_{accessMode}` and is NOT `current_view`-aware, so detail-view vs edit-view permission passes must use distinct keys / reset between passes.
 - [ ] Don't re-resolve the same module/field model repeatedly in a loop; hoist it.
 
-### Direct SQL for hot paths (when handlers add no value)
-- [ ] For high-frequency, no-event-needed updates (e.g. last-sync timestamps), a direct `pquery` UPDATE is acceptable and preferred over a full `$record->save()` that fires every handler — but this is a deliberate, documented exception, never the default for entity writes (entity writes go through `Vtiger_Record_Model::save()`/`delete()` per CRUD rules).
-
-## Reference
-- Past finding (`/api/v1` branch review): list rows triggered one `getInstanceById` per row solely for edit/delete flags — defeats the single SQL fetch. Resolve perms without the full model load.
+### Direct SQL for hot paths
+- [ ] Direct `pquery` UPDATE (skips save handlers) only as a deliberate, documented exception for high-frequency no-event updates; entity writes go through `Vtiger_Record_Model::save()`/`delete()`.

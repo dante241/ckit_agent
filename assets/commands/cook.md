@@ -83,7 +83,9 @@ After the plan is approved, **delegate execution to the engine** (like `/feature
    - `engine_advance {taskId}` marks the verified task done (REFUSED if verify never passed).
      **Do NOT `commit:true`** — `/cook` defers commit to Phase 10 / `/commit` (unless the user
      asked to commit).
-3. **Code review gate (Phase 8)** — before completion, run a `reviewer` subagent on the full diff:
+3. **Simplify (Phase 7.5, complex only)** — spawn `code-simplifier` on the diff: dead code, repeated
+   logic, deep nesting, methods > 30 lines.
+4. **Code review gate (Phase 8)** — before completion, run a `reviewer` subagent on the full diff:
    runtime correctness · security (prepared `pquery(?)`, `.text()` not `.html()`, `(string)`/
    `(int)` cast on `$request->get()`, `checkPermission()` on controllers) · performance (no query
    in loops, indexed WHERE/JOIN, LIMIT) · cleanliness. Must pass before Phase 10.
@@ -98,8 +100,9 @@ After the plan is approved, **delegate execution to the engine** (like `/feature
   (Approve all / Edit / Skip / Approve partial). **NEVER write to `docs/knowledge/` (or a `D-NNN`
   to `agents/DECISIONS.md`) without approval.** Skip for label/CSS/typo-only changes.
 - **Phase 10.6 Error pattern** — mostly `bugfix`. On a generalizable anti-pattern / framework
-  misuse / semantic bug: **auto-draft `PEND-<ticket>` into `.omp/rules/error-patterns-pending.md`
-  (no ask)** with `Trigger keywords` = verbatim substrings from the buggy code. At flow end, if
+  misuse / semantic bug: **auto-draft `PEND-<ticket>` into the project's `.omp/rules/error-patterns-pending.md`
+  (create if missing; no ask)** in catalog shape `Trigger:` (backticked verbatim substrings from the
+  buggy code) / `Rule:` / `Why:`. At flow end, if
   pending has new entries → `ask` to **promote** (assign real `EP-NNN`, append to
   `.omp/rules/error-patterns.md`, remove from pending). **NEVER write `error-patterns.md` without
   approval; pending is free.**
@@ -117,6 +120,8 @@ User-gated: medium/complex plans need approval before code. Verify-gate before a
 (`engine_verify` enforces it; `engine_advance` refuses unverified tasks). Scope edits to the
 change + `agents/` + `.omp/plans/` memory. NO `git push` / PR / auto-commit unless asked. Stop on
 a true blocker (missing credential, irreversible action) — never on ambiguity you can resolve.
+Fundamental failure mid-way → revert your own partial changes (`git checkout -- <files>` + delete
+created files), record the reason in the todolist, tell the user; no partial implementation stays.
 
 ## Model + context budget
 Use the models in `~/.config/ckit/models.toml` (view/edit: `ckit harness model`); route per task

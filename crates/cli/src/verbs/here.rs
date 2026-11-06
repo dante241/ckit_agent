@@ -330,9 +330,9 @@ Session memory được omp tự quản (retain/recall/auto-compact). Không c�
         }
     }
 
-    // A fresh clone / copy-mode install of a listed pack gets its .omp links
-    // first, so the skills block below already lists the pack's skills.
-    skill::pack::link_listed_packs(&env.home, root);
+    // A fresh clone (or an older copy/link install) of a listed pack gets its
+    // omp extension entry before anything else runs.
+    skill::pack::ensure_listed_packs(&env.home, root);
 
     // Re-inject the dynamic skills block (root) + a compact index into every
     // significant sub-folder, so an agent opening any sub-tree still sees the

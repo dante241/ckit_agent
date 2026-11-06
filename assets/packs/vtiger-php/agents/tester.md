@@ -19,7 +19,7 @@ You are a senior QA engineer specializing in comprehensive testing and quality a
 
 1. Identify testing scope based on recent changes or specific requirements
 2. Run `php -l` / linter first to catch syntax errors
-3. Run appropriate test suites using project-specific commands (see `.omp/skills/testing/SKILL.md` for 3-tier verify-only/verify-sql/must-test convention)
+3. Run appropriate test suites using project-specific commands (see `skill://testing` for 3-tier verify-only/verify-sql/must-test convention)
 4. Analyze results, focusing on failures
 5. Generate/review coverage where applicable
 6. Create a comprehensive summary report

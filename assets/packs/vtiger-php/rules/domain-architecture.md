@@ -1,14 +1,15 @@
 ---
-description: "Kiến trúc domains/: 4 tầng glue→domain→integrations, ai gọi ai, Service/Store/Repository/Gateway, interface/final/abstract, vendor, trả dữ liệu, exception + try/catch, chuyển legacy. Auto-load khi sửa domains/, integrations/, glue vtiger."
-scope: "tool:edit(domains/**/*.php), tool:write(domains/**/*.php), tool:edit(integrations/**/*.php), tool:write(integrations/**/*.php), tool:edit(modules/**/*.php), tool:write(modules/**/*.php), tool:edit(api/**/*.php), tool:write(api/**/*.php), tool:edit(include/Webservice/**/*.php), tool:write(include/Webservice/**/*.php), tool:edit(include/Webhooks/**/*.php), tool:write(include/Webhooks/**/*.php)"
+description: "Kiến trúc domains/: 4 tầng glue→domain→integrations, ai gọi ai, Service/Store/Repository/Gateway, interface/final/abstract, vendor, trả dữ liệu, exception + try/catch, chuyển legacy. Auto-load khi sửa domains/, integrations/; phía glue vtiger: rule://domain-glue."
+scope: "tool:edit(domains/**/*.php), tool:write(domains/**/*.php), tool:edit(integrations/**/*.php), tool:write(integrations/**/*.php)"
 condition: ".*"
 ---
 
 # Domain architecture
 
 > Nguồn: D-007, D-011..D-014 (`agents/DECISIONS.md`). Quy ước cú pháp PHP trong `domains/` ở `domain-php.md`. Mẫu tham chiếu: `domains/Social`.
-> Phạm vi luồng: code đã chuyển vào `domains/` đi glue → `<Domain>::xxxService()`; module legacy chưa đụng tới vẫn theo D-002 (Action → Logic → Data). Connector legacy (`include/Webservice`, `modules/CP*Integration`) vẫn theo `api-connector-rules.md`; mục 5 dưới đây áp thêm cho `integrations/`.
-> Checklist theo từng vai (tự nạp theo tên file, mỗi file có sơ đồ luồng gọi): `domain-service.md`, `domain-repository.md`, `domain-gateway.md`, `domain-composition-root.md`, `domain-tests.md`.
+> Phía glue (modules/api/include/Webservice/Webhooks gọi domain): `rule://domain-glue`. Mục 5 dưới đây áp thêm cho `integrations/`.
+> Logic mới trong `domains/` PHẢI có PHPUnit test (`domains/*/tests`, `rule://domain-tests`).
+> Checklist theo từng vai (tự nạp theo tên file): `domain-service.md`, `domain-repository.md`, `domain-gateway.md`, `domain-composition-root.md`, `domain-tests.md`.
 
 ## 1. Bốn tầng
 
@@ -24,7 +25,7 @@ Glue (modules/* action/view/handler/cron, api/*, include/Webservice, include/Web
 
 |Ai|Được gọi|KHÔNG được|
 |---|---|---|
-|Glue|`<Domain>::xxxService()`, `<Domain>::xxx()` trả port (vd `Social::feedParser($channel)`), VO/exception/hằng public|Repository, adapter, SQL trên bảng của domain, logic nghiệp vụ|
+|Glue|xem `rule://domain-glue`|Repository, adapter, SQL trên bảng của domain|
 |Service|Interface (Store/Gateway), Service khác cùng domain, `Shared`, VO, exception|`new` class thật, `$adb`, class vtiger, `$_REQUEST`, `Vtiger_Request`, `echo`|
 |`XxxRepository`|`PearDatabase`|Service, vendor|
 |`<Vendor>XxxRepository`|Client trong `integrations/<Vendor>`, Repository SQL phụ (qua Store), VO của domain|Service, domain khác|
@@ -53,7 +54,7 @@ Glue (modules/* action/view/handler/cron, api/*, include/Webservice, include/Web
 - **Đọc tên là biết vai**: `…Store` và `…Gateway` không tiền tố vendor = interface; class cài = `…Repository` hoặc `<Vendor>…Gateway`. Kiểm: `git grep -nE "^final class \w+Store\b" -- 'domains/*/src'` phải rỗng.
 - **Service phải có logic**: hàm chỉ gọi lại 1 port thì bỏ Service, `<Domain>::xxx()` trả thẳng port. Service cùng vai (cùng màn, cùng port) gộp làm một thay vì tách Service 1 hàm.
 
-### 3a. Thư mục trong `src/` = capability (user chốt 2026-10-09; chưa có mục riêng trong `agents/DECISIONS.md`)
+### 3a. Thư mục trong `src/` = capability
 
 - Cây `domains/<D>/src` đọc ra danh sách tính năng: mỗi thư mục con = 1 capability (vd Social: `Ingestion/` `Reply/` `PrivateReply/` `Reaction/` `Moderation/`) hoặc thư mục vendor (`Channel/<Vendor>/`, `Chathub/`). Lõi chung nhỏ (`Comment/`): port dùng chung (Store/Gateway), VO/event, exception, permission, service đọc.
 - **Tiêu chí tách capability**: có bảng + UC + entry riêng; nói chuyện với capability khác qua port của lõi chung. Port nhiều capability cùng dùng (vd `BlockListStore` cho Reply + PrivateReply) đặt ở lõi để khỏi tạo vòng.
@@ -64,7 +65,7 @@ Glue (modules/* action/view/handler/cron, api/*, include/Webservice, include/Web
 
 - `interface`: chỉ cho port (Store/Gateway) và contract plugin (`CommentChannel`). Không hậu tố `Interface`.
 - `final`: **mặc định** cho mọi class — Service, Repository, adapter, VO, exception, composition root.
-- `abstract`: chỉ khi **đã có ≥ 2 bản cài thật dùng chung code thật** của cùng một API vendor **và** phần chung không tách được thành client inject qua constructor. Ưu tiên composition: các gateway cùng vendor dùng chung 1 client (`integrations/Meta/FacebookGraphClient`), mỗi gateway `final`. Không tạo trước "để sau dùng". Hiện chưa có mẫu (`GraphScopeGateway` đã gộp vào `FacebookScopeGateway` 2026-10-07 vì chỉ có 1 bản cài).
+- `abstract`: chỉ khi **đã có ≥ 2 bản cài thật dùng chung code thật** của cùng một API vendor **và** phần chung không tách được thành client inject qua constructor. Ưu tiên composition: các gateway cùng vendor dùng chung 1 client (`integrations/Meta/FacebookGraphClient`), mỗi gateway `final`. Không tạo trước "để sau dùng".
 - Đổi hành vi class `final`: không kế thừa — viết class khác implement cùng interface (decorator) và cắm qua `<Domain>::configureOverrides()` (D-014).
 
 ## 5. Vendor
@@ -74,7 +75,7 @@ Glue (modules/* action/view/handler/cron, api/*, include/Webservice, include/Web
 3. **1 client cho mỗi vendor, 1 gateway mỏng cho mỗi khả năng** (comment, chat, đăng bài = 3 gateway, chung 1 client). Không gom mọi khả năng vào 1 class gateway; không để mỗi gateway tự dựng SDK.
 4. Dịch dữ liệu vendor → VO/event của domain nằm ở gateway trong domain, không ở `integrations/`.
 5. `integrations/` không biết CRM: không crmid, không bảng vtiger, không import `domains/`.
-6. Token vendor: refresh ở **một chỗ duy nhất**, có lock (xử lý cả `GET_LOCK` timeout); mọi chỗ ghi token đi qua cùng store đó.
+6. Token vendor: refresh ở **một chỗ duy nhất**, có lock; mọi chỗ ghi token đi qua cùng store đó (chi tiết lock: `rule://domain-gateway`).
 7. API vào của mình (`api/*`, `include/Webservice/*Handler`, webhook) là **glue**, không phải integration.
 
 ## 6. Trả dữ liệu
@@ -83,10 +84,9 @@ Glue (modules/* action/view/handler/cron, api/*, include/Webservice, include/Web
 |---|---|---|
 |Repository / Gateway|VO, `list<VO>`, array có shape, id, `bool`|`throw <Area>Exception` (gateway bọc lỗi SDK/HTTP)|
 |Service|VO, `list<VO>`, array có shape, hằng trạng thái (`self::DELIVERED`)|`throw <Area>Exception`|
-|Glue|`Vtiger_Response` / định dạng hiện có của từng họ API|catch, log, trả lỗi đã dịch|
-|Facade legacy (static cũ)|**Giữ nguyên định dạng cũ** (`['success' => …]`)|giữ nguyên|
+|Glue, facade legacy|xem `rule://domain-glue`|catch, log, trả lỗi đã dịch|
 
-- Không thấy một bản ghi (bình thường) → `null`. Danh sách rỗng → `[]`. Có/không → `bool`. Chưa biết/có/không → `?bool`. Nhiều nhánh nghiệp vụ → hằng + `@return self::A|self::B`. **Sự cố → exception, không `false`/`null`/`['error']`.**
+- Theo php83 F7 (`null` / `[]` / `bool` / throw); thêm: chưa biết/có/không → `?bool`; nhiều nhánh nghiệp vụ → hằng + `@return self::A|self::B`. **Sự cố → exception, không `false`/`null`/`['error']`.**
 - Array trả ra phải có shape PHPDoc (`@return array{post_id: string, …}`); không `array` trơn cho dữ liệu đã biết cấu trúc. VO khi có hành vi/quy tắc hoặc dùng ở nhiều nơi; array shape khi chỉ để hiển thị.
 - Kiểu: PK bảng riêng của domain `int`; id bản ghi CRM hiện là `string` trong Social (`InboxGateway`) — đổi sang `int` là đổi chữ ký; id vendor (page, OA, user Zalo/FB) **luôn `string`**; ngày giờ `'Y-m-d H:i:s'` theo múi giờ site; tiền không dùng `float`; cột NULL → `null` thật; JSON decode trong Repository.
 - Domain KHÔNG trả: chuỗi đã dịch (`vtranslate` ở glue/tpl), HTML, object vtiger (`Vtiger_Record_Model`, `Vtiger_Response`), JSON thô của vendor. VO có `toArray()` cho glue.
@@ -96,7 +96,7 @@ Glue (modules/* action/view/handler/cron, api/*, include/Webservice, include/Web
 
 - `return` cho kết quả bình thường (kể cả không thấy, bị bỏ qua); `throw` chỉ khi sự cố. Thiếu dữ liệu mà luồng không thể đi tiếp (vd gửi tin vào conversation không tồn tại) → throw.
 - Catch ở đâu:
-  - **Glue: luôn** — `catch (Throwable $e)`, `saveLog`, trả lỗi đã dịch; không đưa `$e->getMessage()` cho người dùng. Vòng lặp cron/webhook/queue: catch **từng phần tử** để 1 lỗi không dừng cả lô.
+  - **Glue: luôn** (`rule://domain-glue`).
   - **Gateway**: catch lỗi SDK/HTTP → throw lại exception của domain.
   - **Service**: chỉ khi có fallback nghiệp vụ có chủ đích (vd `CommentThreadService` bỏ trích dẫn khi đọc comment cha lỗi); không có fallback thì để lỗi đi lên.
   - **Repository, VO: không catch.**
@@ -109,6 +109,6 @@ Glue (modules/* action/view/handler/cron, api/*, include/Webservice, include/Web
 - Dữ liệu cũ giữ bảng cũ, đặt sau Store; không tạo bảng song song.
 - Trước khi chuyển: có test đối chiếu (`tests/Legacy`, `tests/Golden`, replay webhook); sau khi chuyển kết quả phải giống.
 
-## 9. Bản đồ domain định hướng
+## 9. Bản đồ domain
 
-Social (hội thoại 2 chiều, comment, mapping social↔crm) · Messaging (gửi 1 chiều: email/SMS/ZNS/push/in-app) · Customer (Accounts/Contacts/Leads/CPTarget, convert) · Content (đăng bài) · Event (CPEvent*) · OrderToCash · Catalog · Ecommerce · Support (HelpDesk) · Requests (CPRequest) · Sales/Marketing · Work · Goals · HR · Recognition · BotAI · Ads · CallCenter. Calendar/Events (vtiger core), Users, Org (Department/Branch/Company) là kernel dùng chung, không gộp vào domain Event. Tách domain khi có ticket chạm tới, không tách trước.
+Danh sách domain định hướng + kernel dùng chung: `agents/DECISIONS.md` (Note 2026-11-06, "Domain map định hướng"). Tách domain khi có ticket chạm tới, không tách trước.

@@ -6,7 +6,7 @@ user-invocable: false
 
 # VTiger Migration Skill
 
-> **Conventions:** Follow `.omp/rules/cloudgo-development-rules.md`. Template, helper list and return codes are owned by `rule://migration-rules` — this skill only adds context.
+> **Conventions:** Follow `rule://cloudgo-development-rules`. Template, helper list and return codes are owned by `rule://migration-rules` — this skill only adds context.
 
 ## When to Use
 

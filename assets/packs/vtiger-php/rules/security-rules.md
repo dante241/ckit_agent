@@ -1,25 +1,24 @@
 ---
-description: "OWASP security — SQLi/XSS/CSRF/permission/cast. BẮT BUỘC khi code PHP. Auto-load (TTSR) khi sửa file khớp."
-scope: "tool:edit(**/*.php), tool:write(**/*.php)"
+description: "OWASP security — SQLi/XSS/CSRF/permission/cast/threat model. BẮT BUỘC khi code PHP. Auto-load (TTSR) khi sửa file khớp."
+scope: "tool:edit(**/*.php), tool:write(**/*.php), tool:edit(**/*.inc), tool:write(**/*.inc), tool:edit(**/*.service), tool:write(**/*.service)"
 condition: ".*"
 ---
 
 # Security Rules (OWASP) — MANDATORY for all PHP
 
-> Path-scoped sibling of `cloudgo-development-rules.md`. Loads when editing `**/*.php`.
-> `code-reviewer` MUST load this before reviewing PHP. Every item is a review checklist row — a violation is a CRITICAL/HIGH finding, not a style nit.
+Every item is a review checklist row — a violation is a CRITICAL/HIGH finding, not a style nit.
+
+**Threat model first:** before applying a security or robustness finding, identify what the code actually stores, protects, or exposes. Fix real failure modes. Document non-issues briefly. Ask when the risk is plausible but depends on product intent.
 
 ## Checklist (tick every box on review)
 
 ### SQL Injection
-- [ ] **ALL** queries use `pquery($sql, [$params])` with `?` placeholders. NO string concatenation / interpolation of user data into SQL.
+- [ ] Prepared statements only (`pquery` + `?`, see php-conventions → Database & SQL Conventions).
 - [ ] Id-set / `IN (...)` filters use **placeholder expansion**, never `implode(',', $ids)` into the SQL. Cast each id: `array_map('intval', $ids)` then bind `?` per element (or use the framework condition builder).
 - [ ] When using `QueryGenerator`/`EnhancedQueryGenerator`: the ACL **sharing WHERE is auto-injected by `getQuery()`** — do NOT re-add it manually, and call `getQuery()` **exactly once** (add all conditions before that call, then splice cursor/ORDER/LIMIT onto the returned SQL).
-- [ ] `JOIN vtiger_crmentity` always includes `AND deleted = 0`.
 
 ### XSS
 - [ ] User-supplied **string** values written to records pass `vtlib_purify()` before `$record->set()`.
-- [ ] JS renders dynamic content with `.text()` not `.html()`. (See `javascript-rules.md`.)
 - [ ] API responses don't echo raw request fragments back to an unauthenticated caller (no reflected enumeration).
 
 ### CSRF / Write Access
@@ -28,21 +27,15 @@ condition: ".*"
 
 ### Authorization (permission fidelity)
 - [ ] Module-level: `isPermitted(module, action)` / `checkPermission()` before any read or write.
-- [ ] Record-level (IDOR): `isPermitted(module, 'EditView'|'Delete', $recordId)` **before** `getInstanceById()` mutation.
+- [ ] Record-level (IDOR): php83 P1/P2 — `isPermitted(module, 'EditView'|'Delete', $recordId)` **before** `getInstanceById()` mutation.
 - [ ] Field-level: strip/reject fields the profile cannot edit; never write a field the user lacks edit permission for.
 - [ ] Admin-only pages/endpoints check `isAdminUser()`.
-- [ ] Resolve the gate from the **actual request module/record**, not a hard-coded one. (See cautionary example CR-02 below.)
+- [ ] Resolve the gate from the **actual request module/record**, not a hard-coded one. Router is first-match-wins: register a dynamic catch-all route (`POST /{module}`) ONCE with a baseline gate, never once per module; do the real per-module/record ACL inside the handler from the resolved request module.
 
 ### Input Handling
-- [ ] Type-cast **every** `$request->get()` / external value: `(int)`, `(string)`, `(bool)` (see `php-conventions.md` → Type Casting).
 - [ ] Validate path params (`{module}`, `{id}`) against existence → 404, before use.
 - [ ] Pre-save validation gate returns structured errors (422) **before** touching the model on bad input.
 
 ### Secrets
-- [ ] No secrets (`.env`, API keys, JWT secrets, passwords) in committed code. Secrets live in `config_override.cus.php` (tracked, value NOT committed). No hook enforces this — check the staged diff.
-- [ ] HMAC/signature code **fails closed** on empty/placeholder secret — never sign with an empty key.
-
-## Cautionary examples (real bugs caught reviewing the `/api/v1` router on branch `feature/cloudgo-crm-api-v1`)
-
-- **CR-02 — ACL bypass via duplicate route registration.** A `foreach ($modules as $m)` loop registered the SAME dynamic pattern `POST /{module}` once per module with a per-module permission gate. Router is first-match-wins → only the FIRST module's gate ever fired; users were wrongly 403'd / wrongly allowed. **Rule:** register a dynamic catch-all route ONCE with a baseline gate; do the real per-module/record ACL inside the handler from the resolved request module.
-- **CR-04 — forgeable cursor on empty secret.** `hash_hmac('sha256', $json, $secret)` with `$secret = ''` produces a deterministic signature with a known empty key → attacker forges cursors. **Rule:** fail closed (`throw`) when the signing secret is empty/placeholder; on the decode side, treat empty secret as "reset to page 1", never verify against an empty key.
+- [ ] Secrets live in `config_override.cus.php` (tracked, value NOT committed). No hook enforces this — check the staged diff.
+- [ ] HMAC/signature code **fails closed** (`throw`) on empty/placeholder secret — never sign or verify with an empty key; on the decode side treat an empty secret as "reset to page 1".
