@@ -2,7 +2,7 @@
 name: release-bundle
 disable-model-invocation: true
 description: "Cherry-pick các ticket ready (từ /release-check) lên branch release-core-MM.YYYY tạo từ branch `release` của onlinecrm/vtiger (layout single — 1 repo), theo nhóm ticket (cả ticket hoặc không gì). Tự xử lý conflict ở file không phát hành, so sánh code master↔release, PHPStan kiểm tra thiếu function/method/class/sai số tham số. Ticket conflict: người release resolve theo hunk bằng resolve.sh (chỉ mang dòng MR đổi, T1/T2/T3), hoặc bàn giao dev (--handoff). Gắn `Đã release` + milestone. Không push branch release."
-allowed-tools: Bash(bash ~/.config/8sync/packs/vtiger-php/skills/release-bundle/scripts/*), Bash(git *), Bash(jq*), Bash(cat *), Bash(glab *), Read, Write, Ask
+allowed-tools: Bash(bash ~/.omp/shared/vtiger/pack/skills/release-bundle/scripts/*), Bash(git *), Bash(jq*), Bash(cat *), Bash(glab *), Read, Write, Ask
 ---
 
 # Release Bundle Skill
@@ -12,7 +12,7 @@ allowed-tools: Bash(bash ~/.config/8sync/packs/vtiger-php/skills/release-bundle/
 ## Usage
 
 ```bash
-S="$HOME/.config/8sync/packs/vtiger-php/skills/release-bundle/scripts"   # store của pack; luôn chạy từ repo vtiger
+S="$HOME/.omp/shared/vtiger/pack/skills/release-bundle/scripts"   # store của pack; luôn chạy từ repo vtiger
 
 bash $S/run.sh --month 10.2026 --preview     # XEM TRƯỚC trên worktree tạm — không đổi branch, không đổi GitLab
 bash $S/run.sh --month 10.2026               # chạy thật: pick → PHPStan → label/milestone → report

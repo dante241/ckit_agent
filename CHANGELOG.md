@@ -12,6 +12,12 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.49] - 2026-11-06
+
+### Changed
+- **Pack store moved to one family folder: `~/.omp/shared/<group>/`.** `pack/` is the ckit-managed store (was `~/.config/ckit/packs/<name>/`), `personal/` is for your own skills for that repo family; ckit creates it and never writes inside. Both are listed in `extensions` of each repo's `.omp/settings.json`. `group` comes from `shared = "…"` in `pack.toml` (`vtiger` for vtiger-php). `ckit up` moves the old store (local edits kept), and `ckit .` / `skill update` re-point projects that still list the old path. Script paths inside the pack now read `~/.omp/shared/vtiger/pack/...`.
+- **vtiger-php `performance-optimization`:** the "where to measure" table pointed at skills the pack never shipped (one name did not exist at all); it now names the family umbrellas as "if installed" hints.
+
 ## [0.1.48] - 2026-11-06
 
 ### Added

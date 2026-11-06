@@ -8,7 +8,7 @@ description: "Test toàn bộ branch release (release-core-MM.YYYY / pick/*) tr�
 Chạy cùng bộ kiểm đã dùng để test master lên PHP 8.3, nhưng trên **code của branch release**, rồi đọc log PHP/nginx và ghi mọi lỗi vào một file. Dùng sau `/release-bundle` (mọi `pick/*` đã merge vào branch tháng, `verify-resolves`/`order-check`/`audit-month` đã đọc) và trước khi push / tạo MR vào `release`.
 
 ```bash
-S="$HOME/.config/8sync/packs/vtiger-php/skills/release-smoke/scripts"   # chạy từ checkout vtiger
+S="$HOME/.omp/shared/vtiger/pack/skills/release-smoke/scripts"   # chạy từ checkout vtiger
 bash $S/run.sh release-core-10.2026                    # toàn bộ, ~10 phút
 bash $S/run.sh release-core-10.2026 --keep-db          # giữ DB clone đang có (không clone + migration lại)
 bash $S/run.sh release-core-10.2026 --skip phpstan,api # bỏ bước

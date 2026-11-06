@@ -2,7 +2,7 @@
 name: release-check
 argument-hint: '[--dry-run] [--since YYYY-MM-DD] [--limit N] [--month MM.YYYY] [--no-preview]'
 description: "Scan merged MRs có label 'Dev done' hoặc 'Chờ release' + cross-check ticket status trong PMS qua script batch (không dùng MCP ticket_detail). Transition label 'Dev done' → 'Chờ release' cho MR ready. Auto-rollback 'Chờ release' → 'Dev done' khi ticket bị reopen. Sinh report JSON + markdown."
-allowed-tools: Bash(bash ~/.config/8sync/packs/vtiger-php/skills/release-check/scripts/*), Bash(glab mr *), Bash(jq*), Bash(cat*), Bash(head*), Read, Write
+allowed-tools: Bash(bash ~/.omp/shared/vtiger/pack/skills/release-check/scripts/*), Bash(glab mr *), Bash(jq*), Bash(cat*), Bash(head*), Read, Write
 ---
 
 # /release-check — MR nào sẵn sàng release?

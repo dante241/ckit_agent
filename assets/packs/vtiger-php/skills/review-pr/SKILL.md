@@ -2,7 +2,7 @@
 name: review-pr
 disable-model-invocation: true
 description: "Review GitLab Merge Request for bugs, security, logic, and AGENTS.md/pack rules compliance. Posts comment and auto-merges if clean."
-allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), Bash(bash ~/.config/8sync/packs/vtiger-php/skills/review-pr/scripts/*), mcp__pms_*, Agent, Read, Grep, Glob
+allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), Bash(bash ~/.omp/shared/vtiger/pack/skills/review-pr/scripts/*), mcp__pms_*, Agent, Read, Grep, Glob
 ---
 
 # Review PR Skill (GitLab)
@@ -98,15 +98,15 @@ git diff origin/<TARGET>..mr/<MR_NUMBER> --stat
    - **Gotchas & edge cases**: Các lỗi đã biết, cần tránh
    - **Business rules**: Quy tắc nghiệp vụ đặc thù của module
 5. **Coding rules (BẮT BUỘC):** map file đổi → rule theo bảng *Path-scoped sibling rules* trong `rule://cloudgo-development-rules`, `read rule://<name>` từng rule khớp, luôn kèm `cloudgo-development-rules` → `$RULES_CONTEXT` (danh sách tên rule). Rule code là tiêu chí review: `scope: tool:edit/write` của rule chỉ quyết định lúc rule tự nạp (khi sửa), KHÔNG phải lý do bỏ/bác finding; loại file rule áp dụng vẫn theo nội dung rule.
-   **Error patterns → `$EP_HITS`:** KHÔNG đưa cả catalog cho subagent. Chạy một lần trên diff Step 1: `glab mr diff <MR_NUMBER> --repo $REPO | bash "$HOME/.config/8sync/packs/vtiger-php/skills/review-pr/scripts/ep-hits.sh"` — in các entry `rule://error-patterns` có needle `Trigger` khớp dòng thêm / đường dẫn file, dòng cuối `EP_HITS: <n> (<ids>)`. Lưu nguyên output → `$EP_HITS` (kể cả `EP_HITS: 0`). Orchestrator tự đối chiếu thêm các Trigger ngữ nghĩa (chữ ngoài backtick, vd EP-001/004/006/021) và nối entry khớp vào `$EP_HITS`.
+   **Error patterns → `$EP_HITS`:** KHÔNG đưa cả catalog cho subagent. Chạy một lần trên diff Step 1: `glab mr diff <MR_NUMBER> --repo $REPO | bash "$HOME/.omp/shared/vtiger/pack/skills/review-pr/scripts/ep-hits.sh"` — in các entry `rule://error-patterns` có needle `Trigger` khớp dòng thêm / đường dẫn file, dòng cuối `EP_HITS: <n> (<ids>)`. Lưu nguyên output → `$EP_HITS` (kể cả `EP_HITS: 0`). Orchestrator tự đối chiếu thêm các Trigger ngữ nghĩa (chữ ngoài backtick, vd EP-001/004/006/021) và nối entry khớp vào `$EP_HITS`.
 6. Truyền knowledge context + `$RULES_CONTEXT` + `$EP_HITS` cho TẤT CẢ 5 agents ở Step 3 và mọi validator ở Step 4; subagent đã có `$EP_HITS` thì KHÔNG đọc lại `rule://error-patterns`.
-7. **Rule mới nhất:** `rule://<name>` là bản đang deploy (file thật trong `.omp/rules/` của project nếu có, không thì bản trong pack `~/.config/8sync/packs/vtiger-php/rules/`) — đọc trực tiếp, KHÔNG dùng trí nhớ/bản tóm tắt từ review cũ. Re-review (round 2+) cũng nạp lại rule và chạy lại Step 2.6 trên head mới, kể cả khi head không đổi nhưng `master` đã có rule/gate mới.
+7. **Rule mới nhất:** `rule://<name>` là bản đang deploy (file thật trong `.omp/rules/` của project nếu có, không thì bản trong pack `~/.omp/shared/vtiger/pack/rules/`) — đọc trực tiếp, KHÔNG dùng trí nhớ/bản tóm tắt từ review cũ. Re-review (round 2+) cũng nạp lại rule và chạy lại Step 2.6 trên head mới, kể cả khi head không đổi nhưng `master` đã có rule/gate mới.
 
 ### Step 2.6: PHP gate cơ học (BẮT BUỘC — không bỏ, không thay bằng đọc code)
 
 ```bash
 # chạy từ gốc repo vtiger; script nằm trong store của pack
-GATE="$HOME/.config/8sync/packs/vtiger-php/skills/review-pr/scripts/php-gate.sh"
+GATE="$HOME/.omp/shared/vtiger/pack/skills/review-pr/scripts/php-gate.sh"
 bash "$GATE" <MR_NUMBER> <TARGET_BRANCH>
 ```
 
@@ -122,7 +122,7 @@ Script dựng worktree tạm = `origin/<TARGET>` + merge MR (phân tích đúng 
 ### Step 2.7: Release pickability (dự báo, KHÔNG chặn merge)
 
 ```bash
-PICK="$HOME/.config/8sync/packs/vtiger-php/skills/review-pr/scripts/release-pick-preview.sh"
+PICK="$HOME/.omp/shared/vtiger/pack/skills/review-pr/scripts/release-pick-preview.sh"
 bash "$PICK" <MR_NUMBER> <TARGET_BRANCH>
 ```
 

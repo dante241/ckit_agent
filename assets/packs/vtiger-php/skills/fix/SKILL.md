@@ -328,7 +328,7 @@ If tests fail:
 
 ## Step 9: Error Pattern Capture (USER GATE — MANDATORY)
 
-> **NEVER write to `~/.config/8sync/packs/vtiger-php/rules/error-patterns.md` (the pack file behind `rule://error-patterns`) without explicit user approval.**
+> **NEVER write to `~/.omp/shared/vtiger/pack/rules/error-patterns.md` (the pack file behind `rule://error-patterns`) without explicit user approval.**
 
 ### When to trigger
 
@@ -352,7 +352,7 @@ Skip if: one-off bug in module-specific business logic, small typo affecting a s
    ```
    Tell the user in one line: "Drafted PEND-<ticket>". Backticked Trigger needles = literal substrings from the buggy code (≥3 chars) that `/review-pr` greps the diff for (`scripts/ep-hits.sh`), not abstract descriptions.
 
-2. **Promote (USER GATE):** at the end of the flow, show the pending entry via `ask`: `Promote` / `Edit then promote` / `Keep pending`. Approved → assign `EP-NNN` (max+1), append to `~/.config/8sync/packs/vtiger-php/rules/error-patterns.md` (the pack file behind `rule://error-patterns`), remove from pending. `/review-pr` then matches its Trigger needles against every MR diff.
+2. **Promote (USER GATE):** at the end of the flow, show the pending entry via `ask`: `Promote` / `Edit then promote` / `Keep pending`. Approved → assign `EP-NNN` (max+1), append to `~/.omp/shared/vtiger/pack/rules/error-patterns.md` (the pack file behind `rule://error-patterns`), remove from pending. `/review-pr` then matches its Trigger needles against every MR diff.
 
 3. **NEVER write `error-patterns.md` directly before approval** — pending is free to write.
 

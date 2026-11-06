@@ -2,7 +2,7 @@
 name: release-smoke
 argument-hint: '<ref> [--keep-db] [--skip step,...]'
 description: "Test toàn bộ branch release (release-core-MM.YYYY) trên PHP 8.3 ở local: site + DB clone riêng, migration + QuickRepair, PHPStan so master, crawl 6.480 URL, ghi record, export/queue, API, gom lỗi log PHP/nginx vào report. Không push, không merge."
-allowed-tools: Bash(bash ~/.config/8sync/packs/vtiger-php/skills/release-smoke/scripts/*), Bash(git *), Bash(jq*), Bash(cat *), Read, Write
+allowed-tools: Bash(bash ~/.omp/shared/vtiger/pack/skills/release-smoke/scripts/*), Bash(git *), Bash(jq*), Bash(cat *), Read, Write
 ---
 
 # /release-smoke — test branch release trên PHP 8.3 ở local

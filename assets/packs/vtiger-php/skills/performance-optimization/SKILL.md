@@ -25,12 +25,10 @@ Measure before optimizing. Profile first, identify the actual bottleneck, fix it
 
 | Symptom | Skill / tool |
 |---|---|
-| Slow page or AJAX locally (nginx/php-fpm/MySQL) | `skill://vtiger-cloudgo-perf-diagnosis` |
-| Which PHP functions burn the time | `skill://xdebug-trigger-profile-cachegrind`, `skill://vtiger-local-php-cpu-profile` |
-| Repeated DB/Redis calls per row (N+1) | `skill://vtiger-nplus1-sweep-origin-attribution`, `skill://database` |
-| Slow in production after deploy | `skill://triage-vtiger-prod-slowness-from-logs` |
-| Browser main thread / JS hotspots | `skill://vtiger-browser-main-thread-perf-profile` (omp `browser` tool) |
-| Static assets (images, fonts, cache-busting) | `skill://vtiger-web-asset-perf-optimize` |
+| Slow page or AJAX locally, load test | `skill://vtiger-loadtest` (if installed) |
+| Which PHP functions burn the time, N+1 DB/Redis per row | `skill://vtiger-backend-perf` (if installed), `skill://database` |
+| Slow in production after deploy | `skill://vtiger-server-ops` (if installed) |
+| Browser main thread / JS hotspots, static assets | `skill://vtiger-frontend-perf` (if installed; omp `browser` tool) |
 | Proposed cache/Redis fix | `skill://verify-cache-fix-touches-hotpath` |
 
 SQL timing: `$dbconfig['log_sql']` (config.inc.php) or `SQL_LOG_INCLUDE_CALLER` (config.performance.php); see `skill://database` → references/performance.md.

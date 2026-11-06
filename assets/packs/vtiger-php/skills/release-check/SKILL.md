@@ -2,7 +2,7 @@
 name: release-check
 disable-model-invocation: true
 description: "Scan merged MRs có label 'Dev done' hoặc 'Chờ release' + cross-check ticket status trong PMS qua script batch (không dùng MCP ticket_detail). Transition label 'Dev done' → 'Chờ release' cho MR ready. Auto-rollback 'Chờ release' → 'Dev done' khi ticket bị reopen. Xem trước ticket nào pick sạch / conflict lên branch release. Sinh report JSON + markdown."
-allowed-tools: Bash(bash ~/.config/8sync/packs/vtiger-php/skills/release-check/scripts/*), Bash(glab mr *), Bash(jq*), Bash(cat*), Bash(head*), Read, Write
+allowed-tools: Bash(bash ~/.omp/shared/vtiger/pack/skills/release-check/scripts/*), Bash(glab mr *), Bash(jq*), Bash(cat*), Bash(head*), Read, Write
 ---
 
 # Release Check Skill
@@ -26,7 +26,7 @@ allowed-tools: Bash(bash ~/.config/8sync/packs/vtiger-php/skills/release-check/s
 
 **One-time setup:** PMS credentials phải có trong shell env. Source từ MCP config:
 ```bash
-eval "$(bash ~/.config/8sync/packs/vtiger-php/skills/release-check/scripts/source-pms-env.sh)"
+eval "$(bash ~/.omp/shared/vtiger/pack/skills/release-check/scripts/source-pms-env.sh)"
 ```
 
 ## Architecture
@@ -49,7 +49,7 @@ scripts/
 ### Step 1: AI invokes run.sh
 
 ```bash
-bash ~/.config/8sync/packs/vtiger-php/skills/release-check/scripts/run.sh [--dry-run] [--since DATE] [--limit N]
+bash ~/.omp/shared/vtiger/pack/skills/release-check/scripts/run.sh [--dry-run] [--since DATE] [--limit N]
 ```
 
 Script pipeline:
@@ -130,13 +130,13 @@ AI: truyền y nguyên terminal summary + tóm tắt phần **Xem trước pick 
 Test individual scripts:
 ```bash
 # Test scan only
-bash ~/.config/8sync/packs/vtiger-php/skills/release-check/scripts/scan-mrs.sh agents/release-queue
+bash ~/.omp/shared/vtiger/pack/skills/release-check/scripts/scan-mrs.sh agents/release-queue
 
 # Test PMS batch (needs env vars)
-echo -e "22036\n1346675" | node ~/.config/8sync/packs/vtiger-php/skills/release-check/scripts/pms-status-batch.js
+echo -e "22036\n1346675" | node ~/.omp/shared/vtiger/pack/skills/release-check/scripts/pms-status-batch.js
 
 # Test classify (needs inputs from above)
-python3 ~/.config/8sync/packs/vtiger-php/skills/release-check/scripts/classify.py \
+python3 ~/.omp/shared/vtiger/pack/skills/release-check/scripts/classify.py \
     agents/release-queue/mrs-slim-2026-04-23.json \
     agents/release-queue/status-2026-04-23.tsv \
     agents/release-queue/

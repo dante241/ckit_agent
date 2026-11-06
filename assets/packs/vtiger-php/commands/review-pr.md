@@ -2,7 +2,7 @@
 name: review-pr
 argument-hint: '<MR-iid | MR-url> [--no-merge] [--dry-run]'
 description: "Review GitLab Merge Request for bugs, security, logic, and AGENTS.md/pack rules compliance. Posts comment and auto-merges if clean."
-allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), Bash(bash ~/.config/8sync/packs/vtiger-php/skills/review-pr/scripts/*), mcp__pms_*, Agent, Read, Grep, Glob
+allowed-tools: Bash(glab mr *), Bash(glab api *), Bash(git diff*), Bash(git log*), Bash(git fetch*), Bash(git show*), Bash(git merge-base*), Bash(php -l *), Bash(bash ~/.omp/shared/vtiger/pack/skills/review-pr/scripts/*), mcp__pms_*, Agent, Read, Grep, Glob
 ---
 
 # /review-pr — review a GitLab MR

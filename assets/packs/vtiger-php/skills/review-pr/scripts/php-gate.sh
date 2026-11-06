@@ -2,7 +2,7 @@
 # Mechanical PHP gate for one GitLab MR: lint (PHP 8.3) + PHPStan 2.2.17 on the MR's PHP files,
 # analysed on the real merge result (target branch + MR head) in a throwaway worktree.
 # Usage (from the vtiger repo root): bash <skill dir>/scripts/php-gate.sh <MR_IID> [TARGET_BRANCH=master]
-#   <skill dir> = ~/.config/ckit/packs/vtiger-php/skills/review-pr (pack store, loaded as an omp extension)
+#   <skill dir> = ~/.omp/shared/vtiger/pack/skills/review-pr (pack store, loaded as an omp extension)
 # Output: human summary + last line "GATE: PASS" | "GATE: FAIL" | "GATE: SKIP (no PHP files)". Exit 0 PASS/SKIP, 1 FAIL, 2 setup error.
 set -uo pipefail
 
