@@ -11,25 +11,25 @@ You are running inside a 8sync project that already has `codegraph` installed an
 
 | User intent | First tool |
 |---|---|
-| Almost anything: "how does X work", a bug, "explore the auth subsystem", symbols you are about to edit | MCP `xd://mcp__codegraph_explore` (`{"query": "..."}`); CLI equivalent `codegraph explore <query...>` |
-| "Where is `<symbol>` defined?" / fuzzy keyword search | `codegraph query "<symbol>"` |
+| "Where is `<symbol>` defined?" / fuzzy keyword search | `codegraph query "<symbol>"` (path:line, ~150 B) |
+| "Outline this file before editing" | `codegraph node <file> --symbols-only` |
 | One symbol's source + caller/callee trail | `codegraph node <name>` |
 | "What calls `<function>`?" / "what does it call?" | `codegraph callers <symbol>` / `codegraph callees <symbol>` |
 | "What breaks if I change `<symbol>`?" | `codegraph impact <symbol>` |
-| "Outline this file before editing" | `codegraph node <file> --symbols-only` |
+| "How does X reach Y" across files, unfamiliar subsystem | MCP `xd://mcp__codegraph_explore` (`{"query": "..."}`) / `codegraph explore <query...>` — ~50 KB of source per call, never to locate or read one symbol |
 
 If `.codegraph/` does NOT exist in cwd → `codegraph init .` (init builds the initial index). `8sync harness init` already does this when it stands up a project; you only need to re-init if the directory has been wiped.
 
 ## 2. Canonical commands
 
 ```bash
-codegraph explore <query...>   # PRIMARY — relevant symbols' source + call paths in one shot (same output as the MCP tool)
+codegraph explore <query...>   # call flow across files — ~50 KB of source; locate with `query` instead
 codegraph query "<term>"       # symbol/keyword search with path:line hits (-l limit, -k kind, -j json)
 codegraph node <name>          # one symbol's source + callers/callees, or a file with line numbers (-f <file>)
 codegraph callers|callees|impact <symbol>
 ```
 
-`explore` returns verbatim line-numbered source grouped by file plus the call path among the symbols — treat it as already Read. `query` returns symbol locations with `path:line` citations — copy them verbatim.
+`explore` returns verbatim line-numbered source of every related symbol grouped by file plus the call path among them — treat it as already Read, and budget for it. `query` returns symbol locations with `path:line` citations — copy them verbatim.
 
 ## 3. Secondary commands (one-liner each)
 

@@ -537,16 +537,17 @@ pub(crate) fn ensure_omp_model_roles(home: &Path) -> Result<()> {
 }
 
 /// Seed the `tools.*` keys in `~/.omp/agent/config.yml` that make the STEP-0
-/// code-intel devices (codegraph/cbm/serena) ship full docs/schemas in the prompt:
+/// code-intel devices (cbm/serena) ship full docs/schemas in the prompt:
 /// `xdev: true`, `xdevDocs: builtins` (omp ≥18 defaults to `catalog`, which ignores
 /// the inline list and shows one-line summaries only) and `xdevInlineDevices`.
+/// `codegraph_explore` is left out: its inline doc steers the agent to a ~50 KB call
+/// for lookups the `codegraph query|node` CLI answers in a few hundred bytes.
 /// Key-presence idempotent: each key is added only when absent, so user-authored
 /// values win; inserted UNDER an existing `tools:` block so `approvalMode` etc.
 /// survive. Deliberately does NOT seed `approvalMode: yolo` — auto-approving every
 /// tool is an autonomy/security choice left to the user.
 pub(crate) fn ensure_mcp_tools_visible(home: &Path) -> Result<()> {
     const DEVICES: &[&str] = &[
-        "mcp__codegraph_explore",
         "mcp__codebase_memory*_search_graph",
         "mcp__codebase_memory*_trace_path",
         "mcp__codebase_memory*_get_architecture",
@@ -720,7 +721,7 @@ pub(crate) fn deregister_retired_mcps(home: &Path) -> Result<()> {
 fn known_mcp_tool_catalog(server: &str) -> &'static [(&'static str, &'static str)] {
     match server {
         "codegraph" => &[
-            ("codegraph_explore", "primary: relevant source + call paths + blast radius in one call"),
+            ("codegraph_explore", "call flow across files: ~50 KB of related source + call paths; locate with `codegraph query` instead"),
             ("codegraph_search", "search symbols/files in the local .codegraph index"),
             ("codegraph_context", "context bundle for a symbol/query"),
             ("codegraph_callers", "who calls this symbol"),

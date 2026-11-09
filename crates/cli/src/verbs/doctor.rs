@@ -232,7 +232,7 @@ fn check_ai_engines(home: &std::path::Path) {
         ui::warn("  mnemopi memory OFF — `8sync harness` enables deep project recall (API-only)");
     }
     if cfg.contains("xdevDocs: builtins") || cfg.contains("xdevDocs: inline") {
-        ui::ok("  STEP-0 code-intel devices inlined (tools.xdevDocs + xdevInlineDevices) — codegraph/serena/cbm docs in prompt");
+        ui::ok("  STEP-0 code-intel devices inlined (tools.xdevDocs + xdevInlineDevices) — serena/cbm docs in prompt");
     } else {
         ui::warn("  tools.xdevDocs unset/catalog — omp ignores xdevInlineDevices, code-intel devices show one-line summaries only (fix: `8sync harness global`)");
     }

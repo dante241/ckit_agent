@@ -12,6 +12,12 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Changed
+- Định tuyến codegraph theo chi phí: hook `ckit-code-intel`, RULE #0 trong `APPEND_SYSTEM.md`, skill `codegraph` và skill `fix` (pack vtiger-php) giờ chỉ `codegraph query` (path:line, ~150 B) / `codegraph node` để tìm và đọc một symbol, rồi `read path:a-b`; `codegraph_explore` (~50 KB source mỗi lần) chỉ dùng cho luồng gọi xuyên nhiều file. Đo trên một file PHP 2.163 dòng: sửa một method tốn ~8,5K ký tự context thay vì ~78K.
+- Hook `ckit-code-intel`: grep tìm định nghĩa (`function foo\(`, `class Foo`) được tính là code-intel (không bị chặn, mở khoá các `read` sau); bỏ gợi ý "dùng `codegraph_explore` thay vì grep→read" gắn sau kết quả grep.
+- `ckit harness global` không còn nhúng tài liệu `mcp__codegraph_explore` vào `tools.xdevInlineDevices` (máy đã cài giữ nguyên giá trị cũ; xoá tay dòng đó trong `~/.omp/agent/config.yml`).
+- RULE #0 thêm "Output budget": danh sách dài từ `eval`/`bash` ghi ra file và chỉ in số lượng + ≤30 dòng cần xử lý; `git log` không dùng `%b`.
+
 ## [0.1.53] - 2026-11-09
 
 ### Fixed

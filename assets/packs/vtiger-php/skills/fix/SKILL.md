@@ -102,7 +102,7 @@ Auto-detect required skills from bug context:
 
 ### Simple Bug (single file, obvious cause)
 
-1. Use `codegraph_explore` (or `grep` for a literal error message) to locate the relevant code
+1. Use `codegraph query <symbol>` (or `grep` for a literal error message) to locate the relevant code
 2. Use `find_symbol` with `include_body=True` to read the buggy code
 3. Identify root cause directly
 4. **Skip to Step 4** (lite todolist)

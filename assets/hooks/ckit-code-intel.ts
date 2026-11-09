@@ -1,15 +1,16 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { existsSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { join } from "node:path";
 
 // ckit code-intel hook — enforces RULE #0 mechanically. Per user prompt, the first grep/read
 // that targets code before any code-intel device ran (codegraph · codebase-memory · serena ·
 // lsp) is blocked. An exact retry of that call means "plain text is right here" and unlocks
 // the rest of the prompt; any other code grep/read stays blocked until retry or intel.
 // Inactive without `.codegraph/`.
-// Separately, a grep whose pattern looks up a definition (`function foo\(`, `class Foo`, `def foo`)
-// over paths inside the indexed cwd is never blocked (a block costs a paid model turn); its result
-// gets a one-line codegraph hint appended instead. Paths outside cwd are not indexed → no hint.
+// A grep whose pattern looks up a definition (`function foo\(`, `class Foo`, `def foo`) counts as
+// code-intel: locate-then-`read path:a-b` is the cheapest route, so it is never blocked. The block
+// reason points at `codegraph query`/`node` first; `codegraph_explore` returns ~50 KB of source and
+// is reserved for call flow / blast radius across files.
 const CODE_EXT = /\.(php|tpl|js|mjs|cjs|ts|tsx|jsx|vue|go|rs|py|java|kt|rb|cs|c|cc|cpp|h|hpp|swift|scala)$/i;
 const INTEL_TOOL = /^mcp__(codegraph|codebase_memory|serena)/;
 const INTEL_CLI = /\bcodegraph\s+(explore|query|callers|callees|impact|node)\b/;
@@ -41,27 +42,8 @@ function targetsCode(toolName: string, input: Input): boolean {
   });
 }
 
-// Every searched path (`!` exclusions ignored) resolves inside cwd, i.e. inside the index.
-function insideCwd(input: Input, cwd: string): boolean {
-  const raw = typeof input.path === "string" && input.path.trim() ? input.path : ".";
-  return raw
-    .split(";")
-    .map((p) => p.trim())
-    .filter((p) => p && !p.startsWith("!"))
-    .every((p) => {
-      if (p.startsWith("~")) return false;
-      const abs = resolve(cwd, localPath(p) || ".");
-      return abs === cwd || abs.startsWith(cwd + sep);
-    });
-}
-
-function isDefinitionLookup(toolName: string, input: Input, cwd: string): boolean {
-  return toolName === "grep" && DEF_LOOKUP.test(String(input.pattern ?? "")) && insideCwd(input, cwd);
-}
-
-// First defined name in the pattern (`function saveLog\(` → saveLog), for a copy-ready hint.
-function definedName(pattern: string): string {
-  return pattern.match(/\b(?:function|class|interface|trait|enum|struct|def|fn|func)(?:\s|\\s)[+*]?\s*([A-Za-z_$][\w$]*)/)?.[1] ?? "<name>";
+function isDefinitionLookup(toolName: string, input: Input): boolean {
+  return toolName === "grep" && DEF_LOOKUP.test(String(input.pattern ?? ""));
 }
 
 // Identity of a call for the exact-retry unlock (intent text excluded: it may be reworded).
@@ -82,7 +64,7 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("tool_call", async (event, ctx) => {
     const input = (event.input ?? {}) as Input;
-    if (usesIntel(event.toolName, input)) {
+    if (usesIntel(event.toolName, input) || isDefinitionLookup(event.toolName, input)) {
       intelUsed = true;
       return undefined;
     }
@@ -97,20 +79,10 @@ export default function (pi: ExtensionAPI): void {
     return {
       block: true,
       reason:
-        'code-intel-first: run `write` path `xd://mcp__codegraph_explore` content `{"query":"<symbols or question>"}` ' +
-        "(or cbm/serena/lsp) before grep/read on code. If plain-text search is really the right tool, retry the same call — it passes and unlocks this prompt.",
+        "code-intel-first: locate with `bash` `codegraph query <name>` (path:line, ~150 B) or " +
+        "`codegraph node <file> --symbols-only` (outline), then `read path:a-b`. `codegraph callers|impact <name>` for " +
+        "who-calls / what-breaks; `xd://mcp__codegraph_explore` (~50 KB source) only for call flow across files. " +
+        "If plain-text search is really the right tool, retry the same call — it passes and unlocks this prompt.",
     };
-  });
-
-  pi.on("tool_result", async (event, ctx) => {
-    if (event.isError || event.toolName !== "grep") return undefined;
-    const input = (event.input ?? {}) as Input;
-    if (!isDefinitionLookup(event.toolName, input, ctx.cwd)) return undefined;
-    if (!existsSync(join(ctx.cwd, ".codegraph"))) return undefined;
-    const name = definedName(String(input.pattern ?? ""));
-    const hint =
-      `\n[code-intel] Definition lookup: \`write\` path \`xd://mcp__codegraph_explore\` content \`{"query":"${name}"}\` ` +
-      "returns its source + callers + blast radius in one call — use it instead of grep→read next time.";
-    return { content: [...event.content, { type: "text", text: hint }] };
   });
 }
