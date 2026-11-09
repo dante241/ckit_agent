@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.53] - 2026-11-09
+
 ### Fixed
 - `ckit harness model …` (đặt model hoặc `advisor on|off`) và trang Models của `harness web` không còn ghi đè `models.toml` khi file đang lỗi cú pháp TOML (trước đây mọi roles/tasks bị xoá, chỉ còn key vừa đặt); giờ báo lỗi và không ghi gì.
 - `ckit harness model` ghi đúng file `~/.config/ckit/models.toml` mà `ckit .`/`new`/`ai` đọc, kể cả khi đặt `$XDG_CONFIG_HOME` (trước đây ghi sang `$XDG_CONFIG_HOME/ckit/` nên không có tác dụng).
