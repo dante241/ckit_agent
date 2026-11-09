@@ -35,6 +35,20 @@ pub(crate) fn harness_model(env: &env_detect::Env, args: &[String]) -> Result<()
         return apply_combo(&path, &omp_cfg, &args[0]);
     }
 
+    // `harness model advisor <on|off>`: top-level bool, not a [tasks] entry —
+    // under a section it would parse fine and silently leave the advisor on.
+    if args.len() == 2 && args[0].trim() == "advisor" {
+        let on = match args[1].trim().to_ascii_lowercase().as_str() {
+            "on" | "true" | "1" | "yes" => true,
+            "off" | "false" | "0" | "no" => false,
+            other => anyhow::bail!("advisor expects on|off, got `{other}`"),
+        };
+        set_advisor_toml(&path, on)?;
+        ui::ok(&format!("advisor = {on} → {}", path.display()));
+        ui::info("takes effect on the next `8sync .`/`8sync new`/`8sync ai` launch (restart running omp sessions).");
+        return Ok(());
+    }
+
     // Set mode: `harness model <key> <value>` (single 8sync-routing key).
     if args.len() >= 2 {
         let key = args[0].trim().to_string();
@@ -51,6 +65,11 @@ pub(crate) fn harness_model(env: &env_detect::Env, args: &[String]) -> Result<()
     let cfg = crate::models::ModelConfig::load();
     let shown = |s: &str| if s.is_empty() { "(omp default)".to_string() } else { s.to_string() };
     println!("  8sync config: {}", path.display());
+    println!(
+        "  advisor = {}  (omp --advisor per-turn reviewer; `{} harness model advisor on|off`)",
+        if cfg.advisor { "on" } else { "off" },
+        crate::brand::CMD
+    );
     println!();
     println!("  [roles]  (8sync → omp --plan/--smol/--slow + main)");
     println!("   default = {}", shown(&cfg.roles.default));
@@ -71,6 +90,7 @@ pub(crate) fn harness_model(env: &env_detect::Env, args: &[String]) -> Result<()
     ui::info("combo: 8sync harness model claude+glm   (set ALL omp roles: opus=thinking, glm=mechanical)");
     ui::info("aliases: claude|opus → anthropic/claude-opus-4-8 · sonnet → sonnet-5 · glm|zai → zai/glm-5.2");
     ui::info("one role: 8sync harness model <default|plan|smol|slow | review|debug|code|trivial> <model>");
+    ui::info("advisor:  8sync harness model advisor on|off");
     Ok(())
 }
 
@@ -274,4 +294,46 @@ pub(crate) fn set_model_toml(
         .insert(key.to_string(), toml::Value::String(value.to_string()));
     std::fs::write(path, toml::to_string(&doc)?)?;
     Ok(())
+}
+
+/// Set the top-level `advisor = <bool>` in a `models.toml` document, keeping
+/// every other key, then write it back.
+pub(crate) fn set_advisor_toml(path: &std::path::Path, on: bool) -> Result<()> {
+    let raw = std::fs::read_to_string(path).unwrap_or_default();
+    let mut doc: toml::Value =
+        toml::from_str(&raw).unwrap_or_else(|_| toml::Value::Table(Default::default()));
+    doc.as_table_mut()
+        .ok_or_else(|| anyhow::anyhow!("models.toml is not a table"))?
+        .insert("advisor".to_string(), toml::Value::Boolean(on));
+    std::fs::write(path, toml::to_string(&doc)?)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod advisor_tests {
+    use super::*;
+
+    #[test]
+    fn advisor_off_disables_launch_flag_and_keeps_routing() {
+        let dir = std::env::temp_dir().join(format!("ckit-advisor-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("models.toml");
+        // File ends inside [tasks]: an appended key would land in that table.
+        std::fs::write(&p, "[roles]\nplan = \"opus\"\n\n[tasks]\ncode = \"glm\"\n").unwrap();
+
+        set_advisor_toml(&p, false).unwrap();
+        let cfg: crate::models::ModelConfig =
+            toml::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        assert!(!cfg.advisor);
+        assert!(!cfg.resume_flags().iter().any(|f| f == "--advisor"));
+        assert_eq!(cfg.roles.plan, "opus");
+        assert_eq!(cfg.tasks.get("code").map(String::as_str), Some("glm"));
+        assert!(!cfg.tasks.contains_key("advisor"));
+
+        set_advisor_toml(&p, true).unwrap();
+        let cfg: crate::models::ModelConfig =
+            toml::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        assert!(cfg.resume_flags().iter().any(|f| f == "--advisor"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

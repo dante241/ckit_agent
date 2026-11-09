@@ -19,7 +19,7 @@ use crate::ui;
           · omp auto-loads project context from AGENTS.md + agents/* (memory) + ~/.omp/skills/ (skills).
           · run inside the project root after `8sync .` for best results.
           · pass the prompt as ONE quoted argument so the shell doesn't split it.
-          · advisor (per-turn rule/tool reviewer) is ON by default; add --no-advisor to disable, or set advisor=false in ~/.config/8sync/models.toml.
+          · advisor (per-turn rule/tool reviewer) is ON by default; add --no-advisor to disable for one run, or `8sync harness model advisor off` to disable for good (top-level advisor = false in ~/.config/8sync/models.toml).
     "}
 )]
 pub struct Args {

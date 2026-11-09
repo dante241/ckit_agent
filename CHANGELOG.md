@@ -12,6 +12,10 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Fixed
+- Tắt được advisor khi mở phiên bằng `ckit new` / `ckit .`: hai lệnh này giờ nhận `--no-advisor` (trước đây chỉ `ckit ai` có, nên `ckit new` luôn chạy `omp --advisor` trừ khi models.toml có `advisor = false`).
+- `ckit harness model advisor on|off` ghi `advisor` ở top-level của `~/.config/ckit/models.toml`. Trước đây lệnh này ghi vào `[tasks].advisor` nên không có tác dụng, và thêm tay `advisor = false` vào cuối file (sau `[tasks]`) cũng bị bỏ qua. `ckit harness model` hiện trạng thái advisor.
+
 ## [0.1.51] - 2026-11-07
 
 ### Changed

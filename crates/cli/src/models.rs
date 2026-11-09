@@ -16,8 +16,9 @@ pub struct ModelConfig {
     #[serde(default)]
     pub tasks: BTreeMap<String, String>,
     /// Enable omp's `--advisor` passive per-turn reviewer. Default ON (skipped
-    /// for trivial prompts to stay token-optimal). Opt out: `advisor = false`
-    /// in models.toml, or `8sync ai --no-advisor` for one run.
+    /// for trivial prompts to stay token-optimal). Opt out: top-level
+    /// `advisor = false` in models.toml (`8sync harness model advisor off`), or
+    /// `--no-advisor` on `8sync ai` / `8sync .` / `8sync new` for one launch.
     #[serde(default = "advisor_default")]
     pub advisor: bool,
 }

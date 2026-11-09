@@ -12,6 +12,7 @@ use crate::{env_detect, ui, verbs::skill};
         EXAMPLES
           8sync .                       seed agents/* context and resume the last omp session (omp --continue)
           8sync . work                  reopen the session you named with `8sync new work`
+          8sync . --no-advisor          resume without omp's per-turn advisor reviewer
 
         BEHAVIOR
           · Walks up from cwd to find the project root (.git / Cargo.toml / package.json / pyproject.toml / go.mod / deno.json).
@@ -20,11 +21,16 @@ use crate::{env_detect, ui, verbs::skill};
           · Execs `omp --continue` in the project root (resumes the latest session). Pass a NAME to reopen that named session (omp --resume <its file>).
           · To start FRESH instead of resuming, use `8sync new` (optionally `8sync new <name>`).
           · If omp is missing, drops into the user shell instead (run `8sync setup` to fix).
+          · advisor (per-turn rule/tool reviewer) follows `advisor` in ~/.config/8sync/models.toml (default on); `--no-advisor` turns it off for this launch, `8sync harness model advisor off` turns it off for good.
     "}
 )]
 pub struct Args {
     /// Optional session name — reopen the session you saved with `new <name>` (default: the latest session).
     pub name: Option<String>,
+
+    /// Disable omp's per-turn advisor reviewer for this launch.
+    #[arg(long = "no-advisor")]
+    pub no_advisor: bool,
 }
 
 #[derive(ClapArgs, Debug)]
@@ -33,6 +39,7 @@ pub struct Args {
         EXAMPLES
           8sync new                     seed agents/* context and start a FRESH omp session (does NOT resume)
           8sync new fix-auth            start a fresh session and remember it as 'fix-auth' — reopen later with `8sync . fix-auth`
+          8sync new --no-advisor        fresh session without omp's per-turn advisor reviewer
 
         BEHAVIOR
           · Same seeding as `8sync .` (project root detection, AGENTS.md + agents/* memory, skills block).
@@ -40,21 +47,26 @@ pub struct Args {
           · With a NAME, ckit remembers which session file omp created (in ~/.cache/ckit/named-sessions.json) so `8sync . <name>` reopens exactly it.
           · Sessions always live in omp's DEFAULT session dir, so they also appear in omp's `/resume` picker (listed by omp's auto-title).
           · omp has no custom-title flag; the NAME is a ckit-side label to reopen by, not the title shown inside omp.
+          · advisor: same as `8sync .` — `--no-advisor` for this launch, `8sync harness model advisor off` for good.
     "}
 )]
 pub struct NewArgs {
     /// Optional session name — remembered so `. <name>` reopens this exact session later.
     pub name: Option<String>,
+
+    /// Disable omp's per-turn advisor reviewer for this launch.
+    #[arg(long = "no-advisor")]
+    pub no_advisor: bool,
 }
 
 /// `8sync .` — seed + resume (the latest session, or a named bucket).
 pub fn run(a: Args) -> Result<()> {
-    enter(false, a.name.as_deref())
+    enter(false, a.name.as_deref(), a.no_advisor)
 }
 
 /// `8sync new` — seed + start a FRESH session (optionally in a named bucket).
 pub fn run_new(a: NewArgs) -> Result<()> {
-    enter(true, a.name.as_deref())
+    enter(true, a.name.as_deref(), a.no_advisor)
 }
 
 /// Shared body for `8sync .` (resume) and `8sync new` (fresh). Always uses omp's
@@ -62,7 +74,7 @@ pub fn run_new(a: NewArgs) -> Result<()> {
 /// omp's own `/resume` picker. `fresh` drops `--continue`; `name` is a ckit-side
 /// label: a fresh named launch records which session file omp created, and
 /// `8sync . <name>` reopens exactly that one (`omp --resume <path>`).
-fn enter(fresh: bool, name: Option<&str>) -> Result<()> {
+fn enter(fresh: bool, name: Option<&str>, no_advisor: bool) -> Result<()> {
     let env = env_detect::Env::detect()?;
     let cwd = std::env::current_dir().context("no cwd")?;
     let root = detect_project_root(&cwd).unwrap_or(cwd.clone());
@@ -84,7 +96,10 @@ fn enter(fresh: bool, name: Option<&str>) -> Result<()> {
         return Ok(());
     }
 
-    let cfg = crate::models::ModelConfig::load();
+    let mut cfg = crate::models::ModelConfig::load();
+    if no_advisor {
+        cfg.advisor = false;
+    }
     let sessions_root = env.home.join(".omp/agent/sessions");
     let mut cmd = Command::new("omp");
     cmd.arg("--cwd").arg(&root).args(cfg.resume_flags());
