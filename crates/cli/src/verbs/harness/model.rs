@@ -20,7 +20,8 @@ use crate::{assets, env_detect, ui};
 const ROLE_KEYS: &[&str] = &["default", "plan", "smol", "slow"];
 
 pub(crate) fn harness_model(env: &env_detect::Env, args: &[String]) -> Result<()> {
-    let path = env.xdg_config.join(crate::brand::NS).join("models.toml");
+    // Same path `ModelConfig::load()` reads; `$XDG_CONFIG_HOME` would diverge.
+    let path = crate::brand::config_dir(&env.home).join("models.toml");
     let omp_cfg = env.home.join(".omp/agent/config.yml");
     // Seed the user file from the embedded default on first touch.
     if !path.exists() {
@@ -280,9 +281,7 @@ pub(crate) fn set_model_toml(
     key: &str,
     value: &str,
 ) -> Result<()> {
-    let raw = std::fs::read_to_string(path).unwrap_or_default();
-    let mut doc: toml::Value =
-        toml::from_str(&raw).unwrap_or_else(|_| toml::Value::Table(Default::default()));
+    let mut doc = read_models_doc(path)?;
     let tbl = doc
         .as_table_mut()
         .ok_or_else(|| anyhow::anyhow!("models.toml is not a table"))?;
@@ -299,14 +298,24 @@ pub(crate) fn set_model_toml(
 /// Set the top-level `advisor = <bool>` in a `models.toml` document, keeping
 /// every other key, then write it back.
 pub(crate) fn set_advisor_toml(path: &std::path::Path, on: bool) -> Result<()> {
-    let raw = std::fs::read_to_string(path).unwrap_or_default();
-    let mut doc: toml::Value =
-        toml::from_str(&raw).unwrap_or_else(|_| toml::Value::Table(Default::default()));
+    let mut doc = read_models_doc(path)?;
     doc.as_table_mut()
         .ok_or_else(|| anyhow::anyhow!("models.toml is not a table"))?
         .insert("advisor".to_string(), toml::Value::Boolean(on));
     std::fs::write(path, toml::to_string(&doc)?)?;
     Ok(())
+}
+
+/// Parse `models.toml` for an edit. A missing file is an empty table; an
+/// unparsable one is an error, so a typo never gets every other key wiped.
+fn read_models_doc(path: &std::path::Path) -> Result<toml::Value> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e.into()),
+    };
+    toml::from_str(&raw)
+        .map_err(|e| anyhow::anyhow!("{} is not valid TOML — fix it first, nothing written: {e}", path.display()))
 }
 
 #[cfg(test)]
@@ -334,6 +343,13 @@ mod advisor_tests {
         let cfg: crate::models::ModelConfig =
             toml::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
         assert!(cfg.resume_flags().iter().any(|f| f == "--advisor"));
+
+        // A typo must fail the toggle, not wipe the user's roles/tasks.
+        let broken = "[roles]\nplan = \"opus\n";
+        std::fs::write(&p, broken).unwrap();
+        assert!(set_advisor_toml(&p, false).is_err());
+        assert!(set_model_toml(&p, "tasks", "code", "glm").is_err());
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), broken);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
