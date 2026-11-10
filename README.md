@@ -206,7 +206,7 @@ System packages (`pacman -Syu`) are **not** run automatically — you decide whe
 | `ckit harness browser [fix\|status\|off]` | Point omp's Puppeteer browser control at a real system **Chromium** (`ungoogled-chromium-bin`, installs `/usr/bin/chromium`) instead of the bundled `chrome-headless-shell` — fixes browser control that renders but **can't reach the internet**. Exports `PUPPETEER_EXECUTABLE_PATH` + `BUN_CHROME_PATH` in zsh/bash/fish (idempotent). `off` reverts, `status` shows the wiring |
 | `ckit harness bench` | Measure the loop's context budget (upfront vs deferred tokens + KV-cache gate). Prints the upfront breakdown — prefix / CORE / memory-spine — and a spine advisory when the memory spine eats more than 50% of the upfront budget |
 | `ckit harness audit` | Scan docs: stale paths / oversized / junk + churn (doc-hygiene) |
-| `ckit harness eval [--baseline]` | Run the quality task-suite through omp; `--baseline` saves the reference |
+| `ckit harness eval [--baseline] [--runs N]` | Run the quality task-suite through omp (incl. ticket-style multi-file bugs); the grader and hidden tests land only after the agent finishes. `--runs N` reports pass rate + flaky tasks; `--baseline` saves the reference |
 | `ckit harness toolstats` | SQLite tracker: optimizer rate (codegraph/cbm/serena) vs fallback (grep/read) + failures per tool |
 | `ckit harness compaction [pct]` | View/set the omp auto-compaction threshold (anti-forget; default 50%) |
 | `ckit harness model [k v]` | View/edit `~/.config/ckit/models.toml` (routing for `/auto` + `ckit ai`) |

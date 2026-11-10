@@ -1,9 +1,15 @@
 //! `8sync harness eval` — quality probe for the engineering loop. Runs a fixed
 //! task-suite through omp non-interactively, scores each task with a
-//! deterministic self-check (`verify.sh` owns the assertion so the agent can't
-//! game it), and writes a JSON scorecard (+ optional baseline diff). Model +
-//! network, non-deterministic — a periodic quality SIGNAL, not a CI gate.
+//! deterministic self-check, and writes a JSON scorecard (+ optional baseline
+//! diff). Model + network, non-deterministic — a periodic quality SIGNAL, not a
+//! CI gate; `--runs N` measures how much one task's outcome varies.
+//!
+//! The grader exists only AFTER omp exits, in a separate grading dir (see
+//! `grade`): the agent can neither read nor edit `verify.sh` or the `hidden/`
+//! tree, and `hidden/` overwrites its copies of those paths (restores the
+//! original tests, Cargo.toml), so deleting or weakening a test cannot pass.
 use std::collections::BTreeSet;
+use std::path::Path;
 use std::process::Command;
 use std::time::Instant;
 
@@ -19,15 +25,25 @@ const MAX_TIME_SECS: &str = "300";
 #[derive(Serialize, Deserialize)]
 struct TaskResult {
     name: String,
+    /// Every run passed.
     pass: bool,
+    /// Mean wall time of one run.
     secs: u64,
+    #[serde(default)]
+    passes: u32,
+    #[serde(default)]
+    runs: u32,
 }
 
 #[derive(Serialize, Deserialize)]
 struct EvalReport {
     stamp: String,
+    /// Passing task-runs.
     passed: usize,
+    /// Task-runs attempted (tasks × runs).
     total: usize,
+    #[serde(default)]
+    runs: u32,
     results: Vec<TaskResult>,
 }
 
@@ -46,7 +62,76 @@ fn fixture_names() -> Vec<String> {
     set.into_iter().collect()
 }
 
-pub(crate) fn harness_eval(env: &env_detect::Env, baseline: bool) -> Result<()> {
+/// One fresh attempt at `name`: setup → omp → grade. Anything the agent breaks
+/// while grading (its dir gone, a file where a dir should be) fails this task
+/// only, never the whole suite.
+fn run_once(name: &str, dir: &Path, task: &str) -> Result<(bool, u64)> {
+    let _ = std::fs::remove_dir_all(dir.with_extension("grade")); // a crashed earlier grading
+    let _ = std::fs::remove_dir_all(dir);
+    std::fs::create_dir_all(dir)?;
+    assets::install_tree(&format!("eval/{}/setup", name), dir)?;
+
+    let t0 = Instant::now();
+    let out = Command::new("omp")
+        .args(["-p", "--no-session", "--auto-approve", "--max-time", MAX_TIME_SECS])
+        .arg(task)
+        .current_dir(dir)
+        .output();
+    let secs = t0.elapsed().as_secs();
+    let Ok(o) = out else { return Ok((false, secs)) };
+    let pass = grade(name, dir, &o.stdout).unwrap_or(false);
+    // It holds the hidden tests and verify.sh: never leave it for a later run's agent to read.
+    let _ = std::fs::remove_dir_all(dir.with_extension("grade"));
+    Ok((pass, secs))
+}
+
+/// Grades in a fresh sibling dir, so nothing the agent left in its own dir can
+/// rewrite the grader: only its regular files and directories are copied (no
+/// symlinks, no dot-directories such as `.cargo`/`.git`, no `target/`), then
+/// `hidden/` overwrites them and `verify.sh` runs. The hidden `Cargo.toml`s set
+/// `build = false`, so an agent `build.rs` never runs either.
+fn grade(name: &str, work: &Path, stdout: &[u8]) -> Result<bool> {
+    let g = work.with_extension("grade");
+    let _ = std::fs::remove_dir_all(&g);
+    std::fs::create_dir_all(&g)?;
+    copy_agent_tree(work, &g)?;
+    assets::install_tree(&format!("eval/{}/hidden", name), &g)?;
+    let Some(v) = assets::read(&format!("eval/{}/verify.sh", name)) else { return Ok(false) };
+    std::fs::write(g.join(".omp-out.txt"), stdout)?;
+    std::fs::write(g.join(".eval-verify.sh"), v)?;
+    Ok(Command::new("sh")
+        .arg(".eval-verify.sh")
+        .arg(".omp-out.txt")
+        .current_dir(&g)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false))
+}
+
+fn copy_agent_tree(src: &Path, dst: &Path) -> Result<()> {
+    for e in std::fs::read_dir(src)? {
+        let e = e?;
+        let ft = e.file_type()?; // does not follow symlinks
+        let name = e.file_name();
+        let to = dst.join(&name);
+        if ft.is_dir() {
+            if name.to_string_lossy().starts_with('.') || name == "target" {
+                continue;
+            }
+            std::fs::create_dir_all(&to)?;
+            copy_agent_tree(&e.path(), &to)?;
+        } else if ft.is_file() {
+            std::fs::copy(e.path(), &to)?;
+        }
+    }
+    Ok(())
+}
+
+fn pct(passed: usize, total: usize) -> usize {
+    (passed * 100).checked_div(total).unwrap_or(0)
+}
+
+pub(crate) fn harness_eval(env: &env_detect::Env, baseline: bool, runs: u32) -> Result<()> {
     ui::header("8sync harness eval — loop quality probe");
     if which::which("omp").is_err() {
         ui::warn("omp not found — eval needs omp on PATH");
@@ -57,64 +142,45 @@ pub(crate) fn harness_eval(env: &env_detect::Env, baseline: bool) -> Result<()> 
         ui::warn("no eval fixtures bundled");
         return Ok(());
     }
+    let runs = runs.max(1);
     let cache = env.home.join(".cache/ckit/eval");
     ui::info(&format!(
-        "running {} task(s) through omp (model + network; non-deterministic)…",
-        names.len()
+        "running {} task(s) × {} run(s) through omp (model + network; non-deterministic)…",
+        names.len(),
+        runs
     ));
     println!();
 
     let mut results: Vec<TaskResult> = Vec::new();
     for name in &names {
-        let dir = cache.join(name);
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir)?;
-        // Materialise the fixture's setup/ tree into the run dir.
-        assets::install_tree(&format!("eval/{}/setup", name), &dir)?;
-        // verify.sh sits beside setup/ → drop it into the run dir (hidden).
-        if let Some(v) = assets::read(&format!("eval/{}/verify.sh", name)) {
-            let vp = dir.join(".eval-verify.sh");
-            std::fs::write(&vp, v)?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&vp, std::fs::Permissions::from_mode(0o755));
-            }
-        }
         let task = assets::read(&format!("eval/{}/task.md", name)).unwrap_or_default();
-
-        let t0 = Instant::now();
-        let out = Command::new("omp")
-            .args(["-p", "--no-session", "--auto-approve", "--max-time", MAX_TIME_SECS])
-            .arg(&task)
-            .current_dir(&dir)
-            .output();
-        let secs = t0.elapsed().as_secs();
-
-        let pass = match out {
-            Ok(o) => {
-                let _ = std::fs::write(dir.join(".omp-out.txt"), &o.stdout);
-                Command::new("sh")
-                    .arg(".eval-verify.sh")
-                    .arg(".omp-out.txt")
-                    .current_dir(&dir)
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false)
-            }
-            Err(_) => false,
+        let dir = cache.join(name);
+        let (mut passes, mut secs) = (0u32, 0u64);
+        for _ in 0..runs {
+            let (pass, s) = run_once(name, &dir, &task)?;
+            passes += pass as u32;
+            secs += s;
+        }
+        let mean = secs / runs as u64;
+        let (mark, flaky) = match passes {
+            p if p == runs => ("✓", ""),
+            0 => ("✗", ""),
+            _ => ("~", "  flaky"),
         };
-        println!("   {} {:<22} {:>4}s", if pass { "✓" } else { "✗" }, name, secs);
-        results.push(TaskResult { name: name.clone(), pass, secs });
+        println!("   {} {:<26} {}/{} {:>5}s{}", mark, name, passes, runs, mean, flaky);
+        results.push(TaskResult { name: name.clone(), pass: passes == runs, secs: mean, passes, runs });
     }
 
-    let passed = results.iter().filter(|r| r.pass).count();
-    let total = results.len();
+    let passed: usize = results.iter().map(|r| r.passes as usize).sum();
+    let total = names.len() * runs as usize;
+    let flaky = results.iter().filter(|r| r.passes > 0 && r.passes < r.runs).count();
     println!();
-    let pct = if total > 0 { passed * 100 / total } else { 0 };
-    ui::info(&format!("score: {}/{} passed ({}%)", passed, total, pct));
+    ui::info(&format!("score: {}/{} task-runs passed ({}%)", passed, total, pct(passed, total)));
+    if runs > 1 {
+        ui::info(&format!("flaky: {} of {} task(s) passed in some runs and failed in others", flaky, names.len()));
+    }
 
-    let report = EvalReport { stamp: super::memory::now_stamp(), passed, total, results };
+    let report = EvalReport { stamp: super::memory::now_stamp(), passed, total, runs, results };
     let json = serde_json::to_string_pretty(&report).unwrap_or_default();
 
     // Scorecards live in the gitignored cache (machine-local + model-dependent;
@@ -133,16 +199,19 @@ pub(crate) fn harness_eval(env: &env_detect::Env, baseline: bool) -> Result<()> 
         }
     } else if let Ok(prev) = std::fs::read_to_string(&baseline_path) {
         if let Ok(base) = serde_json::from_str::<EvalReport>(&prev) {
-            let delta = passed as i64 - base.passed as i64;
+            // Pass RATE, not counts: the suite size and --runs may differ between runs.
+            let (was, now) = (pct(base.passed, base.total) as i64, pct(passed, total) as i64);
             ui::info(&format!(
-                "vs baseline ({}): {}/{} → {}/{} ({}{})",
+                "vs baseline ({}): {}% ({}/{}) → {}% ({}/{}) ({}{} pts)",
                 base.stamp,
+                was,
                 base.passed,
                 base.total,
+                now,
                 passed,
                 total,
-                if delta >= 0 { "+" } else { "" },
-                delta
+                if now >= was { "+" } else { "" },
+                now - was
             ));
         }
     }

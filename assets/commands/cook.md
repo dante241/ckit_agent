@@ -78,8 +78,8 @@ After the plan is approved, **delegate execution to the engine** (like `/feature
      before advancing: parent/base methods exist (serena `find_symbol`), classes in
      `extends`/`new` exist, DB columns match schema, config keys valid.
    - `engine_verify` runs the gate. FAILED → fix the CAUSE and re-verify with a DIFFERENT fix (2
-     identical fails warn, 3 BLOCK the task — no-progress guard). BLOCKED → write a `failure:` to
-     `agents/KNOWLEDGE.md`, move on or escalate.
+     identical fails warn, 3 BLOCK the task — no-progress guard). BLOCKED → diagnose the output, then
+     `engine_unblock {taskId, diagnosis, action: retry|split|drop}` (it logs the `failure:` to `agents/KNOWLEDGE.md`), or escalate.
    - `engine_advance {taskId}` marks the verified task done (REFUSED if verify never passed).
      **Do NOT `commit:true`** — `/cook` defers commit to Phase 10 / `/commit` (unless the user
      asked to commit).

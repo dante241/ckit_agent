@@ -47,7 +47,7 @@ mod toolstats;
       8sync harness help             cheatsheet: commands, skill tiers, file taxonomy, new-machine runbook
       8sync harness bench            benchmark the loop-engineering context budget (upfront vs deferred tokens + KV-cache gate)
       8sync harness audit             scan docs for stale paths / oversized / junk + churn hotspots (doc-hygiene)
-      8sync harness eval [--baseline] run the quality task-suite through omp (pass/fail + wall-time; --baseline saves the reference)
+      8sync harness eval [--baseline] [--runs N]  run the quality task-suite through omp N times per task (pass rate + flaky tasks; --baseline saves the reference)
       8sync harness compaction [pct]  view/set omp auto-compaction threshold (default 50% — anti-forget)
       8sync harness gateway [apply|key <KEY>|verify|status]  deploy/verify the omp model-gateway (9router + thinking fix)
       8sync harness add-local-model <path.gguf|org/repo|url> [name]  serve a local GGUF via mistral.rs + register with omp
@@ -93,6 +93,10 @@ pub struct Args {
     /// reference future `eval` runs diff against).
     #[arg(long)]
     pub baseline: bool,
+    /// `eval --runs N`: run every eval task N times (default 1) and report the
+    /// pass rate plus tasks whose runs disagree (flaky).
+    #[arg(long, value_name = "N", default_value_t = 1)]
+    pub runs: u32,
     /// `eval --project`: score agent-team READINESS on the current repo
     /// (per-role capability coverage %), instead of running loop fixtures.
     #[arg(long)]
@@ -154,7 +158,7 @@ pub fn run(a: Args) -> Result<()> {
         Some("bench") => bench::harness_bench(&env),
         Some("audit") => audit::harness_audit(&env),
         Some("eval") if a.project => eval::harness_eval_project(&env),
-        Some("eval") => eval::harness_eval(&env, a.baseline),
+        Some("eval") => eval::harness_eval(&env, a.baseline, a.runs),
         Some("web") => web::harness_web(&env.home, a.port.unwrap_or(8731), a.no_open),
         Some("toolstats") | Some("tools") => toolstats::harness_toolstats(&env),
         Some("compaction") => compaction::harness_compaction(&env.home, v1.as_deref()),
@@ -219,7 +223,7 @@ fn print_help() {
     println!("{}", crate::brand::render("  8sync harness help              this cheatsheet"));
     println!("{}", crate::brand::render("  8sync harness audit             scan docs for stale paths / oversized / junk + churn (doc-hygiene)"));
     println!("{}", crate::brand::render("  8sync harness bench             benchmark the loop context budget (upfront vs deferred tokens + KV-cache gate)"));
-    println!("{}", crate::brand::render("  8sync harness eval [--baseline] run the quality task-suite through omp; --baseline saves the reference"));
+    println!("{}", crate::brand::render("  8sync harness eval [--baseline] [--runs N]  run the quality task-suite through omp N× per task; --baseline saves the reference"));
     println!("{}", crate::brand::render("  8sync harness compaction [pct]  view/set omp auto-compaction threshold (anti-forget; default 50%)"));
     println!("{}", crate::brand::render("  8sync harness model [combo|k v]  view/set model routing; combo `model=claude+glm` sets ALL omp roles (opus=think, glm=work)"));
     println!("{}", crate::brand::render("  8sync harness gateway [apply|key|verify]  deploy/verify omp model-gateway (9router + sonnet-5 thinking fix)"));

@@ -12,6 +12,16 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Added
+- Engine `engine_unblock {taskId, diagnosis, action: retry|split|drop}`: một task BLOCKED không còn là ngõ cụt. Chẩn đoán bắt buộc và được engine tự ghi thành `failure:` trong `agents/KNOWLEDGE.md`; `retry` reset bộ đếm, `split` thay task bằng các task mới (task phụ thuộc chờ chúng), `drop` đóng task và gỡ chặn cho task phụ thuộc. Task bị block dây chuyền tự mở lại.
+- Engine kiểm độ công bằng của test red-first: task `red: true` mới phải có `spec` (tiêu chí nghiệm thu). `engine_red` cho một reviewer độc lập (`omp -p --no-tools`, phiên mới, không thấy công việc) chấm test theo spec trước; test bám tên/đường dẫn/số lần gọi/câu thông báo/giá trị mặc định mà spec không nêu, hoặc test rỗng, bị từ chối kèm lý do. Đúng bộ test đã bị chấm UNFAIR thì không được chấm lại (gọi lại không "đổ xúc xắc"). Sau khi RED, sửa/xoá file test đã duyệt, hoặc thêm file mới cùng loại trong thư mục test (vd. một `conftest.py` bỏ qua test), tốn một lượt verify; file khác loại do test tự sinh ra (snapshot, fixture) không tính. Model reviewer: `CKIT_ENGINE_REVIEW_MODEL` (mặc định model của omp).
+- Engine `criteria` + `engine_accept`: tiêu chí nghiệm thu của cả plan chỉ đóng bằng bằng chứng (task done đã verify, `file:line` có thật, hoặc ảnh chụp tạo sau khi plan bắt đầu). Thiếu bằng chứng → `incomplete`, `engine_next`/`engine_ready` báo `goal INCOMPLETE` thay vì DONE; còn task chưa chạy được (vd. tạo worktree lỗi) → `NOT DONE`.
+- `engine_ready {worktree: true}`: mỗi task một worktree + nhánh riêng; `engine_verify` chạy trong worktree; `engine_advance` commit ở đó, cho reviewer độc lập chấm diff, squash-merge khi PASS rồi chạy lại verify trên cây đã merge trước khi commit. Nếu lỗi, engine trả checkout chính về HEAD cho đúng các file merge đã chạm (kể cả khi lệnh verify/hook đã ghi đè file đó), xoá file merge thêm vào; không dọn được thì báo `MAIN CHECKOUT LEFT DIRTY` chứ không nói đã huỷ. FAIL review trả lỗi, bỏ trạng thái verified, và cùng một diff không được chấm lại. Từ chối merge khi checkout chính đang có file staged (tránh cuốn vào hoặc làm mất việc của người dùng).
+- `ckit harness eval --runs N`: chạy mỗi task N lần, báo tỉ lệ pass và task chập chờn; so baseline theo tỉ lệ. Thêm 2 bài viết kiểu ticket thật, nhiều file (`ticket-pagination`, `ticket-config-precedence`).
+
+### Fixed
+- `ckit harness eval` không còn để lộ bộ chấm: `verify.sh` và thư mục `hidden/` (test ẩn, `Cargo.toml` gốc với `build = false`) chỉ xuất hiện sau khi omp chạy xong, trong một thư mục chấm riêng (bị xoá ngay sau khi chấm, nên lượt chạy sau không đọc được). Thư mục này chỉ chép file và thư mục thường của agent (bỏ symlink, `.cargo/`, `.git/`, `target/`). Trước đây agent đọc/sửa được `.eval-verify.sh`, và xoá test vẫn pass `fix-failing-test`. Agent làm hỏng thư mục của mình chỉ làm trượt task đó, không dừng cả bộ eval.
+
 ## [0.1.54] - 2026-11-09
 
 ### Changed

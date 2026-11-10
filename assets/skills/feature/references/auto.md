@@ -40,7 +40,7 @@ Khi gặp điểm "cần phán đoán thiết kế":
    - Step 4 user-gate → **bỏ qua**, tự set `status: planned` (plan-review thay vai gate chất lượng).
 3. **Chạy `references/execute.md`** — feed PLAN vào `engine_plan`, chạy vòng điều phối: dev song song mọi task đủ phụ thuộc → task dev xong thì `engine_verify` ngay (task khác vẫn dev) → PASS thì commit file của task, lỗi thì dev lại. KHÔNG yield giữa các task (autonomous).
    - Task block (dữ liệu/môi trường) → SKIP + ghi NEEDS-CONFIRM, task phụ thuộc nó block theo, nhánh khác chạy tiếp.
-   - `engine_verify` fail 3 lần giống nhau → engine BLOCK task (doom-loop guard); ghi `failure:` vào `agents/KNOWLEDGE.md`.
+   - `engine_verify` fail 3 lần giống nhau → engine BLOCK task (doom-loop guard); chẩn đoán rồi `engine_unblock {taskId, diagnosis, action}` (engine tự ghi `failure:` vào `agents/KNOWLEDGE.md`); không chẩn đoán được → SKIP + NEEDS-CONFIRM.
 4. Self-check UC/AC. UC/AC nào code-done → đánh dấu; UC/AC block → NEEDS-CONFIRM.
 5. Nếu có item defer → ghi `M<x>-VERIFICATION.md` (matrix UC/AC PASS / NEEDS-CONFIRM) ngay (không chờ ship).
 6. STATE: `status: executing`, `next_action`: `ship-phase` (nếu mọi AC code-done) hoặc giữ `execute-phase` + ghi list NEEDS-CONFIRM.

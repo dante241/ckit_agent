@@ -13,7 +13,7 @@
 ## Checkpoints / Gates
 
 - **Review dimensions:** [từ config.workflow.review_dimensions, vd security, correctness, convention]
-- **Verify (engine gate):** mỗi task chạy `[verify:]` qua `engine_verify`; `engine_advance` từ chối task chưa pass. Task `[red:]`: `engine_red` phải thấy test ĐỎ trước khi file code đổi, nếu không `engine_verify` từ chối. Hết task → chạy test đầy đủ 1 lần.
+- **Verify (engine gate):** mỗi task chạy `[verify:]` qua `engine_verify`; `engine_advance` từ chối task chưa pass. Task `[red:]`: `engine_red` cho reviewer độc lập soát test theo AC của task, rồi phải thấy test ĐỎ trước khi file code đổi, nếu không `engine_verify` từ chối. Hết task → chạy test đầy đủ 1 lần.
 - **Acceptance:** phase done ⇔ mọi AC trong Mx-CONTEXT PASS (verify ở `/feature ship` → Mx-VERIFICATION.md). KHÔNG dùng DoD mơ hồ — dùng AC.
 
 ## Kiểm tra phủ (trước khi trình gate 2)

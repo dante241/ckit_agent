@@ -25,9 +25,10 @@ Engine `engine_*` (state ở `.cache/ckit/engine/state.json`) enforce trong code
 
 Gọi **`engine_plan`** một lần:
 - `goal` = literal 🎯 **Goal** của phase.
+- `criteria` = mỗi AC của phase 1 dòng (`AC-01: <Then …>`): engine chỉ báo DONE khi mọi dòng có bằng chứng qua `engine_accept` (xem Bước 2 mục 5).
 - `slices` = 1 slice (tên phase) — thứ tự chạy do `depends` quyết, không do slice.
 - Mỗi task: `key` = `T<n>`, `title` = mô tả task, `depends` = `[depends:]` (key), `files` = `[file:]`, `verify` = `[verify:]` (lệnh THẬT).
-- Task có `[red: <test paths>]` → `red: true`, `tests` = các path đó (phải nằm trong `files`, và `files` phải còn ≥1 file không phải test). Task `[trivial]` → `trivial: true` (được advance không verify). Task không trivial mà thiếu `verify` → engine REJECT cả plan.
+- Task có `[red: <test paths>]` → `red: true`, `tests` = các path đó (phải nằm trong `files`, và `files` phải còn ≥1 file không phải test), `spec` = các AC task gánh (Given/When/Then nguyên văn) — thiếu `spec` thì engine REJECT. Task `[trivial]` → `trivial: true` (được advance không verify). Task không trivial mà thiếu `verify` → engine REJECT cả plan.
 - Trước khi gọi: `python3 ~/.omp/skills/feature/scripts/phase_gate.py agents/planning/<slug> --phase M<x> --check plan` phải exit 0 (gate 2 đã chạy nó; PLAN sửa sau gate 2 → chạy lại).
 
 Resume (đã có plan engine) → `engine_status`, KHÔNG plan lại.
@@ -40,7 +41,7 @@ Giới hạn số task dev đồng thời: `config.workflow.max_parallel_tasks` 
 Lặp:
 
 1. **`engine_ready {limit: max_parallel_tasks}`** → engine trả mọi task đủ phụ thuộc + không chồng file với task đang chạy (tổng số task đang chạy không vượt `limit`), và đánh dấu `in_progress`. Task test lỗi vẫn giữ `in_progress` (giữ chỗ file) trong lúc dev lại.
-2. **Spawn dev** cho các task sẵn sàng (tới giới hạn) — **1 lời gọi `task`, nhiều item**, `agent: task`, chạy nền (kết quả tự về, orchestrator không chờ từng cái). **Task `red: true` chạy 2 lượt:** (a) agent CHỈ viết/sửa file trong `tests` rồi dừng → orchestrator gọi **`engine_red {taskId}`** (engine từ chối nếu file code đã đổi, nếu test đã PASS sẵn, hoặc lỗi chỉ là exit 126/127) → đọc lỗi: phải là assertion đúng hành vi AC, không phải lỗi cú pháp/setup — sai thì quay lại (a); (b) RED đã ghi → spawn dev implement như dưới. Prompt mỗi agent BẮT BUỘC nhúng (subagent KHÔNG đọc được CONTEXT/config/skill):
+2. **Spawn dev** cho các task sẵn sàng (tới giới hạn) — **1 lời gọi `task`, nhiều item**, `agent: task`, chạy nền (kết quả tự về, orchestrator không chờ từng cái). **Task `red: true` chạy 2 lượt:** (a) agent CHỈ viết/sửa file trong `tests` rồi dừng → orchestrator gọi **`engine_red {taskId}`**: engine cho một reviewer độc lập (omp mới, không tool, không thấy phiên này) soát test theo `spec` trước — UNFAIR (bám tên/đường dẫn/số lần gọi/câu thông báo/giá trị mặc định mà spec không nêu, hoặc test rỗng) → quay lại (a) kèm lý do reviewer; sau đó engine từ chối nếu file code đã đổi, nếu test đã PASS sẵn, hoặc lỗi chỉ là exit 126/127 → đọc lỗi: phải là assertion đúng hành vi AC, không phải lỗi cú pháp/setup — sai thì quay lại (a); (b) RED đã ghi → spawn dev implement như dưới, dặn KHÔNG sửa file test (sửa sau RED = mất 1 lượt verify). Prompt mỗi agent BẮT BUỘC nhúng (subagent KHÔNG đọc được CONTEXT/config/skill):
    1. Task cụ thể + **danh sách file được phép sửa** + "chỉ làm task này, KHÔNG commit, KHÔNG chạy cả test suite".
    2. **UC literal** task phục vụ.
    3. **AC literal** task gánh (Given/When/Then nguyên văn) + **đoạn nguồn nguyên văn** mà cột Nguồn của các AC đó trỏ tới (R12: có đặc tả ngoài → copy đúng đoạn BR / bước luồng / tiêu chí US·AC từ file đặc tả; không có → dòng UC trong REQUIREMENTS). Dev phải thấy quy tắc gốc, không chỉ bản AC viết lại.
@@ -58,10 +59,10 @@ Lặp:
 4. **Kết quả test:**
    - **PASS** → **`engine_advance {taskId, commit:true, files:[đúng các file agent báo đã sửa/tạo], message:"<type>: M<x> - T<n> <English desc>"}`** — engine chỉ stage + commit các file đó (R8). KHÔNG truyền thư mục của `[file:]` (task khác có thể đang tạo file trong cùng thư mục). → Bookkeeping (Bước 3) → quay lại 1 (task phụ thuộc vừa được mở khóa).
    - **FAILED** → spawn lại dev cho task đó (mục 2, kèm output lỗi). Engine đếm retry: 2 lỗi giống nhau = cảnh báo, 3 hoặc chạm `maxRetries` = BLOCKED.
-   - **BLOCKED** → ghi `failure:` vào `agents/KNOWLEDGE.md`; engine tự block mọi task phụ thuộc nó (báo trong output); các nhánh khác chạy tiếp.
-5. **`engine_ready` báo DONE** (không task nào đang chạy hoặc sẵn sàng) → thoát vòng. Trong lúc chờ kết quả agent mà không còn việc gì → `wait`, KHÔNG poll.
+   - **BLOCKED** → engine tự block mọi task phụ thuộc nó (báo trong output); các nhánh khác chạy tiếp. Đọc output lỗi, chẩn đoán, rồi **`engine_unblock {taskId, diagnosis, action}`**: `retry` (nguyên nhân nằm ngoài task, đã xử lý), `split` (truyền `tasks` thay thế; task phụ thuộc chờ các task mới) hoặc `drop` (không cần nữa; task phụ thuộc chạy tiếp). Engine tự ghi `failure:` vào `agents/KNOWLEDGE.md` và mở lại các task bị block dây chuyền. Không chẩn đoán được (auto) → SKIP + NEEDS-CONFIRM.
+5. **`engine_ready` báo `TASKS DONE, goal INCOMPLETE`** → gắn bằng chứng cho từng AC bằng **`engine_accept {criterion, kind}`**: `verify` (`taskId` của task done đã verify gánh AC đó), `file` (`path`+`line`) hoặc `shot` (ảnh chụp sau khi plan bắt đầu, vd. UAT bằng browser). AC chưa quan sát được thì để `incomplete` và báo đúng như vậy, KHÔNG coi là đạt. **`engine_ready` báo DONE** (mọi task xong + mọi AC có bằng chứng; không task nào đang chạy hoặc sẵn sàng) → thoát vòng. Trong lúc chờ kết quả agent mà không còn việc gì → `wait`, KHÔNG poll.
 
-> Task lớn/rủi ro (sửa nhiều file lõi) → cô lập bằng **`engine_worktree`** (open → work → merge squash → remove).
+> Task lớn/rủi ro (sửa nhiều file lõi) → **`engine_ready {limit, worktree: true}`**: mỗi task một worktree + nhánh riêng (đường dẫn trong output — prompt dev phải ghi "chỉ sửa trong <path>"), `engine_verify` chạy trong worktree, `engine_advance` tự commit ở đó, cho reviewer độc lập chấm diff, chỉ PASS mới squash-merge vào nhánh hiện tại và chạy lại verify trên cây đã merge trước khi commit (FAIL → trả lỗi, task về chưa verify → dev lại; cùng diff không được chấm lại; checkout chính có file staged → từ chối). Không cần truyền `files`. Cả slice → **`engine_worktree`** (open → work → merge squash → remove).
 
 ## Bước 3 — Bookkeeping mỗi task done (engine KHÔNG quản)
 
