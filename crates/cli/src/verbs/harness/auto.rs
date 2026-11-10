@@ -52,8 +52,8 @@ pub(crate) fn harness_auto(env: &env_detect::Env, _force: bool) -> Result<()> {
 
     // 4. Re-index so the agent learns the current tree.
     if which::which("codegraph").is_ok() {
-        ui::step("codegraph index (re-learn current state)");
-        let _ = Command::new("codegraph").arg("index").arg(&root).status();
+        ui::step("codegraph sync (re-learn changed files)");
+        let _ = Command::new("codegraph").arg("sync").arg(&root).status();
     }
     deploy::index_codebase_memory(&root);
 

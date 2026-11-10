@@ -720,16 +720,10 @@ pub(crate) fn deregister_retired_mcps(home: &Path) -> Result<()> {
 /// prevents). Unknown/user-added servers get no catalog — the snapshot says so.
 fn known_mcp_tool_catalog(server: &str) -> &'static [(&'static str, &'static str)] {
     match server {
+        // `codegraph serve --mcp` exposes only `codegraph_explore`; query/node/callers/
+        // callees/impact/status are CLI verbs (`bash`), not MCP tools.
         "codegraph" => &[
-            ("codegraph_explore", "call flow across files: ~50 KB of related source + call paths; locate with `codegraph query` instead"),
-            ("codegraph_search", "search symbols/files in the local .codegraph index"),
-            ("codegraph_context", "context bundle for a symbol/query"),
-            ("codegraph_callers", "who calls this symbol"),
-            ("codegraph_callees", "what this symbol calls"),
-            ("codegraph_impact", "blast radius / impacted symbols"),
-            ("codegraph_node", "read one indexed node/symbol"),
-            ("codegraph_status", "index status and pending sync"),
-            ("codegraph_files", "indexed files list"),
+            ("codegraph_explore", "call flow across files: ~50 KB of related source + call paths; locate with CLI `codegraph query|node|callers|impact` instead"),
         ],
         "codebase-memory-mcp" => &[
             ("search_graph", "BM25 / name-pattern / semantic search over functions, classes, routes"),

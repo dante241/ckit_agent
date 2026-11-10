@@ -67,8 +67,8 @@ fn refresh_once(env: &env_detect::Env, pull: bool, commit: bool) -> Result<()> {
     let _ = consolidate_learnings(&root);
     seed_gitleaks_hook(&root);
     if which::which("codegraph").is_ok() {
-        ui::step("codegraph index (re-learn current state)");
-        let _ = Command::new("codegraph").arg("index").arg(&root).status();
+        ui::step("codegraph sync (re-learn changed files)");
+        let _ = Command::new("codegraph").arg("sync").arg(&root).status();
     }
     crate::verbs::skill::deploy::index_codebase_memory(&root);
     if commit {
@@ -155,7 +155,7 @@ fn commit_memory(root: &Path) {
 
 /// Install/remove the periodic `8sync harness up` background job (systemd user
 /// timer on Linux, launchd LaunchAgent on macOS, Scheduled Task on Windows).
-/// Bounded to its own cgroup on Linux so a heavy `codegraph index` tick can't
+/// Bounded to its own cgroup on Linux so a heavy codegraph/cbm re-index tick can't
 /// OOM the machine.
 fn manage_timer(spec: &str) -> Result<()> {
     if spec.eq_ignore_ascii_case("off") {

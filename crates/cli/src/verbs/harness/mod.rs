@@ -215,7 +215,7 @@ fn print_help() {
     println!("{}", crate::brand::render("  8sync harness global            apply omp rules MACHINE-WIDE: ~/.omp skills+APPEND_SYSTEM+MCP → ALL projects, + Anthropic token defaults"));
     println!("{}", crate::brand::render("  8sync harness global --sweep [DIR]  …and stamp skills/memory into every omp project (agents/ or AGENTS.md) under DIR (default ~/Projects)"));
     println!("{}", crate::brand::render("  8sync harness init              full bootstrap: skills + codegraph + AGENTS.md + memory + CHANGELOG + .gitignore"));
-    println!("{}", crate::brand::render("  8sync harness up                refresh: re-inject rules + KNOWLEDGE breadcrumb + codegraph index"));
+    println!("{}", crate::brand::render("  8sync harness up                refresh: re-inject rules + KNOWLEDGE breadcrumb + codegraph sync"));
     println!("{}", crate::brand::render("  8sync harness up --pull         …and re-pull registered skills from their source repos (network)"));
     println!("{}", crate::brand::render("  8sync harness up --commit       …and git-commit the refreshed agent memory (portable; default off)"));
     println!("{}", crate::brand::render("  8sync harness up --loop <dur>   foreground refresh every <dur> (10m, 1h, 30s)"));
