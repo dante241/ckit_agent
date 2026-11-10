@@ -12,6 +12,12 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.56] - 2026-11-10
+
+### Fixed
+- `capabilities.md` (bảng tool MCP) chỉ liệt kê `codegraph_explore` cho server codegraph — đúng tool duy nhất `codegraph serve --mcp` expose. Trước đây ghi thêm 8 tool không tồn tại (`codegraph_search/callers/impact/…`), agent gọi theo là lỗi; các verb đó chỉ có ở CLI `codegraph`.
+- `ckit harness` / `harness up` (cả `--loop`/`--timer`) cập nhật index bằng `codegraph sync` (chỉ file đã đổi) thay vì `codegraph index` (rebuild toàn bộ mỗi lượt).
+
 ## [0.1.55] - 2026-11-10
 
 ### Added
