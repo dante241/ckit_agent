@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.55] - 2026-11-10
+
 ### Added
 - Engine `engine_unblock {taskId, diagnosis, action: retry|split|drop}`: một task BLOCKED không còn là ngõ cụt. Chẩn đoán bắt buộc và được engine tự ghi thành `failure:` trong `agents/KNOWLEDGE.md`; `retry` reset bộ đếm, `split` thay task bằng các task mới (task phụ thuộc chờ chúng), `drop` đóng task và gỡ chặn cho task phụ thuộc. Task bị block dây chuyền tự mở lại.
 - Engine kiểm độ công bằng của test red-first: task `red: true` mới phải có `spec` (tiêu chí nghiệm thu). `engine_red` cho một reviewer độc lập (`omp -p --no-tools`, phiên mới, không thấy công việc) chấm test theo spec trước; test bám tên/đường dẫn/số lần gọi/câu thông báo/giá trị mặc định mà spec không nêu, hoặc test rỗng, bị từ chối kèm lý do. Đúng bộ test đã bị chấm UNFAIR thì không được chấm lại (gọi lại không "đổ xúc xắc"). Sau khi RED, sửa/xoá file test đã duyệt, hoặc thêm file mới cùng loại trong thư mục test (vd. một `conftest.py` bỏ qua test), tốn một lượt verify; file khác loại do test tự sinh ra (snapshot, fixture) không tính. Model reviewer: `CKIT_ENGINE_REVIEW_MODEL` (mặc định model của omp).
