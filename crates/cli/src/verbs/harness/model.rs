@@ -13,6 +13,10 @@
 //! one shot — the optimal split: the cheap model does the mechanical bulk
 //! (default/task/smol/tiny/commit/advisor), the strong model does the thinking
 //! (vision/slow high · plan/designer/reviewer xhigh). Keeps both layers in sync.
+//!
+//! **Presets** `8sync harness model save <name>` / `use <name>` snapshot and
+//! restore the whole `modelRoles` block (`~/.config/8sync/model-presets/`), so
+//! switching between hand-tuned role sets is one command.
 use anyhow::Result;
 
 use crate::{assets, env_detect, ui};
@@ -48,6 +52,18 @@ pub(crate) fn harness_model(env: &env_detect::Env, args: &[String]) -> Result<()
         ui::ok(&format!("advisor = {on} → {}", path.display()));
         ui::info("takes effect on the next `8sync .`/`8sync new`/`8sync ai` launch (restart running omp sessions).");
         return Ok(());
+    }
+
+    // `harness model save|use <name>`: snapshot / restore omp's whole
+    // `modelRoles` block. Checked before set mode, which takes any `<k> <v>`.
+    if args.len() == 2 && matches!(args[0].trim(), "save" | "use") {
+        let dir = crate::brand::config_dir(&env.home).join("model-presets");
+        let name = args[1].trim();
+        return if args[0].trim() == "save" {
+            save_preset(&dir, &omp_cfg, name)
+        } else {
+            use_preset(&dir, &omp_cfg, name)
+        };
     }
 
     // Set mode: `harness model <key> <value>` (single 8sync-routing key).
@@ -88,6 +104,11 @@ pub(crate) fn harness_model(env: &env_detect::Env, args: &[String]) -> Result<()
     }
     println!();
     print_omp_roles(&omp_cfg);
+    let presets = preset_names(&crate::brand::config_dir(&env.home).join("model-presets"));
+    ui::info(&format!(
+        "presets: 8sync harness model save <name> | use <name>   (saved: {})",
+        if presets.is_empty() { "none".to_string() } else { presets.join(", ") }
+    ));
     ui::info("combo: 8sync harness model claude+glm   (set ALL omp roles: opus=thinking, glm=mechanical)");
     ui::info("aliases: claude|opus → anthropic/claude-opus-4-8 · sonnet → sonnet-5 · glm|zai → zai/glm-5.2");
     ui::info("one role: 8sync harness model <default|plan|smol|slow | review|debug|code|trivial> <model>");
@@ -208,10 +229,109 @@ fn print_omp_roles(omp_cfg: &std::path::Path) {
     println!();
 }
 
+/// Line range of the top-level `modelRoles:` block (header + indented body).
+fn roles_block(lines: &[String]) -> Option<std::ops::Range<usize>> {
+    let s = lines.iter().position(|l| l.starts_with("modelRoles:"))?;
+    let mut e = s + 1;
+    while e < lines.len() && lines[e].starts_with([' ', '\t']) {
+        e += 1;
+    }
+    Some(s..e)
+}
+
+fn write_lines(path: &std::path::Path, lines: &[String]) -> Result<()> {
+    let mut out = lines.join("\n");
+    out.push('\n');
+    std::fs::write(path, out)?;
+    Ok(())
+}
+
+fn preset_path(dir: &std::path::Path, name: &str) -> Result<std::path::PathBuf> {
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        anyhow::bail!("preset name must be [A-Za-z0-9_-], got `{name}`");
+    }
+    Ok(dir.join(format!("{name}.yml")))
+}
+
+fn preset_names(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "yml"))
+        .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .collect();
+    names.sort();
+    names
+}
+
+/// Snapshot the live omp `modelRoles` block into `<dir>/<name>.yml`, verbatim.
+fn save_preset(dir: &std::path::Path, omp_cfg: &std::path::Path, name: &str) -> Result<()> {
+    let path = preset_path(dir, name)?;
+    let raw = std::fs::read_to_string(omp_cfg)
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", omp_cfg.display()))?;
+    let lines: Vec<String> = raw.lines().map(String::from).collect();
+    let Some(r) = roles_block(&lines) else {
+        anyhow::bail!("no modelRoles block in {} — nothing to save", omp_cfg.display());
+    };
+    std::fs::create_dir_all(dir)?;
+    write_lines(&path, &lines[r])?;
+    ui::ok(&format!("saved preset `{name}` → {}", path.display()));
+    ui::info(&format!("restore: 8sync harness model use {name}   ·   the file is plain YAML, edit it freely"));
+    Ok(())
+}
+
+/// Replace the live omp `modelRoles` block with a saved preset; every other
+/// config key is left untouched.
+fn use_preset(dir: &std::path::Path, omp_cfg: &std::path::Path, name: &str) -> Result<()> {
+    let path = preset_path(dir, name)?;
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        let saved = preset_names(dir);
+        anyhow::bail!(
+            "no preset `{name}` (saved: {})",
+            if saved.is_empty() { "none".to_string() } else { saved.join(", ") }
+        );
+    };
+    let block: Vec<String> = raw.lines().filter(|l| !l.trim().is_empty()).map(String::from).collect();
+    // A hand-edited preset with a stray top-level line would inject a foreign
+    // key into config.yml.
+    let valid = block.first().is_some_and(|l| l.trim_end() == "modelRoles:")
+        && block[1..].iter().all(|l| l.starts_with([' ', '\t']));
+    if !valid || block.len() < 2 {
+        anyhow::bail!("{} is not a `modelRoles:` block — nothing written", path.display());
+    }
+
+    let mut lines: Vec<String> = std::fs::read_to_string(omp_cfg)
+        .unwrap_or_default()
+        .lines()
+        .map(String::from)
+        .collect();
+    match roles_block(&lines) {
+        Some(r) => {
+            lines.splice(r, block);
+        }
+        None => {
+            lines.splice(0..0, block);
+        }
+    }
+    if let Some(parent) = omp_cfg.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    write_lines(omp_cfg, &lines)?;
+    ui::ok(&format!("applied preset `{name}`"));
+    println!();
+    print_omp_roles(omp_cfg);
+    ui::info("takes effect on the NEXT omp session (start a new `8sync ai`/`8sync .`).");
+    Ok(())
+}
+
 /// Rewrite the `modelRoles:` block + `task.agentModelOverrides.reviewer` in an
-/// omp `config.yml`, preserving every other key. Line-based (no serde_yaml dep):
-/// the file is machine-written and flat, so block replacement is robust and
-/// keeps the user's layout for the keys we don't touch.
+/// omp `config.yml`, preserving every other key — including roles already in
+/// the block that `roles` does not name (memory, web, custom roles).
+/// Line-based (no serde_yaml dep): the file is machine-written and flat, so
+/// block replacement is robust and keeps the user's layout for the keys we
+/// don't touch.
 fn apply_omp_roles(
     omp_cfg: &std::path::Path,
     roles: &[(&str, String)],
@@ -230,16 +350,15 @@ fn apply_omp_roles(
     }
 
     // Replace the existing top-level `modelRoles:` block, else prepend it.
-    let start = lines.iter().position(|l| {
-        !l.starts_with([' ', '\t']) && l.trim_start().starts_with("modelRoles:")
-    });
-    match start {
-        Some(s) => {
-            let mut e = s + 1;
-            while e < lines.len() && lines[e].starts_with([' ', '\t']) {
-                e += 1;
+    match roles_block(&lines) {
+        Some(r) => {
+            for l in &lines[r.start + 1..r.end] {
+                let key = l.trim().split(':').next().unwrap_or("");
+                if !key.is_empty() && !roles.iter().any(|(k, _)| *k == key) {
+                    block.push(l.clone());
+                }
             }
-            lines.splice(s..e, block);
+            lines.splice(r, block);
         }
         None => {
             lines.splice(0..0, block);
@@ -264,12 +383,7 @@ fn apply_omp_roles(
         lines.push(rline);
     }
 
-    let mut out = lines.join("\n");
-    if !out.ends_with('\n') {
-        out.push('\n');
-    }
-    std::fs::write(omp_cfg, out)?;
-    Ok(())
+    write_lines(omp_cfg, &lines)
 }
 
 /// Set `[section].key = value` in a `models.toml` document, creating the table
@@ -350,6 +464,43 @@ mod advisor_tests {
         assert!(set_advisor_toml(&p, false).is_err());
         assert!(set_model_toml(&p, "tasks", "code", "glm").is_err());
         assert_eq!(std::fs::read_to_string(&p).unwrap(), broken);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod roles_tests {
+    use super::*;
+
+    #[test]
+    fn combo_keeps_unowned_roles_and_preset_restores_the_block() {
+        let dir = std::env::temp_dir().join(format!("ckit-roles-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("config.yml");
+        let original = "theme: dark\nmodelRoles:\n  default: a/x:high\n  memory: b/y:medium\n  web: web/parallel\nretry:\n  fallbackChains:\n    a/x:\n      - a/x\n";
+        std::fs::write(&cfg, original).unwrap();
+
+        save_preset(&dir, &cfg, "mine").unwrap();
+
+        apply_omp_roles(&cfg, &[("default", "c/z:high".to_string())], "c/z:xhigh").unwrap();
+        let after = std::fs::read_to_string(&cfg).unwrap();
+        assert!(after.contains("  default: c/z:high\n"));
+        assert!(!after.contains("a/x:high"));
+        assert!(after.contains("  memory: b/y:medium\n"));
+        assert!(after.contains("  web: web/parallel\n"));
+
+        // Restoring swaps only the roles block: the reviewer override the combo
+        // added and every unrelated key stay.
+        use_preset(&dir, &cfg, "mine").unwrap();
+        let restored = std::fs::read_to_string(&cfg).unwrap();
+        assert!(restored.starts_with("theme: dark\nmodelRoles:\n  default: a/x:high\n  memory: b/y:medium\n  web: web/parallel\nretry:\n"));
+        assert!(restored.contains("    reviewer: c/z:xhigh\n"));
+
+        // A preset that is not a roles block must not touch config.yml.
+        std::fs::write(dir.join("bad.yml"), "modelRoles:\n  default: a/x\ntheme: light\n").unwrap();
+        assert!(use_preset(&dir, &cfg, "bad").is_err());
+        assert!(use_preset(&dir, &cfg, "../config").is_err());
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), restored);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

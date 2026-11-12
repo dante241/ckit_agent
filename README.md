@@ -210,6 +210,7 @@ System packages (`pacman -Syu`) are **not** run automatically — you decide whe
 | `ckit harness toolstats` | SQLite tracker: optimizer rate (codegraph/cbm/serena) vs fallback (grep/read) + failures per tool |
 | `ckit harness compaction [pct]` | View/set the omp auto-compaction threshold (anti-forget; default 50%) |
 | `ckit harness model [k v]` | View/edit `~/.config/ckit/models.toml` (routing for `/auto` + `ckit ai`) |
+| `ckit harness model save\|use <name>` | Snapshot / restore omp's whole `modelRoles` set (switch model presets in one command) |
 
 ### Skill system
 

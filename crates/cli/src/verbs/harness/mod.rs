@@ -226,6 +226,7 @@ fn print_help() {
     println!("{}", crate::brand::render("  8sync harness eval [--baseline] [--runs N]  run the quality task-suite through omp N× per task; --baseline saves the reference"));
     println!("{}", crate::brand::render("  8sync harness compaction [pct]  view/set omp auto-compaction threshold (anti-forget; default 50%)"));
     println!("{}", crate::brand::render("  8sync harness model [combo|k v]  view/set model routing; combo `model=claude+glm` sets ALL omp roles (opus=think, glm=work)"));
+    println!("{}", crate::brand::render("  8sync harness model save|use <name>  snapshot / restore omp's whole modelRoles set (switch presets in one command)"));
     println!("{}", crate::brand::render("  8sync harness gateway [apply|key|verify]  deploy/verify omp model-gateway (9router + sonnet-5 thinking fix)"));
     println!("{}", crate::brand::render("  8sync harness add-local-model <path> [name]  serve a local GGUF via mistral.rs (Rust) + register as omp `local/<name>`"));
     println!("{}", crate::brand::render("  8sync harness add-model <provider/model> --url <baseUrl>  register a REMOTE model omp's catalog lacks (custom provider)"));
