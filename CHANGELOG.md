@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.57] - 2026-11-12
+
 ### Added
 - `ckit harness model save <tên>` / `use <tên>`: lưu và nạp lại nguyên block `modelRoles` của omp (`~/.config/ckit/model-presets/<tên>.yml`, YAML thường, sửa tay được), để chuyển giữa các bộ model bằng một lệnh thay vì sửa từng role trong `/model`. `ckit harness model` liệt kê preset đã lưu.
 
