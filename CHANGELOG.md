@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.59] - 2026-11-15
+
 ### Changed
 - `ckit feature run`: báo cáo chuyển vào thư mục feature, `agents/planning/<slug>/RUN-REPORT.md` (trước là `agents/planning/NIGHT-REPORT.md`; phase cuối đã archive thì nằm trong `_archive/<slug>/`). Nhánh tạo bằng `--branch` đổi tên thành `<slug>-run-<stamp>`. Lệnh dùng cho mọi lúc không ngồi máy, không chỉ qua đêm.
 
