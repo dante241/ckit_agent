@@ -8,7 +8,9 @@ FEATURE_DIR defaults to the active feature (agents/planning/ACTIVE.md).
 plan          Mx-NN-PLAN.md: a task that carries [AC:] must have [verify:]; when
               its tier is not verify-only, the verify must contain a real check,
               not only syntax/existence probes (php -l, node --check, test -s, ls, cat).
-              [trivial] exempts a task. A must-test task without [red: <tests>] is a warning.
+              [trivial] exempts a task. A must-test task without [red: <tests>] is a warning,
+              and so is a [red:] task with no "Hợp đồng:" line (its tests have no stated API to
+              bind to, so the red-first fairness audit tends to refuse them).
 verification  Mx-VERIFICATION.md: every Verdict cell is exactly PASS, FAIL or
               NEEDS-CONFIRM ("PASS (… NEEDS-CONFIRM)" is a NEEDS-CONFIRM in disguise);
               every NEEDS-CONFIRM AC has a row with an owner in the NEEDS-CONFIRM table
@@ -26,6 +28,8 @@ VERDICTS = {'PASS', 'FAIL', 'NEEDS-CONFIRM'}
 AC_RE = re.compile(r'\bAC-\d+\b')
 TAG_RE = re.compile(r'\[([a-zA-Z]+):\s*([^\]]*)\]')
 TASK_RE = re.compile(r'^\s*-\s*\[[ xX~]\]\s*(T\d+)\b(.*)$')
+# The task's contract line: `  - Hợp đồng: …` under the task, or inline in it.
+CONTRACT_RE = re.compile(r'(Hợp đồng|Contract)\s*:', re.I)
 # Checks that prove only that a file parses or exists, never behaviour.
 WEAK = [re.compile(p) for p in (
     r'^(\$\w+|php)\s+-l\b', r'^node\s+--check\b', r'^(test|\[)\s+-[sfed]\b',
@@ -77,7 +81,8 @@ def check_plan(pdir: Path, errors: list[str], warnings: list[str]) -> None:
         errors.append(f'{pdir.name}: no *-PLAN.md')
         return
     for plan in plans:
-        for line in plan.read_text(encoding='utf-8').splitlines():
+        lines = plan.read_text(encoding='utf-8').splitlines()
+        for i, line in enumerate(lines):
             m = TASK_RE.match(line)
             if not m:
                 continue
@@ -86,6 +91,14 @@ def check_plan(pdir: Path, errors: list[str], warnings: list[str]) -> None:
             trivial = bool(re.search(r'\[trivial\]', rest, flags=re.I))
             acs = AC_RE.findall(tags.get('ac', ''))
             where = f'{plan.name} {key}'
+            # Indented lines right under the task belong to it (until the next task or a blank/unindented line).
+            body = [rest]
+            for nxt in lines[i + 1:]:
+                if TASK_RE.match(nxt) or not nxt.startswith((' ', '\t')):
+                    break
+                body.append(nxt)
+            if 'red' in tags and not any(CONTRACT_RE.search(b) for b in body):
+                warnings.append(f'{where}: [red:] task without a "Hợp đồng:" line — state the API its tests may bind to (signatures, error codes, file layout)')
             if trivial and acs:
                 errors.append(f'{where}: [trivial] but carries {",".join(acs)} — a task that proves an AC needs a [verify:]')
                 continue

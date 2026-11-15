@@ -344,6 +344,30 @@ export default function (pi: ExtensionAPI) {
     return { ok: r.status === 0, output, code: r.status };
   }
 
+  /**
+   * A formatter check: it fails on layout, never on behaviour, so it can't be the red.
+   * Linters (clippy, eslint, go vet…) are left out on purpose — they also fail when red
+   * tests call code that does not exist yet, which is a legitimate red.
+   */
+  const FORMAT_STEP =
+    /\b(fmt\b.*--check|prettier\b.*--check|black\b.*--check|ruff\s+format\b.*--check|isort\b.*--check|gofmt\b|php-cs-fixer\b.*--dry-run|pint\b.*--test|biome\s+format\b|dprint\s+check|clang-format\b.*--dry-run)/;
+
+  /**
+   * The first formatter step of a `a && b && c` verify command that fails on its own
+   * (with the steps before it, so a leading `cd x` still applies), or null. A red whose
+   * failure is formatting proves nothing about behaviour, and formatting the tests later
+   * changes their audited bytes — every verify then fails the red-first guard.
+   */
+  function failingFormatStep(cmd: string, cwd: string): { step: string; output: string } | null {
+    const steps = cmd.split(/\s*&&\s*/);
+    for (let i = 0; i < steps.length; i++) {
+      if (!FORMAT_STEP.test(steps[i])) continue;
+      const r = run(steps.slice(0, i + 1).join(" && "), cwd);
+      if (!r.ok) return { step: steps[i], output: r.output };
+    }
+    return null;
+  }
+
   /** FNV-1a 32-bit fingerprint of a failure output — lets the no-progress
    * detector spot byte-identical consecutive failures (doom-loop guard). */
   function fnv1a(s: string): string {
@@ -758,6 +782,12 @@ export default function (pi: ExtensionAPI) {
       }
       if (failed.every((r) => r.code === 126 || r.code === 127)) {
         return text(`REFUSED ${target.id}: every failure is exit 126/127 (command not found / not executable) — that is a broken command, not a red test:\n\n${failed.map((r) => `$ ${r.cmd}\n${r.output}`).join("\n\n")}`);
+      }
+      for (const r of failed) {
+        const fmt = failingFormatStep(r.cmd, dir);
+        if (fmt) {
+          return text(`REFUSED ${target.id}: the red comes from a formatter check, not from a test — \`${fmt.step}\` fails:\n${fmt.output.slice(0, 600)}\n\nRun the project's formatter on ${target.tests.join(", ") || "the task's tests"} (e.g. \`cargo fmt\`, \`prettier --write\`), then call engine_red again. Never reformat the tests after the red: the red-first guard treats any byte change as new tests.`);
+        }
       }
       const excerpt = failed.map((r) => `$ ${r.cmd} (exit ${r.code})\n${r.output.slice(0, 600)}`).join("\n\n");
       // The audit may have rewritten state: reload so its verdict is kept.
