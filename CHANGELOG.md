@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.60] - 2026-11-16
+
 ### Changed
 - Workflow `/feature` giảm chi phí điều phối (đo trên lần chạy M0 của một feature thật: context của main tăng 43k → 325k token, cache-read 35M, main tốn ngang toàn bộ dev subagent cộng lại):
   - Mỗi bước (new · plan · go · ship) một session mới; `ckit feature run` chạy `plan --auto` → `go --auto` → `ship --auto` thành 3 process riêng (trước gộp plan+go), bỏ bước đã xong theo STATE và dừng nếu bước plan không đưa STATE sang `execute-phase`.
