@@ -11,6 +11,10 @@ plan          Mx-NN-PLAN.md: a task that carries [AC:] must have [verify:]; when
               [trivial] exempts a task. A must-test task without [red: <tests>] is a warning,
               and so is a [red:] task with no "Hợp đồng:" line (its tests have no stated API to
               bind to, so the red-first fairness audit tends to refuse them).
+              Mx-CONTEXT.md: every rule code in the AC table's Nguồn column (AR-12, BR-04...;
+              not UC/US/AC) must be quoted under "Luật trích" - task specs carry only the
+              CONTEXT, so an unquoted rule reaches no dev, tester or reviewer. A must-test AC
+              not carried by an [acceptance] task with a [verify:] is a warning.
 verification  Mx-VERIFICATION.md: every Verdict cell is exactly PASS, FAIL or
               NEEDS-CONFIRM ("PASS (… NEEDS-CONFIRM)" is a NEEDS-CONFIRM in disguise);
               every NEEDS-CONFIRM AC has a row with an owner in the NEEDS-CONFIRM table
@@ -27,9 +31,12 @@ from pathlib import Path
 VERDICTS = {'PASS', 'FAIL', 'NEEDS-CONFIRM'}
 AC_RE = re.compile(r'\bAC-\d+\b')
 TAG_RE = re.compile(r'\[([a-zA-Z]+):\s*([^\]]*)\]')
-TASK_RE = re.compile(r'^\s*-\s*\[[ xX~]\]\s*(T\d+)\b(.*)$')
+TASK_RE = re.compile(r'^\s*-\s*\[[ xX~]\]\s*(T\d+|TZ)\b(.*)$')
 # The task's contract line: `  - Hợp đồng: …` under the task, or inline in it.
 CONTRACT_RE = re.compile(r'(Hợp đồng|Contract)\s*:', re.I)
+# Rule codes a Nguồn cell may cite; UC/US/AC are requirement ids, not rules to quote.
+RULE_RE = re.compile(r'\b([A-Z]{1,4})-\d+[a-z]?\b')
+NOT_RULES = {'UC', 'US', 'AC'}
 # Checks that prove only that a file parses or exists, never behaviour.
 WEAK = [re.compile(p) for p in (
     r'^(\$\w+|php)\s+-l\b', r'^node\s+--check\b', r'^(test|\[)\s+-[sfed]\b',
@@ -75,11 +82,45 @@ def is_weak(cmd: str) -> bool:
     return bool(parts) and all(any(w.search(p) for w in WEAK) for p in parts)
 
 
+def check_context(pdir: Path, acceptance_acs: set[str], errors: list[str], warnings: list[str]) -> None:
+    ctx = sorted(pdir.glob('*-CONTEXT.md'))
+    if not ctx:
+        return
+    text = ctx[0].read_text(encoding='utf-8')
+    quoted = section(text, r'Luật trích')
+    src_col = tier_col = None
+    missing: dict[str, list[str]] = {}
+    must_test_acs: set[str] = set()
+    for line in text.splitlines():
+        if not line.lstrip().startswith('|'):
+            src_col = tier_col = None  # a table ends at its first non-row line
+            continue
+        row = cells(line)
+        if 'Nguồn' in row:
+            src_col = row.index('Nguồn')
+            tier_col = row.index('Tier') if 'Tier' in row else None
+            continue
+        if src_col is None or not row or not AC_RE.fullmatch(row[0]) or len(row) <= src_col:
+            continue
+        ac = row[0]
+        for code in dict.fromkeys(m.group(0) for m in RULE_RE.finditer(row[src_col])):
+            if code.split('-')[0] not in NOT_RULES and not re.search(rf'\b{re.escape(code)}\b', quoted):
+                missing.setdefault(code, []).append(ac)
+        if tier_col is not None and len(row) > tier_col and row[tier_col].strip() == 'must-test':
+            must_test_acs.add(ac)
+    for code, acs in missing.items():
+        errors.append(f'{ctx[0].name}: {code} (cited by {",".join(acs)}) is not quoted under "Luật trích" — copy the rule verbatim so task specs carry it')
+    uncovered = sorted(must_test_acs - acceptance_acs)
+    if uncovered:
+        warnings.append(f'{pdir.name}: must-test {",".join(uncovered)} not carried by an [acceptance] task with [verify:] — add T0 (write the acceptance suite) + TZ (run it)')
+
+
 def check_plan(pdir: Path, errors: list[str], warnings: list[str]) -> None:
     plans = sorted(pdir.glob('*-PLAN.md'))
     if not plans:
         errors.append(f'{pdir.name}: no *-PLAN.md')
         return
+    acceptance_acs: set[str] = set()
     for plan in plans:
         lines = plan.read_text(encoding='utf-8').splitlines()
         for i, line in enumerate(lines):
@@ -89,7 +130,10 @@ def check_plan(pdir: Path, errors: list[str], warnings: list[str]) -> None:
             key, rest = m.group(1), m.group(2)
             tags = {k.lower(): v.strip() for k, v in TAG_RE.findall(rest)}
             trivial = bool(re.search(r'\[trivial\]', rest, flags=re.I))
+            acceptance = bool(re.search(r'\[acceptance\]', rest, flags=re.I))
             acs = AC_RE.findall(tags.get('ac', ''))
+            if acceptance and tags.get('verify', '').strip() not in {'', '—', '-'}:
+                acceptance_acs.update(acs)
             where = f'{plan.name} {key}'
             # Indented lines right under the task belong to it (until the next task or a blank/unindented line).
             body = [rest]
@@ -111,8 +155,9 @@ def check_plan(pdir: Path, errors: list[str], warnings: list[str]) -> None:
             tier = tags.get('tier', '')
             if 'verify-only' not in tier and is_weak(verify):
                 errors.append(f'{where}: [verify: {verify}] only checks syntax/existence — add the test that proves {",".join(acs)}')
-            if 'must-test' in tier and 'red' not in tags:
+            if 'must-test' in tier and 'red' not in tags and not acceptance:
                 warnings.append(f'{where}: must-test without [red: <test paths>] — red-first is not enforced for it')
+    check_context(pdir, acceptance_acs, errors, warnings)
 
 
 def check_verification(feature: Path, pdir: Path, phase: str, errors: list[str]) -> dict:

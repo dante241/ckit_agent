@@ -30,7 +30,22 @@
 
 | AC | UC | Nguồn | GIVEN / WHEN / THEN (đo được) | Cách verify | Tier | Task nguồn |
 |----|----|-------|-------------------------------|-------------|------|------------|
-| AC-01 | UC-01 | US-01·AC-02, BR-01 | GIVEN [tiền đề] WHEN [hành động] THEN [kết quả đo được]. Ví dụ: `[đầu vào] → [kết quả]`; biên: `[rỗng/trùng/hết quyền] → [kết quả]` | [lệnh/SQL/script/thao tác] | must-test / verify-sql / verify-only | T1 |
+| AC-01 | UC-01 | US-01·AC-02, BR-04 | GIVEN [tiền đề] WHEN [hành động] THEN [kết quả đo được]. Ví dụ: `[đầu vào] → [kết quả]`; biên: `[rỗng/trùng/hết quyền] → [kết quả]` | [lệnh/SQL/script/thao tác] | must-test / verify-sql / verify-only | T1 |
+
+### Mệnh đề (mỗi AC tách thành mệnh đề có mã — test, `engine_red` và ship bám theo mã)
+
+> Mỗi điều kiện THEN, mỗi ví dụ, mỗi trường hợp biên của AC = 1 mệnh đề `AC-NN.x`. Test nghiệm thu đặt tên theo mã (`ac01_a_…`). Mệnh đề không test tự động được → thêm `[manual]` + lý do (ship kiểm tay, verdict NEEDS-CONFIRM nếu bị chặn ngoài tầm).
+
+- AC-01.a: THEN [kết quả đo được của luồng chính]
+- AC-01.b: biên — [đầu vào rỗng/trùng/hết quyền] → [kết quả]
+- AC-01.c: [điều kiện chỉ kiểm được trên môi trường thật] [manual] — [lý do]
+
+### Luật trích (nguyên văn mọi mã luật ở cột Nguồn — AR/BR/E/D…, trừ UC/US/AC)
+
+> Dev, tester và reviewer của `engine_red` chỉ thấy spec của task; luật nào AC trích mà không chép vào đây thì không ai trong số họ đọc tới (lần chạy thật: 2 AC FAIL ở ship vì AR-12/AR-44 không nằm trong spec). `phase_gate.py --check plan` báo lỗi khi thiếu.
+
+- AR-12: "[chép nguyên văn]" — ARCHITECTURE.md §[mục]
+- BR-04: "[chép nguyên văn]" — [file đặc tả] §[mục]
 
 ### Chuyển phase (mã của phase này nhưng không có AC ở đây)
 

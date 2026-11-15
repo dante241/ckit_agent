@@ -12,6 +12,8 @@
 - [ ] T2: <việc>   [file: path]   [depends: —]    [verify: <lệnh>]   [skill: <name>]   [tier: verify-sql]    [UC: UC-02]   [AC: AC-05]
 - [ ] T3: <việc>   [file: path]   [depends: T1]   [verify: <lệnh>]   [skill: <name>]   [tier: verify-only]   [UC: UC-01]   [AC: AC-08]
 - [ ] T4: <việc không code: doc/config tĩnh>   [file: path]   [depends: —]   [trivial]   [skill: —]   [tier: verify-only]   [UC: UC-01]
+- [ ] T0: viết bộ test nghiệm thu — mỗi mệnh đề `AC-NN.x` (trừ `[manual]`) ≥1 test tên theo mã, black-box, từ CONTEXT + `Hợp đồng:`   [file: tests/acceptance/]   [depends: —]   [trivial]   [acceptance]   [skill: <test skill>]   [UC: UC-01,UC-02]
+- [ ] TZ: chạy bộ nghiệm thu   [file: —]   [depends: T0,T1,T2,T3]   [verify: <lệnh chạy riêng tests/acceptance>]   [acceptance]   [skill: —]   [tier: must-test]   [UC: UC-01,UC-02]   [AC: AC-01,AC-03,AC-05]
 
 ## Checkpoints / Gates
 

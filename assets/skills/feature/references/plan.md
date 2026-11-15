@@ -37,7 +37,9 @@ Mỗi `M<x>-CONTEXT.md` PHẢI có 3 mục dưới TRƯỚC khi plan. Đây là 
    - **Tier**: must-test / verify-sql / verify-only.
    - **Task nguồn**: AC này do task nào trong PLAN thỏa.
    - AC phải phủ HẾT Goal + map về contract export (ROADMAP). Mỗi UC của phase ⇒ ≥1 AC. Có đặc tả ngoài: mỗi mã của phase (`--phase M<x>`) ⇒ ≥1 AC có mã đó ở cột Nguồn, hoặc 1 dòng ở mục **Chuyển phase** (mã → phase nhận + lý do; đồng thời sửa cột Phase trong COVERAGE).
-4. Cuối mục ghi: **"Phase DONE khi mọi AC PASS, ghi ở M<x>-VERIFICATION.md (NEEDS-CONFIRM → `ship.md` Step 2.6). AC FAIL → không ship."**
+4. **Mệnh đề** (mục `### Mệnh đề` của CONTEXT) — mỗi AC tách thành mệnh đề có mã `AC-NN.a`, `.b`…: mỗi điều kiện THEN, mỗi ví dụ, mỗi trường hợp biên một dòng. Đây là đơn vị mà `engine_red` chấm độ phủ (thiếu assertion cho mệnh đề nào → INCOMPLETE), test nghiệm thu đặt tên theo, và ship chấm verdict. Mệnh đề không test tự động được (môi trường thật, thao tác tay) → `[manual]` + lý do, ngay lúc plan — không để tới khi bị từ chối.
+5. **Luật trích** (mục `### Luật trích`) — chép **nguyên văn** mọi mã luật ở cột Nguồn (AR/BR/E/D…, trừ UC/US/AC) kèm nơi lấy. Spec của task chỉ mang những gì nằm trong CONTEXT; luật chỉ được nhắc mã mà không chép thì dev, tester và reviewer không đọc tới (lần chạy thật: AC-02/AC-14 FAIL ở ship vì AR-12/AR-44 không có trong spec). `phase_gate.py --check plan` báo lỗi khi một mã ở cột Nguồn thiếu ở đây.
+6. Cuối mục ghi: **"Phase DONE khi mọi AC PASS, ghi ở M<x>-VERIFICATION.md (NEEDS-CONFIRM → `ship.md` Step 2.6). AC FAIL → không ship."**
 
 > Template Requirement scope: `| UC | Mô tả REQUIREMENTS.md | Trong phase này làm gì | Không làm ở phase này |`
 > Template AC: `| AC-01 | UC-15 | US-02·AC-03, BR-04 | GIVEN <tiền đề> WHEN <hành động> THEN <kết quả đo được> | <cách verify> | <tier> | <task> |`
@@ -69,6 +71,10 @@ Tạo `M<x>-NN-PLAN.md` (NN bắt đầu 01, dùng `templates/M-PLAN.md`). BẮT
 - **UC phục vụ**: task này phục vụ UC-ID nào trong `REQUIREMENTS.md`/Requirement scope (vd UC-15).
 - **AC thỏa**: task này thỏa AC-NN nào (truy ngược về CONTEXT). Mọi AC phải có ≥1 task thỏa; task không gắn AC/UC nào = nghi vấn thừa, soát lại.
 - **Hợp đồng** (dòng thụt `  - Hợp đồng:` ngay dưới task; BẮT BUỘC cho task tạo/đổi API công khai mà task khác hoặc test sẽ gọi): chữ ký hàm/method, tên type + field, **mã lỗi/thông báo** mà test sẽ so, bố cục file/thư mục trên đĩa, cờ CLI, route/endpoint. Đây là thứ test được phép bám: reviewer của `engine_red` từ chối test dựa vào tên/đường dẫn/mã lỗi mà spec không nêu — thiếu hợp đồng thì test viết đúng ý vẫn bị UNFAIR, phải viết lại (lần chạy thật: 4 lần từ chối + 1 lần plan lại engine chỉ vì hợp đồng nằm ngoài spec). Hợp đồng đi vào `spec` của engine task (`execute.md` Bước 1).
+- **Nghiệm thu trước** (BẮT BUỘC khi phase có AC tier must-test) — 2 task gắn `[acceptance]`:
+  - `T0` **viết bộ test nghiệm thu**: `[file: <thư mục test nghiệm thu, vd tests/acceptance/>]` `[depends: —]` `[trivial]` `[acceptance]` — do **tester** viết ngay khi `go` bắt đầu, chạy song song với các task code, từ CONTEXT (mệnh đề + luật trích) + các dòng `Hợp đồng:`, KHÔNG nhìn code. Mỗi mệnh đề (trừ `[manual]`) ≥1 test, tên theo mã (`ac04_b_disabled_param_not_sent`); black-box qua API công khai/CLI, được đi xuyên nhiều module (đây là chỗ bắt hành vi mà test của từng task không thấy). `[trivial]` vì lúc đó code chưa có nên chưa chạy được — bằng chứng nằm ở `TZ`.
+  - `TZ` **chạy bộ nghiệm thu**: `[file: —]` `[depends: T0 + mọi task code]` `[verify: <lệnh chạy riêng bộ nghiệm thu>]` `[acceptance]` `[tier: must-test]` `[AC: mọi AC must-test]`. Engine chỉ báo phase xong khi `TZ` xanh; `engine_accept` gắn bằng chứng các AC qua `TZ`.
+  Vì sao: verify của từng task chỉ chứng minh code pass test do chính dev viết; lần chạy thật để lọt 6/14 AC tới ship (mệnh đề không ai test, hành vi xuyên crate). Bộ nghiệm thu do người khác viết, từ hợp đồng, trước khi có code.
 
 Template PLAN:
 ```markdown
@@ -78,6 +84,8 @@ Template PLAN:
   - Hợp đồng: `fn send(req: &Request, opts: &SendOptions) -> Result<Outcome, HttpError>`; lỗi `http.timeout`, `http.too_many_redirects`; file `collections/<slug>/_collection.yaml`
 - [ ] T2: <việc>   [file: path]   [depends: —]    [verify: <lệnh>]   [skill: <name>]   [tier: verify-sql]   [UC: UC-16]   [AC: AC-05]
 - [ ] T3: <việc không code: doc/config tĩnh>   [file: path]   [depends: T1]   [trivial]   [skill: —]   [tier: verify-only]   [UC: UC-15]
+- [ ] T0: viết bộ test nghiệm thu theo mệnh đề AC   [file: tests/acceptance/]   [depends: —]   [trivial]   [acceptance]   [skill: <test skill>]   [UC: UC-15,UC-16]
+- [ ] TZ: chạy bộ nghiệm thu   [file: —]   [depends: T0,T1,T2]   [verify: <lệnh chạy tests/acceptance>]   [acceptance]   [skill: —]   [tier: must-test]   [UC: UC-15,UC-16]   [AC: AC-01,AC-03]
 ## Checkpoints / Gates
 - review dimensions: <từ config.workflow.review_dimensions>
 - **Acceptance**: phase done ⇔ mọi AC trong M<x>-CONTEXT PASS (verify ở /feature ship → M<x>-VERIFICATION.md). KHÔNG dùng DoD mơ hồ — dùng AC.
@@ -110,6 +118,8 @@ Khi chạy: spawn 1 `task` subagent `agent: reviewer` review **bản PLAN + bả
 - **Phủ UC/AC**: mọi UC trong Requirement scope có ≥1 AC? Mọi AC-NN có ≥1 task thỏa? Task nào không gắn UC/AC (nghi thừa)?
 - **Phụ thuộc đúng**: `[depends:]` có cạnh thừa (chặn song song vô lý) hoặc thiếu cạnh (2 task cùng file/tài nguyên dùng chung không phụ thuộc nhau → race)? `[verify:]` có scoped vào task không? **Độ rộng**: tầng nào chỉ 1 task mà tách được theo hợp đồng?
 - **Hợp đồng**: task tạo/đổi API công khai có dòng `Hợp đồng:` đủ thứ test sẽ bám (chữ ký, mã lỗi, bố cục file)? Test của task red có cần tên nào không nằm trong hợp đồng/AC?
+- **Mệnh đề + luật**: mỗi AC đã tách đủ mệnh đề (mọi THEN, ví dụ, biên)? Mệnh đề `[manual]` có lý do thật (không phải né việc viết test)? Mọi mã luật ở cột Nguồn có nguyên văn ở `### Luật trích`?
+- **Nghiệm thu**: phase có AC must-test thì có `T0` + `TZ` `[acceptance]`, `TZ` phụ thuộc mọi task code và gánh mọi AC must-test?
 - **Skill đúng**: cột `[skill:]` hợp lý? Task code mà `[skill: —]` → cờ đỏ.
 - **Thiếu task**: Goal/contract ROADMAP có phần nào chưa task nào phủ?
 - "Trả về ≤ 25 dòng: findings cụ thể (PLAN dòng nào) + 1 verdict: READY / NEEDS-FIX. KHÔNG hỏi lại." (Báo cáo dài thì ghi vào `M<x>-CONTEXT.md` mục Plan-review notes và chỉ trả verdict + đường dẫn.)

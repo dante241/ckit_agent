@@ -12,6 +12,17 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Fixed
+- `ckit up` (qua `harness global`) giờ tạo `~/.omp/shared/<group>/pack` cho mọi pack bundled trên máy mới. Trước đây chỉ refresh store đã có, nên máy chưa từng chạy `ckit .` trong repo dùng pack thì không có store. Store chỉ được load trong repo có `extensions` trỏ tới nó.
+
+## [0.1.62] - 2026-11-16
+
+### Added
+- `engine_red` giờ cho reviewer chấm thêm **độ phủ**: spec có mệnh đề, ví dụ hay luật trích mà test không assert thì bị từ chối với verdict INCOMPLETE và danh sách mã còn thiếu. Mệnh đề gắn `[manual]` được miễn. Trước đây reviewer chỉ xét test có công bằng không, nên test thiếu mệnh đề vẫn qua và lỗi chỉ lộ ra ở bước ship.
+- Engine đếm số lần `engine_red` từ chối mỗi task. Từ lần 3 output báo ESCALATE, tức chuyển task cho một agent rescue mới. Tới lần 6 thì task bị BLOCKED. Bộ đếm về 0 khi test được chấm FAIR hoặc sau `engine_unblock`. Trước đây một task có thể bị từ chối mãi khi chạy không người trông.
+- `/feature`: mỗi AC tách thành các mệnh đề có mã (`AC-NN.a`, `.b`…), và mục `### Luật trích` trong CONTEXT chép nguyên văn các luật mà cột Nguồn dẫn tới. Spec của task red gồm mệnh đề, luật trích và hợp đồng. Phase có AC must-test thêm 2 task `[acceptance]`: `T0` do tester viết bộ test nghiệm thu từ spec trước khi có code, `TZ` chạy bộ đó sau khi mọi task code xong. `execute.md` mô tả cách xử lý khi gặp INCOMPLETE, ESCALATE hoặc BLOCKED và khi `TZ` fail.
+- `phase_gate.py --check plan` báo lỗi khi một mã luật ở cột Nguồn (AR/BR/…, trừ UC/US/AC) không được chép trong `Luật trích`, và cảnh báo khi một AC must-test không có task `[acceptance]` nào có `[verify:]` gánh. Task `TZ` được nhận là task.
+
 ## [0.1.61] - 2026-11-16
 
 ### Fixed

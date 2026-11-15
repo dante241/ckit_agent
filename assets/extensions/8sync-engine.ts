@@ -47,8 +47,10 @@ interface EngineTask {
   auditHash: string;
   /** The test files that fingerprint covers (files a test run creates later are not part of it). */
   auditFiles: string[];
-  /** Last fairness verdict ("fair …" / "unfair …"); empty until audited. */
+  /** Last audit verdict ("fair …" / "unfair …" / "incomplete …"); empty until audited. */
   auditNote: string;
+  /** Audit refusals (unfair/incomplete) since the last fair verdict — drives escalation and the block. */
+  redRefusals: number;
   /** Repo-relative worktree the task runs in (engine_ready worktree:true); empty = main checkout. */
   worktree: string;
   branch: string;
@@ -110,6 +112,7 @@ export default function (pi: ExtensionAPI) {
     auditHash: z.string().default(""),
     auditFiles: z.array(z.string()).default(() => []),
     auditNote: z.string().default(""),
+    redRefusals: z.number().default(0),
     worktree: z.string().default(""),
     branch: z.string().default(""),
     failedReviewHash: z.string().default(""),
@@ -333,7 +336,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   function newTask(id: string, t: PlanTask): EngineTask {
-    return { id, key: t.key || id, title: t.title, status: "pending", retries: 0, verify: t.verify, depends: t.depends, files: t.files, note: "", verified: false, failStreak: 0, lastFailureHash: "", red: t.red, tests: t.tests, trivial: t.trivial, redProof: "", spec: t.spec, auditHash: "", auditFiles: [], auditNote: "", worktree: "", branch: "", failedReviewHash: "" };
+    return { id, key: t.key || id, title: t.title, status: "pending", retries: 0, verify: t.verify, depends: t.depends, files: t.files, note: "", verified: false, failStreak: 0, lastFailureHash: "", red: t.red, tests: t.tests, trivial: t.trivial, redProof: "", spec: t.spec, auditHash: "", auditFiles: [], auditNote: "", redRefusals: 0, worktree: "", branch: "", failedReviewHash: "" };
   }
 
   /** Non-login shell with omp's own env: a login shell re-sources /etc/profile, whose macOS path_helper puts /usr/bin first (wrong git/php). */
@@ -514,36 +517,78 @@ export default function (pi: ExtensionAPI) {
     return s.length > MAX_REVIEW_INPUT ? `${s.slice(0, MAX_REVIEW_INPUT)}\n…[truncated]` : s;
   }
 
+  /** Audit refusals before engine_red asks for a rescue agent, and before it blocks the task. */
+  const RED_ESCALATE_AT = 3;
+  const RED_BLOCK_AT = 6;
+
   /**
-   * Red-first fairness gate: the reviewer judges the tests against the spec
-   * before any code exists. Returns an error text, or null once the current test
-   * bytes carry a "fair" verdict (cached by fingerprint, so re-calls are free).
+   * Count one audit refusal of a red task and shape the reply: below RED_ESCALATE_AT the same
+   * worker fixes its tests; from there the orchestrator hands the task to a different agent
+   * (fresh eyes, every refusal reason) that may rewrite the tests or report a clause that
+   * cannot be tested automatically; at RED_BLOCK_AT the task is BLOCKED (engine_unblock re-specs
+   * or drops it). Without a cap an unattended run would loop on a clause no test can satisfy.
+   */
+  function refuseRed(t: EngineTask, message: string): string {
+    const state = load();
+    const live = state && findTask(state, t.id);
+    if (!state || !live) return message;
+    live.redRefusals += 1;
+    const n = live.redRefusals;
+    if (n >= RED_BLOCK_AT) {
+      live.status = "blocked";
+      live.note = `red-first audit refused the tests ${n} times (rescue agent included)`;
+      const dependents = propagateBlocked(state);
+      save(state);
+      const also = dependents.length ? `\nAlso blocked (depend on it): ${dependents.join(", ")}.` : "";
+      return `${message}\n\nBLOCKED ${t.id}: the audit refused the tests ${n} times, the rescue agent's attempts included.${also}\nDiagnose with the refusal reasons, then engine_unblock {taskId:"${t.id}", diagnosis, action}: split (same task, spec rewritten — e.g. a clause that cannot be tested automatically marked [manual]) or drop. Unattended: SKIP + NEEDS-CONFIRM.`;
+    }
+    save(state);
+    if (n >= RED_ESCALATE_AT) {
+      return `${message}\n\nESCALATE ${t.id} (refusal ${n}/${RED_BLOCK_AT}): the worker could not satisfy the audit in ${RED_ESCALATE_AT} tries. Hand the task to a DIFFERENT agent (new task subagent, not the one that wrote these tests; a stronger model role if available) with: the spec, the test paths, and every refusal reason so far. It either rewrites the tests to cover every clause fairly, or reports which clause cannot be tested automatically and why — then engine_unblock re-specs it after the block. ${RED_BLOCK_AT - n} audit(s) left before BLOCKED.`;
+    }
+    return `${message}\n(refusal ${n}/${RED_ESCALATE_AT} before a rescue agent takes over)`;
+  }
+
+  /**
+   * Red-first gate: before any code exists, the reviewer judges the tests against the spec —
+   * fair (no unstated names/paths/wording, not vacuous) and complete (every clause asserted,
+   * [manual] clauses exempt). Returns an error text, or null once the current test bytes carry
+   * a "fair" verdict (cached by fingerprint, so re-calls are free).
    */
   async function auditTests(t: EngineTask, signal?: AbortSignal): Promise<string | null> {
     const { files, hash } = readTests(t);
     if (!files.length) return `REFUSED ${t.id}: no test files found under ${t.tests.join(", ") || "(no tests paths)"} — write the tests first.`;
     if (t.auditHash === hash && t.auditNote.startsWith("fair")) return null;
-    if (t.auditHash === hash && t.auditNote.startsWith("unfair")) return `REFUSED ${t.id}: these exact tests were already judged UNFAIR (${t.auditNote}) — change them first; asking again does not re-roll the verdict.`;
+    if (t.auditHash === hash && (t.auditNote.startsWith("unfair") || t.auditNote.startsWith("incomplete"))) {
+      return refuseRed(t, `REFUSED ${t.id}: these exact tests were already judged ${t.auditNote.split(" ")[0].toUpperCase()} (${t.auditNote}) — change them first; asking again does not re-roll the verdict.`);
+    }
     const prompt = [
-      "You audit tests written BEFORE the implementation exists. Decide whether they are FAIR: every reasonable implementation that meets the spec must pass, and a wrong one must fail.",
-      "UNFAIR when a test depends on names, import paths, file layout, call counts, call order, exact message wording, or default values the spec does not state; asserts behaviour the spec does not ask for; or cannot fail for a wrong implementation (vacuous). Judge only fairness, not style.",
+      "You audit tests written BEFORE the implementation exists, against the spec below. Two questions, in this order:",
+      "1. FAIR? Every reasonable implementation that meets the spec must pass, and a wrong one must fail. UNFAIR when a test depends on names, import paths, file layout, call counts, call order, exact message wording, or default values the spec does not state; asserts behaviour the spec does not ask for; or cannot fail for a wrong implementation (vacuous).",
+      "2. COMPLETE? Every clause of the spec (each GIVEN/WHEN/THEN condition, each listed example or edge case, each quoted rule) must be checked by at least one assertion. A clause marked [manual] is exempt. INCOMPLETE names each clause no assertion checks.",
+      "Judge only these two, not style. Unfair wins over incomplete.",
       `Task: ${t.title}`,
       `Spec: ${t.spec}`,
       "Tests:",
       cap(files.map((f) => `--- ${f.path} ---\n${f.body}`).join("\n")),
-      'Reply with ONE line of JSON and nothing else: {"verdict":"fair"|"unfair","reasons":["<test>: <why>"]}',
+      'Reply with ONE line of JSON and nothing else: {"verdict":"fair"|"unfair"|"incomplete","reasons":["<test or clause>: <why>"]}',
     ].join("\n\n");
-    const r = await askReviewer(prompt, ["fair", "unfair"], signal);
-    if ("error" in r) return `REFUSED ${t.id}: the fairness audit could not run — ${r.error}`;
+    const r = await askReviewer(prompt, ["fair", "unfair", "incomplete"], signal);
+    if ("error" in r) return `REFUSED ${t.id}: the red-first audit could not run — ${r.error}`;
     const state = load();
     const live = state && findTask(state, t.id);
     if (!state || !live) return `REFUSED ${t.id}: plan changed during the audit — call again.`;
     live.auditHash = hash;
     live.auditFiles = files.map((f) => f.path);
     live.auditNote = `${r.verdict} ${new Date().toISOString()}${r.reasons.length ? `: ${r.reasons.join("; ")}` : ""}`;
+    if (r.verdict === "fair") live.redRefusals = 0;
     save(state);
     if (r.verdict === "fair") return null;
-    return `REFUSED ${t.id}: the reviewer judged the tests UNFAIR to the spec:\n  - ${r.reasons.join("\n  - ") || "(no reasons given)"}\nRewrite the tests so any implementation meeting the spec passes, then call engine_red again. The spec is the contract: a missing requirement means re-planning the task, not a test that assumes it.`;
+    const reasons = `  - ${r.reasons.join("\n  - ") || "(no reasons given)"}`;
+    if (r.verdict === "incomplete") {
+      return refuseRed(t, `REFUSED ${t.id}: the tests are INCOMPLETE — these spec clauses have no assertion:\n${reasons}\nAdd assertions for them (or, if a clause cannot be tested automatically, it needs [manual] in the spec — re-plan, do not drop it silently), then call engine_red again.`);
+    }
+    return refuseRed(t, `REFUSED ${t.id}: the reviewer judged the tests UNFAIR to the spec:\n${reasons}\nRewrite the tests so any implementation meeting the spec passes, then call engine_red again. The spec is the contract: a missing requirement means re-planning the task, not a test that assumes it.`);
   }
 
   function appendKnowledge(line: string): void {
@@ -746,7 +791,7 @@ export default function (pi: ExtensionAPI) {
     name: "engine_red",
     label: "Engine: red-first proof",
     description:
-      "For a red:true task: run its verify commands BEFORE the code change and require them to FAIL. If the task has a spec, an independent reviewer (fresh omp, no tools, never saw this session) first audits the tests against it and REFUSES unfair ones (tied to unstated names, paths, call counts, message wording, defaults, or vacuous). Refused when any of the task's non-test files already changed (git status), when the commands already pass (the test does not capture the behaviour), when every failure is exit 126/127 (command missing, not a real red), or when a formatter step of the verify (fmt --check, prettier --check, black --check…) fails (format the tests first). Records the failing output as evidence; engine_verify refuses the task until this is recorded, and later edits to the audited tests cost a verify attempt.",
+      "For a red:true task: run its verify commands BEFORE the code change and require them to FAIL. If the task has a spec, an independent reviewer (fresh omp, no tools, never saw this session) first audits the tests against it and REFUSES unfair ones (tied to unstated names, paths, call counts, message wording, defaults, or vacuous) and incomplete ones (a spec clause, example or quoted rule with no assertion; clauses marked [manual] are exempt). After 3 refusals the reply says ESCALATE (hand the task to a different agent); after 6 the task is BLOCKED. Refused when any of the task's non-test files already changed (git status), when the commands already pass (the test does not capture the behaviour), when every failure is exit 126/127 (command missing, not a real red), or when a formatter step of the verify (fmt --check, prettier --check, black --check…) fails (format the tests first). Records the failing output as evidence; engine_verify refuses the task until this is recorded, and later edits to the audited tests cost a verify attempt.",
     parameters: z.object({ taskId: z.string() }),
     async execute(_id, params, signal) {
       const state = load();
@@ -886,6 +931,7 @@ export default function (pi: ExtensionAPI) {
         target.retries = 0;
         target.failStreak = 0;
         target.lastFailureHash = "";
+        target.redRefusals = 0;
         target.verified = false;
         target.note = "";
         if (testsChangedSinceAudit(target)) {
