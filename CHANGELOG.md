@@ -12,6 +12,14 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.61] - 2026-11-16
+
+### Fixed
+- Engine `engine_red` không còn ghi nhận "red" khi thứ fail là bước kiểm format của verify (`cargo fmt --check`, `prettier --check`, `black --check`, `ruff format --check`, `gofmt`…) thay vì test. Trước đây red kiểu này được nhận, rồi file test được format lại, guard red-first coi đó là test mới và mọi `engine_verify` sau đó fail giống hệt nhau cho tới khi task bị BLOCKED. Giờ engine từ chối và yêu cầu format file test trước. Linter (clippy, eslint…) không bị tính vì chúng cũng fail khi test gọi code chưa viết, là red hợp lệ.
+
+### Added
+- `phase_gate.py --check plan` cảnh báo task `[red:]` không có dòng `Hợp đồng:` (chữ ký, mã lỗi, bố cục file mà test được phép bám).
+
 ## [0.1.60] - 2026-11-16
 
 ### Changed
