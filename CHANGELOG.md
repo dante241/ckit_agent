@@ -12,6 +12,8 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.58] - 2026-11-15
+
 ### Added
 - `ckit feature run`: chạy hết các phase của feature đang active khi không ai trông (qua đêm). Mỗi bước là một process `omp -p` mới (`/feature --auto` rồi `ship --auto`), nên context sạch và subagent vẫn spawn đủ 2 tầng. Chỉ sang phase kế khi `phase_gate.py` ra `DONE` và STATE `active_phase` đã đổi; ngược lại thì dừng. Chạy trên nhánh hiện tại (`--branch` để tạo nhánh mới `<slug>-night-<stamp>`), không push, giữ máy thức bằng `caffeinate`. Cờ: `--until HH:MM`, `--to M<n>`, `--step-timeout`, `--branch`, `--dry-run`. Kết quả ghi ở `agents/planning/NIGHT-REPORT.md`.
 - `/feature --all [--to M<n>]`: lặp `--auto` → `ship --auto` → `phase_gate.py` qua mọi phase còn lại ngay trong session đang mở, không bọc phase vào subagent (`task.maxRecursionDepth` mặc định 2 sẽ làm dev/reviewer mất tool `task`).
