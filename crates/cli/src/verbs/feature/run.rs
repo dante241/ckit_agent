@@ -1,7 +1,7 @@
 //! `ckit feature run` — unattended phase loop for the active feature.
 //!
 //! Each step is a fresh `omp -p` process (the `/feature` command body rendered
-//! with `--auto` / `ship --auto`), so every step starts at subagent depth 0 with
+//! with `plan --auto` / `go --auto` / `ship --auto`), so every step starts at subagent depth 0 with
 //! an empty context. Advancing is decided here, not by the model: a phase moves
 //! on only when `phase_gate.py --check all` exits 0 with `→ DONE` AND the ship
 //! step moved STATE `active_phase` (or archived the feature). Anything else stops
@@ -148,10 +148,12 @@ pub(super) fn run(root: &Path, a: &Args) -> Result<()> {
                 break format!("reached --to M{limit}");
             }
         }
-        let steps: &[(&'static str, &str)] = if matches!(next.as_deref(), Some("ship-phase" | "converge")) {
-            &[("ship", "ship --auto")]
-        } else {
-            &[("auto", "--auto"), ("ship", "ship --auto")]
+        // One fresh process per stage: the orchestrator's cost grows with turns × context,
+        // and a stage never needs the previous stage's transcript (state is on disk).
+        let steps: &[(&'static str, &str)] = match next.as_deref() {
+            Some("ship-phase" | "converge") => &[("ship", "ship --auto")],
+            Some("execute-phase") => &[("go", "go --auto"), ("ship", "ship --auto")],
+            _ => &[("plan", "plan --auto"), ("go", "go --auto"), ("ship", "ship --auto")],
         };
         for (name, args) in steps {
             let budget = Duration::from_secs(a.step_timeout * 60);
@@ -180,6 +182,10 @@ pub(super) fn run(root: &Path, a: &Args) -> Result<()> {
             });
             if exit != "0" {
                 break 'phases format!("{phase} {name}: omp exit {exit}");
+            }
+            // A plan step that did not reach gate-2 state (`execute-phase`) has nothing for go.
+            if *name == "plan" && position(&feat).1.as_deref() != Some("execute-phase") {
+                break 'phases format!("{phase} plan: STATE next_action is not execute-phase — plan not approved");
             }
         }
         let gate_dir = if feat.is_dir() { feat.clone() } else { planning.join("_archive").join(&slug) };

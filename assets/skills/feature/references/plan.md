@@ -16,7 +16,7 @@ Discuss + Plan cho phase hiện tại (`active_phase` trong STATE). Output: `M<x
 - Trích **Requirement scope** cho phase: liệt kê UC-ID + mô tả từ REQUIREMENTS.md mà phase này chịu trách nhiệm; nếu ROADMAP và REQUIREMENTS lệch phase/UC → sửa/hỏi trước khi plan.
 - **Đọc bản đồ kiến thức (R16) TRƯỚC khi dò code:** `docs/knowledge/INDEX.md` → file module/flow của vùng phase sẽ đụng; + `agents/KNOWLEDGE.md`. Rồi mới (R10) `xd://mcp__codegraph_explore` / `xd://mcp__codebase_memory_mcp_get_architecture` cho phần bản đồ chưa có. Ghi file + mục bản đồ đã dùng vào mục **📖 Nguồn yêu cầu đã đọc** của CONTEXT.
 - Chốt quyết định triển khai mơ hồ (API nào, schema, pattern). Mơ hồ → dùng `ask` (tương tác). Auto-mode: thay `ask` bằng spawn `task` discuss (xem `auto.md`).
-- Ghi `agents/planning/<slug>/phases/M<x>-<name>/M<x>-CONTEXT.md`: quyết định riêng phase + Requirement scope (dùng `templates/M-CONTEXT.md`).
+- Ghi `agents/planning/<slug>/phases/M<x>-<name>/M<x>-CONTEXT.md`: quyết định riêng phase + Requirement scope (dùng `templates/M-CONTEXT.md`). **Main KHÔNG tự soạn file dài** (CONTEXT, PLAN): chốt quyết định xong → spawn 1 `task` writer (`agent: task`) với con trỏ (đường dẫn template, PROJECT/REQUIREMENTS/ROADMAP, đặc tả, báo cáo scout đã lưu file) + danh sách Decision đã chốt (literal, ngắn) → writer ghi file và trả **tóm tắt ≤ 30 dòng** (Goal · mỗi AC 1 dòng `AC-NN: Then …` · mỗi task 1 dòng `T<n> [depends] [AC]`). Lý do: nội dung main tự viết nằm lại trong context của nó suốt các bước sau (lần chạy thật: ~30% context main là tài liệu main tự soạn). Sửa nhỏ sau review → main `edit` đúng dòng, không viết lại cả file.
 - Append quyết định lớn vào STATE.Decisions + PROJECT Key Decisions table.
 
 ### ★ BẮT BUỘC: Goal + Acceptance Criteria (UAT) trong CONTEXT — KHÔNG được bỏ
@@ -68,12 +68,14 @@ Tạo `M<x>-NN-PLAN.md` (NN bắt đầu 01, dùng `templates/M-PLAN.md`). BẮT
 - **skill**: skill repo nào chi phối task (`.omp/skills/<name>` hoặc `~/.omp/skills/<name>`). BẮT BUỘC — subagent KHÔNG tự biết skill nào áp dụng; cột này là nguồn để `go` resolve. Task không rõ skill → ghi `—` nhưng tự hỏi đã đúng chưa (đa số task code có ≥1 skill chi phối). Sai/thiếu skill = nguồn lỗi "code đúng task nhưng sai convention".
 - **UC phục vụ**: task này phục vụ UC-ID nào trong `REQUIREMENTS.md`/Requirement scope (vd UC-15).
 - **AC thỏa**: task này thỏa AC-NN nào (truy ngược về CONTEXT). Mọi AC phải có ≥1 task thỏa; task không gắn AC/UC nào = nghi vấn thừa, soát lại.
+- **Hợp đồng** (dòng thụt `  - Hợp đồng:` ngay dưới task; BẮT BUỘC cho task tạo/đổi API công khai mà task khác hoặc test sẽ gọi): chữ ký hàm/method, tên type + field, **mã lỗi/thông báo** mà test sẽ so, bố cục file/thư mục trên đĩa, cờ CLI, route/endpoint. Đây là thứ test được phép bám: reviewer của `engine_red` từ chối test dựa vào tên/đường dẫn/mã lỗi mà spec không nêu — thiếu hợp đồng thì test viết đúng ý vẫn bị UNFAIR, phải viết lại (lần chạy thật: 4 lần từ chối + 1 lần plan lại engine chỉ vì hợp đồng nằm ngoài spec). Hợp đồng đi vào `spec` của engine task (`execute.md` Bước 1).
 
 Template PLAN:
 ```markdown
 # M<x>-NN-PLAN — <phase name>
 ## Tasks
 - [ ] T1: <việc>   [file: path, tests/XTest.php]   [depends: —]    [verify: <lệnh test>]   [red: tests/XTest.php]   [skill: <name>]   [tier: must-test]   [UC: UC-15]   [AC: AC-01,AC-03]
+  - Hợp đồng: `fn send(req: &Request, opts: &SendOptions) -> Result<Outcome, HttpError>`; lỗi `http.timeout`, `http.too_many_redirects`; file `collections/<slug>/_collection.yaml`
 - [ ] T2: <việc>   [file: path]   [depends: —]    [verify: <lệnh>]   [skill: <name>]   [tier: verify-sql]   [UC: UC-16]   [AC: AC-05]
 - [ ] T3: <việc không code: doc/config tĩnh>   [file: path]   [depends: T1]   [trivial]   [skill: —]   [tier: verify-only]   [UC: UC-15]
 ## Checkpoints / Gates
@@ -87,6 +89,7 @@ Template PLAN:
 - Hai task **cùng file** hoặc cùng **tài nguyên dùng chung** (migration sequence, `composer.json`/`vendor/composer/*`, file ngôn ngữ, config dùng chung) → BẮT BUỘC có phụ thuộc giữa nhau (tránh ghi đè).
 - Task dựng nền (bootstrap, tooling) → giữ nhỏ, tách riêng, để không chặn cả phase.
 - Không vòng phụ thuộc.
+- **Độ rộng**: đếm số task chạy được cùng lúc ở mỗi tầng của đồ thị. Phase ≥4 task mà hầu hết các tầng chỉ có 1 task (chuỗi dọc) → `max_parallel_tasks` bị bỏ phí, phase chạy tuần tự. Tách theo hợp đồng: task "định nghĩa type/interface/hợp đồng" nhỏ đi trước, các task cài đặt từng crate/module/endpoint phụ thuộc vào nó thay vì vào nhau. Ghi độ rộng (vd `tầng: 1·3·2·1`) ở đầu PLAN.
 
 **Kiểm tra phủ trước khi trình (2 chiều):**
 - Xuôi: mọi UC trong Requirement scope đều có ≥1 AC; mọi AC-NN trong CONTEXT đều xuất hiện ở cột [AC:] của ≥1 task; mọi task có `[UC:]` + `[AC:]`. Thiếu UC/AC nào không task thỏa → thêm task (hoặc UC/AC sai phạm vi → sửa CONTEXT).
@@ -102,13 +105,14 @@ Soát PLAN TRƯỚC khi code — bắt lỗi cấp-kế-hoạch (AC hở, phụ 
 | `complex` (mặc định khuyến nghị) | chỉ review khi phase **phức tạp**: ≥3 task, HOẶC chuỗi phụ thuộc dài (≥3 tầng), HOẶC chạm ≥2 module/domain, HOẶC có task DB/migration/schema. Phase nhỏ, ít task, đơn giản → BỎ. |
 | `never` / thiếu | BỎ Step này. |
 
-Khi chạy: spawn 1 `task` subagent `agent: reviewer` review **bản PLAN + bảng AC** (không phải code — chưa có code). Prompt nhúng literal: Goal + bảng AC + PLAN + **nguồn yêu cầu của phase** (có đặc tả ngoài: danh sách mã `--phase M<x>` + đoạn đặc tả nguyên văn của các mục UC/BR liên quan, hoặc đường dẫn file đặc tả + tên mục để reviewer tự đọc), yêu cầu soát:
+Khi chạy: spawn 1 `task` subagent `agent: reviewer` review **bản PLAN + bảng AC** (không phải code — chưa có code). Prompt đưa **đường dẫn** (`M<x>-CONTEXT.md`, `M<x>-NN-PLAN.md`, ROADMAP, đặc tả + tên mục) để reviewer tự đọc — KHÔNG dán nội dung các file này vào prompt; có đặc tả ngoài thì kèm danh sách mã `--phase M<x>`. Yêu cầu soát:
 - **Khớp nguồn**: AC nào lệch/làm yếu nguyên văn đặc tả (Then thiếu điều kiện, bỏ ngoại lệ)? Mã nào của phase không AC nào phủ và không ở mục Chuyển phase?
 - **Phủ UC/AC**: mọi UC trong Requirement scope có ≥1 AC? Mọi AC-NN có ≥1 task thỏa? Task nào không gắn UC/AC (nghi thừa)?
-- **Phụ thuộc đúng**: `[depends:]` có cạnh thừa (chặn song song vô lý) hoặc thiếu cạnh (2 task cùng file/tài nguyên dùng chung không phụ thuộc nhau → race)? `[verify:]` có scoped vào task không?
+- **Phụ thuộc đúng**: `[depends:]` có cạnh thừa (chặn song song vô lý) hoặc thiếu cạnh (2 task cùng file/tài nguyên dùng chung không phụ thuộc nhau → race)? `[verify:]` có scoped vào task không? **Độ rộng**: tầng nào chỉ 1 task mà tách được theo hợp đồng?
+- **Hợp đồng**: task tạo/đổi API công khai có dòng `Hợp đồng:` đủ thứ test sẽ bám (chữ ký, mã lỗi, bố cục file)? Test của task red có cần tên nào không nằm trong hợp đồng/AC?
 - **Skill đúng**: cột `[skill:]` hợp lý? Task code mà `[skill: —]` → cờ đỏ.
 - **Thiếu task**: Goal/contract ROADMAP có phần nào chưa task nào phủ?
-- "Trả về findings cụ thể (PLAN dòng nào) + 1 verdict: READY / NEEDS-FIX. KHÔNG hỏi lại."
+- "Trả về ≤ 25 dòng: findings cụ thể (PLAN dòng nào) + 1 verdict: READY / NEEDS-FIX. KHÔNG hỏi lại." (Báo cáo dài thì ghi vào `M<x>-CONTEXT.md` mục Plan-review notes và chỉ trả verdict + đường dẫn.)
 
 Có NEEDS-FIX → sửa PLAN/CONTEXT (main thread) → ghi tóm tắt vào `M<x>-CONTEXT.md` (mục Plan-review notes) → tiếp Step 4. Không loop vô hạn: tối đa 2 vòng, còn lỗi thì nêu ở gate 2 cho user quyết.
 

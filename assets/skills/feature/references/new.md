@@ -26,6 +26,7 @@ Scaffold 1 feature lớn mới. Output: `agents/planning/<slug>/` + 4 file + set
    - `REQUIREMENTS.md`: dòng Nguồn yêu cầu + chia UC v1/v2/out-of-scope.
    - `ROADMAP.md`: **cắt phase theo dependency** (xem thuật toán dưới). Phase có UI → ghi màn hình thiết kế (node Figma / mockup) của phase.
    - `STATE.md`: phase=M0, status=planning, next_action=plan-phase, progress 0%.
+   - **Main KHÔNG tự soạn 4 file này** (và ARCHITECTURE/COVERAGE nếu có): main chốt phạm vi + quyết định với user (bước 2–3), rồi spawn 1 `task` writer (`agent: task`) với con trỏ (template, đặc tả, `AGENTS.md`, `agents/*`) + danh sách quyết định đã chốt (literal, ngắn). Writer ghi file, trả **tóm tắt ≤ 30 dòng** (mỗi phase 1 dòng `M<n> — mục tiêu · cần · UC`, quyết định còn mở). Main dùng tóm tắt đó cho gate 1; chi tiết user mở file. Sửa sau góp ý của user → main `edit` đúng dòng hoặc gửi lại writer (`agent://<Name>`), không viết lại cả file trong context main.
 
 4b. **Có đặc tả ngoài → COVERAGE (BẮT BUỘC)**:
    - Tạo `COVERAGE.md` từ `templates/COVERAGE.md`: dòng `Spec:` trỏ file đặc tả; liệt kê **mọi** mã đặc tả (UC/BR/BO/D/W/P/SCR, US·AC) — mỗi mã 1 dòng, cột Phase gán theo ROADMAP, cột "Ở đâu trong kế hoạch", trạng thái. Mã không có chỗ → GAP → bổ sung REQUIREMENTS/ROADMAP rồi đổi thành ADDED.

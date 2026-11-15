@@ -17,8 +17,10 @@ owns the multi-feature ROADMAP + per-phase Acceptance-Criteria contract *above* 
 ## 0. Load the skill + ground (do this first, every subcommand)
 Read the bundled skill and its rules BEFORE acting:
 - `~/.omp/skills/feature/SKILL.md` + `~/.omp/skills/feature/references/feature-rules.md`
-  (the always-applied rules), then the reference for the specific subcommand
-  (`new`/`plan`/`execute`/`ship`/`auto`).
+  (the always-applied rules), then ONLY the reference for this subcommand
+  (`new`/`plan`/`execute`/`ship`; + `auto` when `--auto`/`--all`). Load each with `read`, once;
+  never `cat` several references in one bash call or re-read one you already have — every
+  byte loaded stays in this session's context for every later turn.
 Then ground on state (except for `new`, which creates it):
 - `agents/planning/ACTIVE.md` line 1 → active slug; `agents/planning/<slug>/STATE.md`
   frontmatter (`status`/`active_phase`/`next_action`); `agents/planning/config.json`
@@ -63,7 +65,16 @@ asked. Every AC maps to ≥1 UC in REQUIREMENTS; every task maps to ≥1 AC — 
 
 ## Model + context budget
 Use the models in `~/.config/8sync/models.toml` (view/edit: `8sync harness model`); route per
-task class. When context nears the limit (auto-compacts at 50%), write a handoff into the
-active feature's `agents/planning/<slug>/STATE.md` (< 100 lines, digest) BEFORE it fires.
+task class. The orchestrator's cost ≈ turns × context length (a real M0 run: context 43k → 325k,
+orchestrator ≈ all dev agents combined), so:
+- **One stage per session.** STATE/PLAN/engine state live in files, so a stage never needs the
+  previous stage's transcript. After gate 1 (`new`), gate 2 (`plan`) and the end of `go`, write
+  the STATE handoff and tell the user to continue in a fresh session (`8sync new`, then
+  `/feature <next>`). Unattended → `8sync feature run` already starts a fresh process per stage.
+- Long documents (PROJECT/REQUIREMENTS/ROADMAP/CONTEXT/PLAN) and all code/test changes are
+  written by subagents; the orchestrator keeps decisions, ids and one-line summaries.
+- Batch independent calls into one turn; never re-read a file you just wrote.
+- When context nears the limit (auto-compacts at 50%), write a handoff into the active
+  feature's `agents/planning/<slug>/STATE.md` (< 100 lines, digest) BEFORE it fires.
 
 Begin: load the skill, ground on ACTIVE + STATE + config, then act on `$ARGUMENTS`.

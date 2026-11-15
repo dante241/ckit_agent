@@ -12,6 +12,15 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+### Changed
+- Workflow `/feature` giảm chi phí điều phối (đo trên lần chạy M0 của một feature thật: context của main tăng 43k → 325k token, cache-read 35M, main tốn ngang toàn bộ dev subagent cộng lại):
+  - Mỗi bước (new · plan · go · ship) một session mới; `ckit feature run` chạy `plan --auto` → `go --auto` → `ship --auto` thành 3 process riêng (trước gộp plan+go), bỏ bước đã xong theo STATE và dừng nếu bước plan không đưa STATE sang `execute-phase`.
+  - Main không tự soạn tài liệu dài (PROJECT/REQUIREMENTS/ROADMAP/CONTEXT/PLAN) và không tự sửa code/test: giao subagent viết, chỉ nhận tóm tắt ngắn. Prompt dev là con trỏ tới PLAN/CONTEXT (dev tự đọc), không chép spec/AC/Decision; báo cáo của dev và reviewer giới hạn số dòng.
+  - Chỉ nạp reference của bước đang chạy, gộp lời gọi độc lập vào một lượt.
+  - `engine_ready` chỉ in tiêu đề task một dòng (≤120 ký tự) và độ dài spec thay vì toàn văn; toàn văn vẫn có ở `engine_status`.
+- `/feature plan`: mỗi task tạo/đổi API công khai phải có dòng `Hợp đồng:` (chữ ký, mã lỗi, bố cục file) và dòng này đi vào `spec` của `engine_red`, để test bám đúng tên đã chốt thay vì bị từ chối là UNFAIR. Plan-review soát thêm độ rộng đồ thị phụ thuộc (tầng chỉ 1 task mà tách được theo hợp đồng).
+- `/feature go`: test của task red-first phải được format/lint-autofix trước `engine_red`; sau đó không ai sửa file test, kể cả chỉ format (trước đây format sau khi red làm mọi `engine_verify` lỗi giống nhau rồi bị BLOCKED).
+
 ## [0.1.59] - 2026-11-15
 
 ### Changed

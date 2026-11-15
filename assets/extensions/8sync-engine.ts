@@ -360,6 +360,16 @@ export default function (pi: ExtensionAPI) {
   }
 
   /**
+   * A task title as one short line. engine_ready output stays in the orchestrator's
+   * context for every later turn, and the full title/spec already live in the plan
+   * (the PLAN file the worker reads), so the dispatch list carries only a pointer.
+   */
+  function brief(title: string, max = 120): string {
+    const line = title.split("\n", 1)[0].trim();
+    return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+  }
+
+  /**
    * The task's test files with their contents and one fingerprint: `only` (the
    * audited set; a deleted file still changes the fingerprint), else every
    * tracked or new, non-ignored file under its tests paths.
@@ -697,13 +707,13 @@ export default function (pi: ExtensionAPI) {
       const fmt = (t: EngineTask) => {
         const files = t.files.length ? `\n    files: ${t.files.join(", ")}` : "";
         const verify = t.verify.length ? `\n    verify: ${t.verify.join(" && ")}` : "";
-        const red = t.red ? `\n    RED-FIRST: tests ${t.tests.join(", ") || "—"} first → engine_red (fairness audit + red) → then the other files${t.spec ? `\n    spec: ${t.spec}` : ""}` : "";
+        const red = t.red ? `\n    RED-FIRST: tests ${t.tests.join(", ") || "—"} first → engine_red (fairness audit + red) → then the other files${t.spec ? ` (spec: ${t.spec.length} chars, audited by engine_red)` : ""}` : "";
         const wt = t.worktree ? `\n    worktree: ${taskDir(t)} (edit ONLY there; based on HEAD, uncommitted main-tree changes are not in it)` : "";
-        return `  ${t.id} ${t.key} ${t.title}${files}${verify}${red}${wt}`;
+        return `  ${t.id} ${t.key} ${brief(t.title)}${files}${verify}${red}${wt}`;
       };
       const lines = [`READY ${ready.length} (now in_progress — dispatch in parallel):`, ...ready.map(fmt)];
-      if (running.length) lines.push(`STILL IN PROGRESS ${running.length}:`, ...running.map((t) => `  ${t.id} ${t.key} ${t.title}${t.files.length ? ` [files: ${t.files.join(", ")}]` : ""}${t.worktree ? ` [worktree: ${t.worktree}]` : ""}`));
-      lines.push("Per task: (red-first: engine_red before touching non-test files) → engine_verify → engine_advance {files:[changed files]} (worktree tasks: engine_advance reviews + merges, no files needed); call engine_ready again after each advance.");
+      if (running.length) lines.push(`STILL IN PROGRESS ${running.length}:`, ...running.map((t) => `  ${t.id} ${t.key} ${brief(t.title, 80)}${t.files.length ? ` [files: ${t.files.join(", ")}]` : ""}${t.worktree ? ` [worktree: ${t.worktree}]` : ""}`));
+      lines.push("Per task: (red-first: engine_red before touching non-test files) → engine_verify → engine_advance {files:[changed files]} (worktree tasks: engine_advance reviews + merges, no files needed); call engine_ready again after each advance. Titles are cut to one line — the full task text is in the plan (engine_status).");
       return text(lines.join("\n") + blockedNote);
     },
   });

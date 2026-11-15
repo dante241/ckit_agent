@@ -5,7 +5,10 @@
 
 ## Tasks
 
+> Độ rộng đồ thị: `tầng: <n·n·n>` (số task chạy được cùng lúc ở mỗi tầng — `plan.md` §Luật phụ thuộc).
+
 - [ ] T1: <việc>   [file: path, tests/XTest.php]   [depends: —]    [verify: <lệnh test>]   [red: tests/XTest.php]   [skill: <name>]   [tier: must-test]   [UC: UC-01]   [AC: AC-01,AC-03]
+  - Hợp đồng: <chữ ký hàm/type công khai · mã lỗi test sẽ so · bố cục file/route/cờ CLI>
 - [ ] T2: <việc>   [file: path]   [depends: —]    [verify: <lệnh>]   [skill: <name>]   [tier: verify-sql]    [UC: UC-02]   [AC: AC-05]
 - [ ] T3: <việc>   [file: path]   [depends: T1]   [verify: <lệnh>]   [skill: <name>]   [tier: verify-only]   [UC: UC-01]   [AC: AC-08]
 - [ ] T4: <việc không code: doc/config tĩnh>   [file: path]   [depends: —]   [trivial]   [skill: —]   [tier: verify-only]   [UC: UC-01]
