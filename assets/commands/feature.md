@@ -52,8 +52,8 @@ session — never wrap a phase in a `task` subagent (it costs the dev/reviewer a
 `task` tool at the default `task.maxRecursionDepth: 2`): per phase run `--auto` (plan → go) →
 `ship --auto` → `phase_gate.py --check all`; advance only on `DONE` + `active_phase` moved; stop
 on `CONDITIONAL`/`NOT DONE`, at `--to M<n>`, or when the ROADMAP is finished. Rewrite STATE
-Session Continuity before each next phase. Unattended overnight → `8sync feature run` (one fresh
-`omp -p` process per step).
+Session Continuity before each next phase. Unattended (away from the machine) → `8sync feature run`
+(one fresh `omp -p` process per step; report in `agents/planning/<slug>/RUN-REPORT.md`).
 
 ## Guardrails
 Work must belong to the `active_phase` (stop + ask if it drifts; `--auto` → SKIP+NEEDS-CONFIRM).

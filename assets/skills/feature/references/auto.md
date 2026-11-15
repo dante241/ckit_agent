@@ -80,4 +80,4 @@ Dừng thêm khi: cùng phase chạy lại mà gate vẫn không DONE · hành �
 
 ### Chạy không người trông (`8sync feature run`)
 
-Qua đêm dùng `8sync feature run --until 07:00` thay `--all`: mỗi phase = 2 process `omp -p` mới (`--auto` rồi `ship --auto`), context sạch, đủ 2 tầng subagent; quyết định sang phase do `phase_gate.py` + `active_phase` tiến lên. Process đó KHÔNG có người: điểm nào bảng trên ghi "escalate user" → KHÔNG làm, SKIP + ghi NEEDS-CONFIRM vào STATE Blockers rồi kết thúc lượt.
+Khi không ngồi máy (đi làm, qua đêm) dùng `8sync feature run` (`--until HH:MM` nếu cần giờ dừng) thay `--all`: mỗi phase = 2 process `omp -p` mới (`--auto` rồi `ship --auto`), context sạch, đủ 2 tầng subagent; quyết định sang phase do `phase_gate.py` + `active_phase` tiến lên; báo cáo ở `agents/planning/<slug>/RUN-REPORT.md`. Process đó KHÔNG có người: điểm nào bảng trên ghi "escalate user" → KHÔNG làm, SKIP + ghi NEEDS-CONFIRM vào STATE Blockers rồi kết thúc lượt.

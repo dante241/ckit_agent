@@ -35,7 +35,8 @@ const PLANNING_REL: &str = "agents/planning";
           ckit feature status            show the active feature's STATE position
           ckit feature                   (no arg) same as status
           ckit feature run --dry-run     preflight: phases to run + checks, changes nothing
-          ckit feature run --until 07:00 overnight: every remaining phase, stop at 07:00
+          ckit feature run               every remaining phase, unattended
+          ckit feature run --until 18:00 stop starting steps at 18:00 (running step is killed)
           ckit feature run --to M3       stop after phase M3
 
         Large multi-phase scopes only. Small/single-concern work → `/auto`.
@@ -44,8 +45,8 @@ const PLANNING_REL: &str = "agents/planning";
           /feature --all                 every remaining phase in the current session
 
         `run` needs a clean tracked tree; it works on the current branch (or a new
-        <slug>-night-<stamp> with --branch), never pushes, keeps the Mac awake
-        with caffeinate, and writes agents/planning/NIGHT-REPORT.md.
+        <slug>-run-<stamp> with --branch), never pushes, keeps the Mac awake
+        with caffeinate, and writes agents/planning/<slug>/RUN-REPORT.md.
     "}
 )]
 pub struct Args {
@@ -62,7 +63,7 @@ pub struct Args {
     /// run: print the phases + preflight checks, change nothing.
     #[arg(long)]
     pub dry_run: bool,
-    /// run: create and work on a new branch <slug>-night-<stamp> instead of the current one.
+    /// run: create and work on a new branch <slug>-run-<stamp> instead of the current one.
     #[arg(long)]
     pub branch: bool,
     /// run: kill one omp step after this many minutes.

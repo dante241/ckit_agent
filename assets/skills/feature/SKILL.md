@@ -29,7 +29,7 @@ description: "Quản lý feature LỚN nhiều phase, nhiều ngày, xuyên sess
 
 > **Deterministic ops cũng có ở verb `8sync feature`** (nhanh, không cần model): `8sync feature new|switch|status|list`.
 > Còn `plan`/`go`/`ship` cần model phán đoán → chạy trong 1 session omp qua `/feature`.
-> Chạy qua đêm không người trông: `8sync feature run --until 07:00` — mỗi bước 1 process `omp -p` mới, sang phase theo `phase_gate.py`, báo cáo ở `agents/planning/NIGHT-REPORT.md`.
+> Chạy không người trông (đi làm, qua đêm…): `8sync feature run` (kèm `--until HH:MM` nếu cần giờ dừng) — mỗi bước 1 process `omp -p` mới, sang phase theo `phase_gate.py`, báo cáo ở `agents/planning/<slug>/RUN-REPORT.md`.
 
 ## Dispatch (đọc STATE → biết đang đâu)
 
@@ -57,7 +57,7 @@ Nếu args chứa `--auto` (dù có/không subcommand) → **BẮT BUỘC load `
 - **KHÔNG dùng `ask`** cho điểm-quyết-định triển khai → thay bằng spawn `task` subagent (`agent: scout` / `agent: task`) đóng vai discuss + tự quyết theo ràng buộc PROJECT/REQUIREMENTS. Tự tra repo/DB trước khi coi là "phải hỏi".
 - **KHÔNG dừng ở user-gate** (gate 2 plan, gate cuối go) → tự duyệt (plan-review thay vai gate chất lượng) rồi chạy tiếp.
 - **Block** (thiếu credential/môi trường/dữ liệu thật subagent không tra được) → SKIP item đó, ghi NEEDS-CONFIRM vào VERIFICATION/STATE, **code nốt phần còn lại của phase**. Không stall cả phase vì 1 item.
-- **1 lệnh `--auto` = chạy TRỌN 1 phase**: `plan` (nếu chưa có PLAN) → `go` (hết task theo đồ thị phụ thuộc) → self-check AC. Dừng ở ranh giới phase kế; chạy tiếp mọi phase → `--all` (hoặc `8sync feature run` qua đêm).
+- **1 lệnh `--auto` = chạy TRỌN 1 phase**: `plan` (nếu chưa có PLAN) → `go` (hết task theo đồ thị phụ thuộc) → self-check AC. Dừng ở ranh giới phase kế; chạy tiếp mọi phase → `--all` (hoặc `8sync feature run` khi không ngồi máy).
 - Chỉ escalate user thật sự khi: hành động không đảo được/outward-facing (push, xoá data, gọi API production).
 
 Chi tiết luật + cách spawn subagent discuss: `references/auto.md`.

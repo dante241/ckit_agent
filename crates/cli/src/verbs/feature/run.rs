@@ -5,7 +5,7 @@
 //! an empty context. Advancing is decided here, not by the model: a phase moves
 //! on only when `phase_gate.py --check all` exits 0 with `→ DONE` AND the ship
 //! step moved STATE `active_phase` (or archived the feature). Anything else stops
-//! the loop and lands in `agents/planning/NIGHT-REPORT.md`.
+//! the loop and lands in `agents/planning/<slug>/RUN-REPORT.md`.
 use anyhow::{bail, Context, Result};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use super::{active_slug, frontmatter, Args, PLANNING_REL};
 use crate::{assets, brand, ui};
 
-const REPORT: &str = "NIGHT-REPORT.md";
+const REPORT: &str = "RUN-REPORT.md";
 
 struct StepRow {
     phase: String,
@@ -104,7 +104,7 @@ pub(super) fn run(root: &Path, a: &Args) -> Result<()> {
     let command = command_body()?;
 
     let branch = if a.branch {
-        let b = format!("{slug}-night-{stamp}");
+        let b = format!("{slug}-run-{stamp}");
         let ok = Command::new("git").args(["checkout", "-b", &b]).current_dir(root).status()?.success();
         if !ok {
             bail!("git checkout -b {b} failed");
@@ -205,7 +205,12 @@ pub(super) fn run(root: &Path, a: &Args) -> Result<()> {
     let report = report(
         root, &planning, &slug, &branch, &started, &start_head, &stop, &done_phases, &rows, &gates, &run_dir,
     );
-    let path = planning.join(REPORT);
+    // The final phase's ship archives the feature dir; the report follows it.
+    let dir = [planning.join(&slug), planning.join("_archive").join(&slug)]
+        .into_iter()
+        .find(|d| d.is_dir())
+        .unwrap_or_else(|| planning.join(&slug));
+    let path = dir.join(REPORT);
     std::fs::write(&path, report)?;
     ui::ok(&format!("stopped: {stop}"));
     ui::ok(&format!("report → {}", path.display()));
@@ -318,7 +323,7 @@ fn report(
     run_dir: &Path,
 ) -> String {
     let mut s = String::new();
-    let _ = writeln!(s, "# Night report — {slug}\n");
+    let _ = writeln!(s, "# Run report — {slug}\n");
     let _ = writeln!(s, "- Run: {started} → {}", now_hm());
     let _ = writeln!(s, "- Branch: `{branch}` (not pushed)");
     let _ = writeln!(s, "- Stopped: **{stop}**");
