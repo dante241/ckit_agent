@@ -574,14 +574,15 @@ fn parse_gitmodules(root: &std::path::Path) -> Vec<serde_json::Value> {
 
 /// Current omp session context usage for the active project. Reads the newest
 /// session JSONL's last `contextSnapshot.promptTokens`. Window is assumed
-/// (configurable later); threshold comes from compaction.thresholdPercent.
+/// (configurable later); threshold comes from compaction.thresholdTokens (as a
+/// share of the window) or else compaction.thresholdPercent, as omp resolves it.
 async fn api_context(State(ctx): State<Arc<Ctx>>) -> Json<serde_json::Value> {
     let root = detect_current_project_root();
     let home = &ctx.home;
     let model = read_model(home);
     let (window, assumed) = model_window(&model);
     let cfg_raw = std::fs::read_to_string(home.join(".omp/agent/config.yml")).unwrap_or_default();
-    let threshold_pct = parse_threshold(&cfg_raw);
+    let threshold_pct = parse_threshold(&cfg_raw, window);
     let (used, last_compact_at, session, session_age) = match root.as_deref().and_then(|r| super::sessions::find_sessions_dir(home, r)) {
         Some(dir) => {
             let newest = newest_session(&dir);
@@ -739,16 +740,17 @@ fn analyze_context(path: &std::path::Path) -> Option<(u64, Option<u64>)> {
     Some((used, last_compact))
 }
 
-fn parse_threshold(cfg: &str) -> u64 {
-    for line in cfg.lines() {
-        let l = line.trim();
-        if let Some(v) = l.strip_prefix("thresholdPercent:") {
-            if let Ok(n) = v.trim().parse::<u64>() {
-                return n;
-            }
-        }
+fn parse_threshold(cfg: &str, window: u64) -> u64 {
+    let num = |key: &str| {
+        cfg.lines()
+            .find_map(|l| l.trim().strip_prefix(key).map(|v| v.trim().parse::<u64>().ok()))
+            .flatten()
+            .filter(|n| *n > 0)
+    };
+    if let (Some(t), true) = (num("thresholdTokens:"), window > 0) {
+        return (t * 100 / window).clamp(1, 99);
     }
-    50
+    num("thresholdPercent:").unwrap_or(50)
 }
 
 fn read_model(home: &std::path::Path) -> String {

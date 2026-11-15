@@ -48,7 +48,7 @@ mod toolstats;
       8sync harness bench            benchmark the loop-engineering context budget (upfront vs deferred tokens + KV-cache gate)
       8sync harness audit             scan docs for stale paths / oversized / junk + churn hotspots (doc-hygiene)
       8sync harness eval [--baseline] [--runs N]  run the quality task-suite through omp N times per task (pass rate + flaky tasks; --baseline saves the reference)
-      8sync harness compaction [pct]  view/set omp auto-compaction threshold (default 50% — anti-forget)
+      8sync harness compaction [pct|300k]  view/set omp auto-compaction threshold (% of window, or tokens — tokens win)
       8sync harness gateway [apply|key <KEY>|verify|status]  deploy/verify the omp model-gateway (9router + thinking fix)
       8sync harness add-local-model <path.gguf|org/repo|url> [name]  serve a local GGUF via mistral.rs + register with omp
       8sync harness add-local-model list|rm <name>  list / remove registered local models
@@ -224,7 +224,7 @@ fn print_help() {
     println!("{}", crate::brand::render("  8sync harness audit             scan docs for stale paths / oversized / junk + churn (doc-hygiene)"));
     println!("{}", crate::brand::render("  8sync harness bench             benchmark the loop context budget (upfront vs deferred tokens + KV-cache gate)"));
     println!("{}", crate::brand::render("  8sync harness eval [--baseline] [--runs N]  run the quality task-suite through omp N× per task; --baseline saves the reference"));
-    println!("{}", crate::brand::render("  8sync harness compaction [pct]  view/set omp auto-compaction threshold (anti-forget; default 50%)"));
+    println!("{}", crate::brand::render("  8sync harness compaction [pct|300k]  view/set omp auto-compaction threshold (% of window, or tokens — tokens win)"));
     println!("{}", crate::brand::render("  8sync harness model [combo|k v]  view/set model routing; combo `model=claude+glm` sets ALL omp roles (opus=think, glm=work)"));
     println!("{}", crate::brand::render("  8sync harness model save|use <name>  snapshot / restore omp's whole modelRoles set (switch presets in one command)"));
     println!("{}", crate::brand::render("  8sync harness gateway [apply|key|verify]  deploy/verify omp model-gateway (9router + sonnet-5 thinking fix)"));

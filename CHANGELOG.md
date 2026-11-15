@@ -15,6 +15,14 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 ### Fixed
 - `ckit up` (qua `harness global`) giờ tạo `~/.omp/shared/<group>/pack` cho mọi pack bundled trên máy mới. Trước đây chỉ refresh store đã có, nên máy chưa từng chạy `ckit .` trong repo dùng pack thì không có store. Store chỉ được load trong repo có `extensions` trỏ tới nó.
 
+## [0.1.63] - 2026-11-16
+
+### Added
+- `/feature`: script `agent_ctx.py <Name...>` đọc transcript của subagent và in context hiện tại kèm `reuse` (dưới 200k) hoặc `spawn-new`. `execute.md` và bước converge của `ship.md` bắt chạy script này trước khi giao thêm việc cho dev còn sống: dev từ 200k trở lên thì spawn dev mới thay vì nhắn dev cũ. Lý do: dev subagent không tự compact dưới ngưỡng compaction và idle-compact không áp dụng cho subagent, nên mỗi tin nhắn gửi lại toàn bộ context. Ở phase M0 của một feature thật, 3 dev ở mức 160k–270k tốn $13 ở converge, nhiều hơn $9 lúc code.
+
+### Fixed
+- `ckit harness compaction` báo sai ngưỡng khi `config.yml` có `compaction.thresholdTokens`: omp ưu tiên key này hơn `thresholdPercent`, nhưng verb chỉ hiển thị phần trăm. Giờ verb hiển thị ngưỡng thực tế và nhận `300k` (hoặc số lớn hơn 95) để đặt `thresholdTokens`. Đặt phần trăm thì gỡ `thresholdTokens`, nếu không phần trăm không có tác dụng. Trang Context của `ckit harness web` cũng quy đổi `thresholdTokens` ra phần trăm.
+
 ## [0.1.62] - 2026-11-16
 
 ### Added

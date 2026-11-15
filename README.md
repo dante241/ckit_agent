@@ -208,7 +208,7 @@ System packages (`pacman -Syu`) are **not** run automatically — you decide whe
 | `ckit harness audit` | Scan docs: stale paths / oversized / junk + churn (doc-hygiene) |
 | `ckit harness eval [--baseline] [--runs N]` | Run the quality task-suite through omp (incl. ticket-style multi-file bugs); the grader and hidden tests land only after the agent finishes. `--runs N` reports pass rate + flaky tasks; `--baseline` saves the reference |
 | `ckit harness toolstats` | SQLite tracker: optimizer rate (codegraph/cbm/serena) vs fallback (grep/read) + failures per tool |
-| `ckit harness compaction [pct]` | View/set the omp auto-compaction threshold (anti-forget; default 50%) |
+| `ckit harness compaction [pct\|300k]` | View/set the omp auto-compaction threshold: a percent of the context window, or a token count (`300k`), which omp honours over the percent. Subagents inherit it |
 | `ckit harness model [k v]` | View/edit `~/.config/ckit/models.toml` (routing for `/auto` + `ckit ai`) |
 | `ckit harness model save\|use <name>` | Snapshot / restore omp's whole `modelRoles` set (switch model presets in one command) |
 
