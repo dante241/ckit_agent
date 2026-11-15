@@ -72,7 +72,7 @@ Bỏ qua khi matrix đã toàn PASS. Ngược lại, lặp tối đa `config.wor
    |---|---|---|
    | Thiếu code | AC đòi hành vi chưa có chỗ nào cài | task mới |
    | Code sai | có code nhưng test/review chứng minh sai | task mới sửa đúng file đó |
-   | AC sai/mơ hồ | AC mâu thuẫn Decision, không đo được, hoặc vượt Goal | DỪNG → `ask` user sửa CONTEXT (R6). KHÔNG tự đổi AC |
+   | AC sai/mơ hồ | AC mâu thuẫn Decision, không đo được, hoặc vượt Goal | DỪNG → `ask` user sửa CONTEXT (R6). KHÔNG tự đổi AC. `--auto`: không hỏi — verdict giữ `FAIL`, STATE `## Blockers/Concerns` thêm dòng `M<x> AC-NN: cần user sửa AC — <lý do>`, không sinh task cho AC đó, không đóng phase |
    | Bị chặn | thiếu data/môi trường/quyền | NEEDS-CONFIRM, không sinh task |
 2. **Sinh task** — append vào `M<x>-NN-PLAN.md` dưới `## Converge round <n>`, đánh số nối tiếp (`T<max+1>`…), đủ cột như task thường: `[file:]`, `[depends:]` (được trỏ tới key cũ của phase, vd `T3`), `[verify:]` = lệnh của cột "Cách verify" của AC đó (scoped), `[skill:]`, `[UC:]`, `[AC:]`. Mỗi task gánh ≥1 AC FAIL hoặc 1 finding; không thêm việc ngoài matrix.
 3. **Gate người duyệt** — không `--auto`: trình bảng task converge (AC ↔ task ↔ file) + `ask` (Chạy / Sửa / Dừng). `--auto`: chạy luôn.

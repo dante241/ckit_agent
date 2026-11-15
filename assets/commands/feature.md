@@ -1,12 +1,13 @@
 ---
 name: feature
-argument-hint: '[new <slug> | plan | go | ship | status | switch <slug> | list] [--auto]'
+argument-hint: '[new <slug> | plan | go | ship | status | switch <slug> | list] [--auto | --all [--to M<n>]]'
 description: Large multi-phase feature scopes (GSD). Drives the `feature` skill — scaffold a planning tree (agents/planning/<slug>/), plan a phase (Goal+AC), execute it via the engine_* loop, and verify against the AC matrix. Cross-session, switchable. Small/single-concern work → /auto.
 ---
 
 # /feature — large-scope GSD framework
 
-`$ARGUMENTS` first word selects the subcommand; `--auto` anywhere = autonomous full-phase.
+`$ARGUMENTS` first word selects the subcommand; `--auto` anywhere = autonomous full-phase;
+`--all` anywhere = autonomous every remaining phase.
 
 Use this for **large, multi-phase features** (>10 files, multiple milestones, spanning
 sessions). Small/single-concern work → **`/auto`** (drive the engine directly). This layer
@@ -42,8 +43,17 @@ If `$ARGUMENTS` contains `--auto`, load `references/auto.md` FIRST, then run the
 autonomously: replace user gates with a `task` discuss-agent + plan-review; run `go` via the
 engine to DONE; a hard blocker (credential / real external data) → SKIP the item, record
 NEEDS-CONFIRM in VERIFICATION/STATE, and finish the rest of the phase. Stop at the next phase
-boundary (never auto-advance phases). This mirrors `/auto`'s engine discipline, scoped to one
-phase.
+boundary (never auto-advance phases without `--all`). This mirrors `/auto`'s engine discipline,
+scoped to one phase. `ship --auto` follows every `--auto` branch of `references/ship.md`.
+
+## 3. `--all` (every remaining phase, this session)
+If `$ARGUMENTS` contains `--all`, load `references/auto.md` (incl. §`--all`) FIRST. Loop in THIS
+session — never wrap a phase in a `task` subagent (it costs the dev/reviewer agents their
+`task` tool at the default `task.maxRecursionDepth: 2`): per phase run `--auto` (plan → go) →
+`ship --auto` → `phase_gate.py --check all`; advance only on `DONE` + `active_phase` moved; stop
+on `CONDITIONAL`/`NOT DONE`, at `--to M<n>`, or when the ROADMAP is finished. Rewrite STATE
+Session Continuity before each next phase. Unattended overnight → `8sync feature run` (one fresh
+`omp -p` process per step).
 
 ## Guardrails
 Work must belong to the `active_phase` (stop + ask if it drifts; `--auto` → SKIP+NEEDS-CONFIRM).

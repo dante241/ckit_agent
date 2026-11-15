@@ -9,7 +9,7 @@
 
 1. **Auto-discuss qua subagent** — mọi điểm-quyết-định mà bình thường dùng `ask` → thay bằng **spawn 1 `task` subagent** (`agent: scout` cho "cái gì đang có / nên theo cái nào", `agent: task` cho trade-off/approach) đóng vai đối tác trao đổi + tự quyết, bám ràng buộc `PROJECT.md` + `REQUIREMENTS.md` + `agents/KNOWLEDGE.md`/`DECISIONS.md`. KHÔNG hỏi user.
 2. **Block thì không stall** — đánh giá: nếu vẫn code tiếp được → code; nếu không → **SKIP item, ghi NEEDS-CONFIRM**, code nốt phần còn lại. User confirm sau, rồi mới code item bị skip.
-3. **1 lệnh `--auto` = code trọn 1 phase** — `plan` (nếu chưa có PLAN) → `go` (hết task theo đồ thị phụ thuộc) → self-check AC → ghi VERIFICATION nếu có item defer. Dừng ở ranh giới phase kế (KHÔNG tự nhảy phase tiếp trừ khi user nói rõ "code hết các phase").
+3. **1 lệnh `--auto` = code trọn 1 phase** — `plan` (nếu chưa có PLAN) → `go` (hết task theo đồ thị phụ thuộc) → self-check AC → ghi VERIFICATION nếu có item defer. Dừng ở ranh giới phase kế. Muốn chạy tiếp các phase sau → `--all` (§All-phase bên dưới), không tự nhảy phase.
 
 ## Phân loại điểm-quyết-định (AI tra được vs phải hỏi)
 
@@ -63,3 +63,21 @@ Khi gặp điểm "cần phán đoán thiết kế":
 | Block 1 item | Có thể dừng hỏi | Skip + NEEDS-CONFIRM + code nốt |
 | Phạm vi 1 lệnh | 1 bước (plan HOẶC go) | Trọn phase (plan→go) qua engine |
 | Dữ liệu môi trường thật | hỏi user | defer NEEDS-CONFIRM (không hỏi giữa chừng) |
+
+## `--all` — chạy hết các phase (All-phase)
+
+`/feature --all [--to M<n>]` = lặp **trong chính session chính** (main, depth 0) cho tới hết ROADMAP hoặc tới phase `--to`:
+
+1. Ground: ACTIVE + STATE + ROADMAP. Phase = `active_phase`. `active_phase` rỗng/`null` hoặc `next_action: done` → hết, báo cáo.
+2. Phase chưa có PLAN / chưa code xong → chạy **Luồng thực thi auto** ở trên (plan → go).
+3. `ship --auto` (`references/ship.md`, mọi nhánh `--auto`): review + test + converge → VERIFICATION.
+4. Gate cơ học: `python3 ~/.omp/skills/feature/scripts/phase_gate.py agents/planning/<slug> --phase M<x> --check all` (phase cuối đã archive → đường dẫn `agents/planning/_archive/<slug>`). Sang phase kế CHỈ khi exit 0 + dòng tổng `DONE` + ship đã đưa `active_phase` sang phase mới (phase cuối: feature đã archive → hết). `CONDITIONAL` / `NOT DONE` / exit 1 → **DỪNG cả vòng**, báo cáo (phase sau có thể dựa vào AC chưa xong).
+5. Trước phase kế: rewrite `## Session Continuity` của STATE (handoff < 100 dòng) — auto-compact có thể chạy giữa các phase; sau compact đọc lại STATE rồi đi tiếp từ bước 1.
+
+**KHÔNG bọc mỗi phase vào 1 `task` subagent.** omp `task.maxRecursionDepth` mặc định 2: subagent tầng 1 vẫn spawn được, nhưng dev/reviewer/tester bị đẩy xuống tầng 2 và mất tool `task` (dev không gọi scout, reviewer không chia lens) — kém hơn chạy tay. Main tự điều phối; việc nặng vốn đã ở subagent của `go`/`ship`.
+
+Dừng thêm khi: cùng phase chạy lại mà gate vẫn không DONE · hành động không đảo được/outward (bảng trên) · context không còn đủ cho 1 phase sau compact (ghi handoff, báo user chạy `/feature --all` lại ở session mới — vòng lặp resume từ STATE).
+
+### Chạy không người trông (`8sync feature run`)
+
+Qua đêm dùng `8sync feature run --until 07:00` thay `--all`: mỗi phase = 2 process `omp -p` mới (`--auto` rồi `ship --auto`), context sạch, đủ 2 tầng subagent; quyết định sang phase do `phase_gate.py` + `active_phase` tiến lên. Process đó KHÔNG có người: điểm nào bảng trên ghi "escalate user" → KHÔNG làm, SKIP + ghi NEEDS-CONFIRM vào STATE Blockers rồi kết thúc lượt.

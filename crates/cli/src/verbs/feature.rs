@@ -8,6 +8,8 @@
 //!   switch <slug> flip the active feature (rewrite ACTIVE.md + config)
 //!   status        print the active feature's STATE position
 //!   list          list features (active marked) + archived
+//!   run           unattended phase loop: one fresh `omp -p` per step, advance
+//!                 on `phase_gate.py` DONE (see `feature/run.rs`)
 //! No-arg → status. `plan`/`go`/`ship` print a pointer to the `/feature` command.
 use anyhow::{bail, Context, Result};
 use clap::Args as ClapArgs;
@@ -15,6 +17,8 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::{assets, brand, ui, verbs::here};
+
+mod run;
 
 /// Planning tree location, relative to the project root (matches the bundled
 /// `config.json` `paths.planning_root`). Fixed so the switch is deterministic —
@@ -30,17 +34,40 @@ const PLANNING_REL: &str = "agents/planning";
           ckit feature switch other      flip the active feature
           ckit feature status            show the active feature's STATE position
           ckit feature                   (no arg) same as status
+          ckit feature run --dry-run     preflight: phases to run + checks, changes nothing
+          ckit feature run --until 07:00 overnight: every remaining phase, stop at 07:00
+          ckit feature run --to M3       stop after phase M3
 
         Large multi-phase scopes only. Small/single-concern work → `/auto`.
         The reasoning steps run in an omp session:
           /feature plan | go | ship      discuss + plan + execute (via the engine) + verify
+          /feature --all                 every remaining phase in the current session
+
+        `run` needs a clean tracked tree; it works on the current branch (or a new
+        <slug>-night-<stamp> with --branch), never pushes, keeps the Mac awake
+        with caffeinate, and writes agents/planning/NIGHT-REPORT.md.
     "}
 )]
 pub struct Args {
-    /// new | switch | status | list  (empty → status)
+    /// new | switch | status | list | run  (empty → status)
     pub sub: Option<String>,
     /// Feature slug (for `new` / `switch`).
     pub slug: Option<String>,
+    /// run: stop starting new steps at this local time (HH:MM); a running step is killed then.
+    #[arg(long, value_name = "HH:MM")]
+    pub until: Option<String>,
+    /// run: last phase to run (e.g. M3).
+    #[arg(long, value_name = "PHASE")]
+    pub to: Option<String>,
+    /// run: print the phases + preflight checks, change nothing.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// run: create and work on a new branch <slug>-night-<stamp> instead of the current one.
+    #[arg(long)]
+    pub branch: bool,
+    /// run: kill one omp step after this many minutes.
+    #[arg(long, value_name = "MIN", default_value_t = 240)]
+    pub step_timeout: u64,
 }
 
 pub fn run(a: Args) -> Result<()> {
@@ -64,6 +91,7 @@ pub fn run(a: Args) -> Result<()> {
             switch(&root, slug)
         }
         Some("list") => list(&root),
+        Some("run") => run::run(&root, &a),
         Some(step @ ("plan" | "go" | "ship")) => {
             ui::warn(&format!("`{} feature {}` needs model judgement — run it in an omp session:", brand::CMD, step));
             ui::info(&format!("  {} .   then   /feature {}", brand::CMD, step));
@@ -71,7 +99,7 @@ pub fn run(a: Args) -> Result<()> {
         }
         Some(other) => {
             ui::warn(&format!("unknown subcommand: {}", other));
-            ui::info(&format!("try: {} feature new <slug> | switch <slug> | status | list", brand::CMD));
+            ui::info(&format!("try: {} feature new <slug> | switch <slug> | status | list | run", brand::CMD));
             Ok(())
         }
     }
