@@ -15,6 +15,12 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 ### Fixed
 - `ckit up` (qua `harness global`) giờ tạo `~/.omp/shared/<group>/pack` cho mọi pack bundled trên máy mới. Trước đây chỉ refresh store đã có, nên máy chưa từng chạy `ckit .` trong repo dùng pack thì không có store. Store chỉ được load trong repo có `extensions` trỏ tới nó.
 
+## [0.1.64] - 2026-11-16
+
+### Changed
+- `/feature go`: dev, rescue chạy `feature/scripts/task_brief.py <feature> --phase M<x> --task T<n>` thay vì đọc cả `M<x>-CONTEXT.md` + `M<x>-NN-PLAN.md`. Script in nguyên văn đúng phần của task (dòng task + hợp đồng, AC + mệnh đề, luật trích, Decisions, dòng UC), kèm `file:dòng`. Prompt của main vẫn chỉ là con trỏ. Trên M1 của sendrook: brief của 1 task ~12 KB so với 170 KB hai file kia, mà dev đã đọc lại 46 + 34 lần. Prompt dev thêm luật dò code bằng `codegraph` rồi `read file:a-b`, không `cat`/`sed` cả file: subagent đã đổ 14M ký tự đọc file vào context, gấp ~50 lần output build + test.
+- `/feature plan`: mệnh đề thị giác (vibrancy, title bar, "trông giống app native") mặc định `[manual]`, user nhìn app thật ở ship. Không làm test đọc CSS, không tạo task chụp cửa sổ native khi chạy không người; cần ảnh thì 1 task, giới hạn ~30 lượt. Plan-review coi vi phạm là cờ đỏ. M1B của sendrook (2 UC giao diện) tốn $65 cho 2 agent chụp ảnh.
+
 ## [0.1.63] - 2026-11-16
 
 ### Added
