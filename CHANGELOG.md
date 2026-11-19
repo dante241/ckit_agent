@@ -12,6 +12,17 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.66] - 2026-11-19
+
+### Changed
+- **`/pms` in omp is faster to scan.** One line per ticket/task: status, ID, title, in fixed columns, the title cut only at its end. With "Của tôi" off and ≥ 120 columns an assignee column (given name) appears while the title keeps ≥ 24 columns. The selected row is a soft dark-blue band with white text and a cyan bar, instead of the bright highlight that hid the cyan ID.
+- **Detail pane:** ID · kind, title, then two fixed metadata rows: status · priority · **Quá hạn** (due date passed and the item is not finished) · due date, then project · assignee. Form placeholders such as `Kết quả mong muốn:` followed by only `.` are hidden from the preview; the task text sent to Board / `/cook` keeps the original description.
+- **Top bar** shows tabs and the active filters (`Của tôi ✓ · Đang mở`); `/` turns its right side into the search field. **Bottom bar** puts the actions first and says what Enter does: `Enter Lấy việc (Board · /cook · chép)`, or `Enter Xem chi tiết` in the narrow list; hints wrap between keys, never inside one.
+- **Width breakpoints:** ≥ 100 columns list | detail 45/55; below 100 one pane at a time (Enter opens the detail, Esc/← goes back). PMS text is NFC-normalized before width math.
+
+### Fixed
+- PMS "Đang mở" no longer lists rejected tickets (`Reject`, "Từ chối"): it now excludes `Closed,Cancel,Reject` (web picker and `/pms`). `Reject`, `Wait For Response` and `Pending Golive` get Vietnamese labels in both.
+
 ## [0.1.65] - 2026-11-19
 
 Board ships: the work previously held unreleased on `feat/export-wip` is now in the release binary (`ckit service`, `ckit review`, the Board dashboard and `ckit-board.ts`).
