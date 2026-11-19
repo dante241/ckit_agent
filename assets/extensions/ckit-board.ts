@@ -7,7 +7,9 @@
 // Headless Board step runs (env CKIT_BOARD_STAGE) get nothing: a Dev agent must
 // never hold board_approve. Everything is a call to the dashboard's HTTP API;
 // the dashboard (Rust) owns the rules and the state.
-import { realpathSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 
 type Api = (method: "GET" | "POST", path: string, body?: unknown) => Promise<any>;
@@ -444,14 +446,28 @@ function boss(pi: ExtensionAPI, base: string) {
   }
 
   type Pick = { title: string; request: string; source: any };
-  type Tab = "ticket" | "task" | "report";
+  /** "mine": the boss's open tickets, grouped by what needs doing (/api/board/pms/mine). */
+  type Tab = "mine" | "ticket" | "task" | "report";
   type Picked = { action: "menu" | "board" | "cook"; picks: Pick[] } | null;
   const STATUS_FILTER: Record<string, string> = { open: "Đang mở", done: "Đã xong", all: "Mọi tình trạng" };
-  const TAB_LABEL: Record<Tab, string> = { ticket: "Ticket", task: "Task", report: "Report" };
+  const TAB_LABEL: Record<Tab, string> = { mine: "Của tôi", ticket: "Ticket", task: "Task", report: "Report" };
+  type Role = "all" | "processing" | "verification" | "reception";
+  const ROLE_LABEL: Record<Role, string> = { all: "Tất cả", processing: "Xử lý", verification: "Xác minh", reception: "Tiếp nhận" };
+  const GROUP_LABEL: Record<string, string> = {
+    changed: "Mới đổi từ lần trước",
+    late: "Quá hạn",
+    soon: "Sắp hạn (≤ 3 ngày)",
+    verify: "Chờ tôi xác minh",
+    rest: "Còn lại",
+    stale: "Treo lâu (quá hạn > 90 ngày)",
+  };
+  /** Rows a group shows before its "+ N ticket nữa" line. */
+  const GROUP_ROWS = 8;
   const PRIORITY_VI: Record<string, string> = { urgent: "Khẩn", high: "Ưu tiên cao", normal: "Thường", medium: "Trung bình", low: "Thấp" };
+  const PRIORITY_COLOR: Record<string, string> = { urgent: "error", high: "warning" };
   type Sort = "updated" | "created" | "due_asc" | "due_desc";
   /** "Due" is the ticket's "Ngày mong muốn" and the task's planned end ("Hạn"). */
-  const dueLabel = (t: Tab) => (t === "ticket" ? "Ngày mong muốn" : "Hạn");
+  const dueLabel = (t: Tab) => (t === "task" ? "Hạn" : "Ngày mong muốn");
   const SORT_LABEL = (t: Tab): Record<Sort, string> => ({
     updated: "Mới cập nhật",
     created: "Mới tạo",
@@ -462,12 +478,13 @@ function boss(pi: ExtensionAPI, base: string) {
   type Flt = { statuses: string[]; project: string; priority: string; category: string; owner: string; view: string };
   const NO_FLT = (): Flt => ({ statuses: [], project: "", priority: "", category: "", owner: "", view: "" });
 
-  /** The web picker in the terminal: tabs + search + filters over a list | preview split. */
+  /** The web picker in the terminal: tabs + search + filters over a list | preview split.
+   *  `since`: when the boss last opened /pms ("Mới đổi" counts from there; empty = first look). */
   type Tui = typeof import("@oh-my-pi/pi-tui");
-  function pmsBrowser(T: Tui, tui: any, theme: any, done: (r: Picked) => void, canReport: boolean) {
-    const { Input, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } = T;
+  function pmsBrowser(T: Tui, tui: any, theme: any, done: (r: Picked) => void, canReport: boolean, since: string) {
+    const { Input, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, parseSgrMouse } = T;
     const api = client(base, () => "");
-    let tab: Tab = "ticket";
+    let tab: Tab = "mine";
     let mine = true;
     let status: "open" | "done" | "all" = "open";
     let sort: Sort = "updated";
@@ -479,7 +496,7 @@ function boss(pi: ExtensionAPI, base: string) {
     let panel: null | { field: number; open: boolean; cur: number; q: string } = null;
     const input = new Input();
     let typing = false;
-    let entries: any[] = []; // search items, or report rows
+    let entries: any[] = []; // search items, report rows, or "Của tôi" rows with group header / "more" rows
     let report: any = null;
     let page = 0;
     let hasMore = false;
@@ -500,8 +517,78 @@ function boss(pi: ExtensionAPI, base: string) {
     const c = (color: string, s: string) => theme.fg(color, s);
 
     /** The PMS kind a row's detail comes from (null = report row of another module). */
-    const kindOf = (): "task" | "ticket" | null => (tab === "report" ? report?.kind ?? null : tab);
+    const kindOf = (): "task" | "ticket" | null => (tab === "report" ? report?.kind ?? null : tab === "mine" ? "ticket" : tab);
     const keyOf = (e: any) => `${kindOf() ?? "row"}:${e.id}`;
+
+    // ── "Của tôi" ──
+    let inbox: any = null; // /api/board/pms/mine: { counts, groups: [{ key, items }] }
+    // Opens on "Xử lý": what the boss has to do; the other roles are a click away.
+    let role: Role = "processing";
+    /** A counter on the top bar narrows the list to that one group, every row shown. */
+    let only: string | null = null;
+    const collapsed = new Set(["rest", "stale"]);
+    const expanded = new Set<string>();
+    const dateTried = new Set<string>();
+    const isRow = (e: any) => e && !e.hdr && !e.more;
+    function buildInbox() {
+      const cur = entries[sel];
+      const q = fold(input.getValue().trim());
+      const out: any[] = [];
+      for (const g of inbox?.groups ?? []) {
+        if (only && g.key !== only) continue;
+        const items = q ? g.items.filter((e: any) => fold(nfc(`${e.no} ${e.title}`)).includes(q)) : g.items;
+        if (!items.length) continue;
+        // A search or a chosen counter shows every match; otherwise collapsed groups stay a header.
+        const all = !!only || !!q;
+        const open = all || !collapsed.has(g.key);
+        out.push({ hdr: g.key, n: items.length, open });
+        if (!open) continue;
+        const shown = all || expanded.has(g.key) ? items : items.slice(0, GROUP_ROWS);
+        out.push(...shown);
+        if (shown.length < items.length) out.push({ more: g.key, n: items.length - shown.length });
+      }
+      entries = out;
+      // Keep the cursor on the same row (or header) when the list reshapes.
+      const same = cur ? entries.findIndex((e) => (cur.hdr ? e.hdr === cur.hdr : cur.more ? e.hdr === cur.more : e.id === cur.id)) : -1;
+      sel = same >= 0 ? same : Math.max(0, entries.findIndex(isRow));
+      error = entries.length ? "" : q ? "Không có ticket nào khớp." : "Không có ticket nào đang mở với vai trò này.";
+      void fillDates();
+    }
+    /** Due dates for shown rows the server left undated (lists return none). */
+    async function fillDates() {
+      const ids = entries.filter((e) => isRow(e) && !e.due && !dateTried.has(e.id)).slice(0, 40).map((e) => e.id);
+      if (!ids.length) return;
+      for (const id of ids) dateTried.add(id);
+      try {
+        const got = await api("GET", `/api/board/pms/dates?ids=${ids.join(",")}`);
+        for (const g of inbox?.groups ?? []) for (const e of g.items) if (got[e.id]) e.due = got[e.id];
+        redraw();
+      } catch {
+        /* the rows keep no date */
+      }
+    }
+    /** Enter / click on a group header or a "+ N ticket nữa" row. */
+    function openRow(e: any) {
+      if (e.hdr) {
+        if (only || input.getValue().trim()) return;
+        if (collapsed.has(e.hdr)) collapsed.delete(e.hdr);
+        else collapsed.add(e.hdr);
+      } else if (e.more) expanded.add(e.more);
+      buildInbox();
+      preview();
+      redraw();
+    }
+    function setRole(r: Role) {
+      role = r;
+      void load(true);
+    }
+    function setOnly(g: string | null) {
+      only = only === g ? null : g;
+      buildInbox();
+      top = 0;
+      preview();
+      redraw();
+    }
 
     async function load(reset: boolean) {
       const my = ++seq;
@@ -515,7 +602,15 @@ function boss(pi: ExtensionAPI, base: string) {
       loading = true;
       redraw();
       try {
-        if (tab === "report") {
+        if (tab === "mine") {
+          const q = new URLSearchParams({ today: today(), role });
+          if (since) q.set("since", since);
+          const r = await api("GET", `/api/board/pms/mine?${q}`);
+          if (my !== seq) return;
+          inbox = r;
+          hasMore = false;
+          buildInbox();
+        } else if (tab === "report") {
           const raw = input.getValue().trim();
           const rid = (/[?&]record=(\d{1,12})\b/.exec(raw) ?? /^#?(\d{1,12})$/.exec(raw))?.[1];
           if (!rid) {
@@ -554,7 +649,7 @@ function boss(pi: ExtensionAPI, base: string) {
       clearTimeout(pvTimer);
       const e = entries[sel];
       const k = kindOf();
-      if (!e || !k || details.has(keyOf(e))) return;
+      if (!isRow(e) || !k || details.has(keyOf(e))) return;
       pvTimer = setTimeout(async () => {
         try {
           details.set(keyOf(e), await api("GET", `/api/board/pms/item?kind=${k}&id=${e.id}`));
@@ -575,7 +670,7 @@ function boss(pi: ExtensionAPI, base: string) {
 
     async function finish(action: "menu" | "board" | "cook") {
       const cur = entries[sel];
-      const list = action === "board" && marked.size ? [...marked.values()] : cur ? [cur] : [];
+      const list = action === "board" && marked.size ? [...marked.values()] : isRow(cur) ? [cur] : [];
       if (!list.length) return;
       busy = `Đang lấy chi tiết ${list.length} mục…`;
       redraw();
@@ -605,6 +700,12 @@ function boss(pi: ExtensionAPI, base: string) {
         entries = [];
         loading = false;
         error = "";
+        redraw();
+      } else if (t === "mine" && inbox) {
+        ++seq;
+        loading = false;
+        buildInbox();
+        preview();
         redraw();
       } else void load(true);
     }
@@ -706,7 +807,7 @@ function boss(pi: ExtensionAPI, base: string) {
     const fltCount = () => [flt.statuses.length > 0, flt.project, flt.priority, flt.category, flt.owner, flt.view].filter(Boolean).length;
 
     function openPanel() {
-      if (tab === "report") return;
+      if (tab === "report" || tab === "mine") return;
       panel = { field: 0, open: false, cur: 0, q: "" };
       void ensureMeta();
       redraw();
@@ -806,7 +907,9 @@ function boss(pi: ExtensionAPI, base: string) {
     const WIDE = 120;
     const NARROW = 100;
     const pad = (s: string, w: number) => truncateToWidth(s, w, undefined, true);
-    const rows = () => Math.max(8, (process.stdout.rows || 40) - 12);
+    /** List rows in the last frame; PgUp/PgDn step by it. */
+    let bodyH = 20;
+    const rows = () => bodyH;
     // PMS text may arrive decomposed (NFD); compose it so the width math and the terminal agree.
     const nfc = (s: unknown) => String(s ?? "").normalize("NFC");
     // Selected row: soft dark-blue background, white text. Callers pass plain text (no ANSI), already
@@ -821,7 +924,64 @@ function boss(pi: ExtensionAPI, base: string) {
     const previewText = (s: string) => s.replace(/(^|\n)[^\n]{1,60}:[ \t]*\n[ \t]*\.[ \t]*(?=\n|$)/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
     const hint = (k: string, label: string) => `${c("accent", k)} ${c("muted", label)}`;
 
+    // "Của tôi" rows: how late / how soon, from the boss's local date.
+    const dayDiff = (due: string) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(due);
+      if (!m) return null;
+      const [y, mo, d] = today().split("-").map(Number);
+      return Math.round((Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(y, mo - 1, d)) / 864e5);
+    };
+    const ROLE_SHORT: Record<string, string> = { processing: "XL", verification: "XM", reception: "TN" };
+    const GROUP_COLOR: Record<string, string> = { changed: "accent", late: "error", soon: "warning", verify: "accent", rest: "muted", stale: "dim" };
+
+    function inboxLines(w: number, h: number): string[] {
+      if (loading && !entries.length) return [c("muted", " Đang tải ticket của bạn…")];
+      if (!entries.length) return wrapTextWithAnsi(c("muted", ` ${error}`), w);
+      if (sel < top) top = sel;
+      if (sel >= top + h) top = sel - h + 1;
+      const body = w - 1;
+      const rowsOnly = entries.filter(isRow);
+      const ST = Math.min(12, Math.max(3, ...rowsOnly.map((e) => visibleWidth(vi(nfc(e.status))))));
+      const idW = Math.min(7, Math.max(0, ...rowsOnly.map((e) => visibleWidth(nfc(e.no)))));
+      const MW = marked.size ? 2 : 0;
+      // Roles column only when the list mixes roles.
+      const rolesOf = (e: any) => (e.roles ?? []).map((r: string) => ROLE_SHORT[r] ?? r).join("·");
+      const RW = role === "all" ? Math.max(0, ...rowsOnly.map((e) => visibleWidth(rolesOf(e)))) : 0;
+      const WW = 9;
+      const when = (e: any): [string, string] => {
+        const n = dayDiff(nfc(e.due));
+        if (n === null) return ["", "muted"];
+        if (n < 0) return [`trễ ${-n} ng`, "error"];
+        if (n === 0) return ["hôm nay", "warning"];
+        if (n <= 3) return [`còn ${n} ng`, "warning"];
+        return [viDate(nfc(e.due)).slice(0, 5), "muted"];
+      };
+      return entries.slice(top, top + h).map((e, j) => {
+        const on = top + j === sel;
+        const plain = (label: string, styled: string) => (on ? `${c("accent", "▌")}${selRow(pad(label, body))}` : ` ${styled}`);
+        if (e.hdr) {
+          const label = `${e.open ? "▾" : "▸"} ${GROUP_LABEL[e.hdr] ?? e.hdr} (${e.n})`;
+          return plain(label, theme.bold(c(GROUP_COLOR[e.hdr] ?? "muted", label)));
+        }
+        if (e.more) {
+          const label = `    + ${e.n} ticket nữa`;
+          return plain(label, c("muted", label));
+        }
+        const mark = MW ? (marked.has(keyOf(e)) ? "☑ " : "  ") : "";
+        const [wt, wc] = when(e);
+        const st = pad(vi(nfc(e.status)), ST);
+        const id = idW ? pad(nfc(e.no), idW) : "";
+        const wd = pad(wt, WW);
+        const rl = RW ? pad(rolesOf(e), RW) : "";
+        const title = pad(nfc(e.title), Math.max(4, body - 2 - MW - ST - 1 - (idW ? idW + 1 : 0) - WW - 1 - (RW ? RW + 1 : 0)));
+        if (on) return `${c("accent", "▌")}${selRow([`  ${mark}${st}`, id, title, wd, rl].filter(Boolean).join(" "))}`;
+        const markS = mark.trim() ? c("success", mark) : mark;
+        return ` ${[`  ${markS}${c("muted", st)}`, id ? c("accent", id) : "", title, c(wc, wd), rl ? c("dim", rl) : ""].filter(Boolean).join(" ")}`;
+      });
+    }
+
     function leftLines(w: number, h: number, showOwner: boolean): string[] {
+      if (tab === "mine") return inboxLines(w, h);
       if (loading && !entries.length) return [c("muted", " Đang tải…")];
       if (!entries.length) return wrapTextWithAnsi(c("muted", ` ${error || (tab === "report" ? "Dán ID hoặc link report rồi Enter." : "")}`), w);
       const fit = Math.max(1, h - (hasMore ? 1 : 0));
@@ -882,6 +1042,13 @@ function boss(pi: ExtensionAPI, base: string) {
     function rightLines(w: number): string[] {
       const e = entries[sel];
       if (!e) return [c("muted", " Chọn một mục bên trái để xem chi tiết.")];
+      if (e.hdr || e.more) {
+        const g = e.hdr ?? e.more;
+        return wrapTextWithAnsi(
+          ` ${theme.bold(GROUP_LABEL[g] ?? g)}\n\n ${c("muted", e.hdr ? "Enter hoặc bấm chuột để mở / thu gọn nhóm." : "Enter hoặc bấm chuột để hiện hết nhóm này.")}`,
+          w - 1,
+        );
+      }
       const out: string[] = [];
       const add = (s = "") => out.push(...(s ? wrapTextWithAnsi(s, w - 1).map((l) => ` ${l}`) : [""]));
       const k = kindOf();
@@ -901,59 +1068,118 @@ function boss(pi: ExtensionAPI, base: string) {
       add();
       // Two fixed metadata rows: state and dates, then where/who. Each wraps on its own.
       const sep = c("muted", " · ");
+      const label = (s: string) => c("muted", s);
+      const pc = PRIORITY_COLOR[prio.toLowerCase()];
       add(
         [
-          status ? theme.bold(vi(nfc(status))) : "",
-          prio ? (PRIORITY_VI[prio.toLowerCase()] ?? nfc(prio)) : "",
+          status ? theme.bold(statusColor(status) ? c(statusColor(status)!, vi(nfc(status))) : vi(nfc(status))) : "",
+          prio ? c(pc ?? "muted", PRIORITY_VI[prio.toLowerCase()] ?? nfc(prio)) : "",
           overdue(due, status) ? theme.bold(c("error", "Quá hạn")) : "",
-          due ? `${dueLabel(k)} ${viDate(due)}` : "",
+          due ? `${label(dueLabel(k))} ${viDate(due)}` : "",
         ]
           .filter(Boolean)
           .join(sep),
       );
-      add([nfc(d?.project ?? e.project), nfc(d?.assignee ?? e.assignee)].filter(Boolean).join(sep));
+      const project = nfc(d?.project ?? e.project);
+      const owner = nfc(d?.assignee ?? e.assignee);
+      add([project ? `${label("Dự án")} ${project}` : "", owner ? `${label("Phụ trách")} ${owner}` : ""].filter(Boolean).join(sep));
+      if (e.roles?.length) add(`${label("Vai trò của bạn")} ${c("accent", e.roles.map((r: Role) => ROLE_LABEL[r] ?? r).join(", "))}`);
+      // Comments since the last /pms: what changed while the boss was away.
+      const fresh = since ? (d?.comments ?? []).filter((x: any) => String(x.at) > since) : [];
+      if (fresh.length) {
+        add();
+        add(theme.bold(c("warning", `Thay đổi từ lần trước (${viDate(since)})`)));
+        for (const x of fresh) add(comment(x));
+      }
       add();
       if (!d) add(c("muted", "Đang tải mô tả…"));
       else if (d.error) add(c("error", d.error));
       else {
-        add(theme.bold("Mô tả"));
-        for (const p of (previewText(nfc(d.description)) || "PMS chưa có mô tả, tiêu đề sẽ được dùng làm yêu cầu.").split("\n")) add(p);
+        add(section("accent", "Mô tả"));
+        for (const p of (previewText(nfc(d.description)) || "PMS chưa có mô tả, tiêu đề sẽ được dùng làm yêu cầu.").split("\n")) add(labelLine(p));
         if (d.checklist?.length) {
           add();
-          add(theme.bold(`Checklist ${d.checklist.filter((x: any) => x.done).length}/${d.checklist.length}`));
+          add(section("success", `Checklist ${d.checklist.filter((x: any) => x.done).length}/${d.checklist.length}`));
           for (const x of d.checklist) add(`${x.done ? c("success", "✓") : "○"} ${nfc(x.name)}`);
         }
         if (d.subtasks?.length) {
           add();
-          add(theme.bold(`Việc con (${d.subtasks.length})`));
-          for (const x of d.subtasks) add(`- ${nfc(x.title)} ${c("muted", `(${vi(x.status)})`)}`);
+          add(section("warning", `Việc con (${d.subtasks.length})`));
+          for (const x of d.subtasks) add(`- ${nfc(x.title)} ${c(statusColor(x.status) ?? "muted", `(${vi(x.status)})`)}`);
         }
         if (d.comments?.length) {
           add();
-          add(theme.bold(`Bình luận gần đây (${d.comments.length})`));
-          for (const x of d.comments) add(`${theme.bold(nfc(x.author) || "Ẩn danh")} ${c("muted", viDate(x.at))}: ${nfc(x.text).replace(/\n+/g, " ")}`);
+          add(section("accent", `Bình luận gần đây (${d.comments.length})`));
+          for (const x of d.comments) add(comment(x));
         }
       }
       return out;
     }
 
+    // ── Detail colors ──
+    /** Status → theme color: done green, being worked blue, waiting on someone yellow, reopened red. */
+    const statusColor = (s: string): string | null =>
+      FINISHED.has(s) ? "success"
+      : s === "In Progress" ? "accent"
+      : s === "Reopen" ? "error"
+      : ["Testing", "Wait For Verifying", "Wait For Response", "Follow Up", "Pending", "Pending Golive"].includes(s) ? "warning"
+      : null;
+    const section = (color: string, s: string) => theme.bold(c(color, `▍${s}`));
+    const comment = (x: any) => `${theme.bold(c("accent", nfc(x.author) || "Ẩn danh"))} ${c("muted", viDate(x.at))}: ${nfc(x.text).replace(/\n+/g, " ")}`;
+    /** Ticket sections the server appends to the description, each with its own color. */
+    const LABEL_COLOR: Record<string, string> = { "Các bước tái hiện": "accent", "Kết quả mong muốn": "success", "Kết quả thực tế": "error" };
+    /** A leading `Nhãn:` (short, not a URL) stands out; the rest of the line stays plain. */
+    const labelLine = (p: string) => {
+      const m = /^(\s*[-*•]?\s*)([^:/\n]{1,40}):(\s|$)/.exec(p);
+      if (!m || /https?$/i.test(m[2])) return p;
+      const name = m[2].trim();
+      return `${m[1]}${theme.bold(c(LABEL_COLOR[name] ?? "warning", `${m[2]}:`))}${p.slice(m[0].length - m[3].length)}`;
+    };
+
+    // ── Mouse ──
+    // The view is a fullscreen overlay painted from the terminal's top-left, so a mouse row is a
+    // line index of the last frame and a column is a cell of it.
+    /** Clickable spans of the last frame: [line, from col, to col (exclusive), action]. */
+    let hits: [number, number, number, () => void][] = [];
+    /** Where the list pane sat in the last frame: first line, rows, columns [x0, x1). */
+    let listBox = { y: 0, h: 0, x0: 0, x1: 0 };
+    let detailBox = { y: 0, h: 0, x0: 0, x1: 0 };
+    /** Entry index under the pointer (hover tint), and the last click for double-click. */
+    let hoverIdx = -1;
+    let lastClick = { idx: -1, at: 0 };
+    /** Data a hint's key sends, so clicking a hint does what pressing it does. */
+    const KEY_DATA: Record<string, string> = { Enter: "\r", Esc: "\x1b", Tab: "\t", Space: " " };
+    type Hint = [string, string];
+
     function render(width: number): string[] {
       lastWidth = width;
+      hits = [];
       const inner = Math.max(40, width - 2);
-      const h = rows();
+      const termRows = Math.max(16, tui.terminal?.rows || process.stdout.rows || 40);
       const split = width >= NARROW;
       if (split) view = "list";
       const b = (s: string) => c("borderMuted", s);
       const row = (s: string) => `${b("│")}${pad(s, inner)}${b("│")}`;
+      /** One bar of clickable parts joined by `sep`; registers each part's span at line `y`. */
+      const clickBar = (y: number, parts: [string, (() => void) | undefined][], sep: string) => {
+        let x = 2; // border + leading space
+        return ` ${parts
+          .map(([s, act], i) => {
+            if (i) x += visibleWidth(sep);
+            const w = visibleWidth(s);
+            if (act) hits.push([y, x, x + w, act]);
+            x += w;
+            return s;
+          })
+          .join(sep)}`;
+      };
       const title = " Lấy việc từ PMS ";
-      const lines: string[] = [b(`╭─${title}${"─".repeat(Math.max(0, inner - 1 - visibleWidth(title)))}╮`)];
+      const head: string[] = [b(`╭─${title}${"─".repeat(Math.max(0, inner - 1 - visibleWidth(title)))}╮`)];
 
-      // Top bar: tabs and the active filters; "/" turns the right side into the search field.
-      const tabs = (["ticket", "task", "report"] as Tab[])
+      // Top bar: tabs, then the inbox's roles or the search's active filters; "/" turns the right side into the search field.
+      const tabParts: [string, () => void][] = (["mine", "ticket", "task", "report"] as Tab[])
         .filter((t) => t !== "report" || canReport)
-        .map((t) => (t === tab ? theme.bold(c("accent", `[${TAB_LABEL[t]}]`)) : c("muted", ` ${TAB_LABEL[t]} `)))
-        .join(" ");
-      // Active filters in words; the right side is the search field ("/").
+        .map((t) => [t === tab ? theme.bold(c("accent", `[${TAB_LABEL[t]}]`)) : c("muted", ` ${TAB_LABEL[t]} `), () => setTab(t)]);
       const summary = () => {
         const parts = [flt.owner ? `Phụ trách: ${fltLabel.get("owner") ?? flt.owner}` : mine ? "Của tôi ✓" : "Mọi người"];
         parts.push(flt.statuses.length ? flt.statuses.map(vi).join(", ") : STATUS_FILTER[status]);
@@ -970,11 +1196,83 @@ function boss(pi: ExtensionAPI, base: string) {
         : q
           ? `${c("muted", label)} ${truncateToWidth(nfc(q), 30)}`
           : c("dim", tab === "report" ? "/ dán ID / link report" : "/ tìm");
-      const roomForSummary = Math.max(10, inner - visibleWidth(tabs) - visibleWidth(field) - 7);
-      const left = ` ${tabs}   ${tab === "report" ? "" : c(fltCount() || sort !== "updated" ? "accent" : "muted", truncateToWidth(summary(), roomForSummary))}`;
+      const parts: [string, (() => void) | undefined][] = [...tabParts];
+      if (tab === "mine") {
+        const groups: any[] = inbox?.groups ?? [];
+        const total = groups.reduce((n, g) => n + g.items.length, 0);
+        for (const r of ["all", "processing", "verification", "reception"] as Role[]) {
+          const n = r === "all" ? (role === "all" && inbox ? total : null) : inbox?.counts?.[r];
+          const text = `${ROLE_LABEL[r]}${n == null ? "" : ` ${n}`}`;
+          parts.push([r === role ? theme.bold(c("accent", `[${text}]`)) : c("muted", ` ${text} `), () => setRole(r)]);
+        }
+      } else if (tab !== "report") {
+        const room = Math.max(10, inner - tabParts.reduce((n, [s]) => n + visibleWidth(s) + 1, 0) - visibleWidth(field) - 7);
+        parts.push([c(fltCount() || sort !== "updated" ? "accent" : "muted", truncateToWidth(summary(), room)), openPanel]);
+      }
+      const left = clickBar(1, parts, " ");
       const gap = Math.max(2, inner - visibleWidth(left) - visibleWidth(field) - 1);
-      lines.push(row(`${left}${" ".repeat(gap)}${field}`));
+      hits.push([1, 1 + visibleWidth(left) + gap, 1 + inner, () => ((typing = true), (view = "list"), redraw())]);
+      head.push(row(`${left}${" ".repeat(gap)}${field}`));
+      // "Của tôi" second bar: one counter per group; a click (or 1-6) shows only that group.
+      if (tab === "mine" && inbox) {
+        const counters = (inbox.groups as any[])
+          .filter((g) => g.items.length)
+          .map((g, i): [string, () => void] => {
+            const text = `${i + 1} ${GROUP_LABEL[g.key]} ${g.items.length}`;
+            return [g.key === only ? theme.bold(c("accent", `[${text}]`)) : c(GROUP_COLOR[g.key] ?? "muted", text), () => setOnly(g.key)];
+          });
+        head.push(row(clickBar(2, counters, c("muted", " · "))));
+      }
 
+      // Bottom bar: the actions first, with what Enter does in this pane spelled out, then navigation.
+      const S = c("muted", " · ");
+      const h2 = (k: string, l: string): Hint => [k, l];
+      let keys: Hint[][];
+      if (typing) keys = [[h2("Enter", tab === "report" ? "Mở report" : "Tìm"), h2("Esc", "Thôi gõ")]];
+      else if (panel && !panel.open) keys = [[h2("↑↓", "Chọn mục"), h2("Enter", "Mở"), h2("Esc", "Đóng (đã áp dụng)")]];
+      else if (panel) {
+        const multi = fields()[panel.field]?.multi;
+        keys = [[h2("↑↓", "Chọn"), h2(multi ? "Space/Enter" : "Enter", multi ? "Bật/tắt" : "Áp dụng"), h2("gõ chữ", "Lọc danh sách"), h2("Esc", "Quay lại")]];
+      } else {
+        const cur = entries[sel];
+        const enter: Hint =
+          tab === "mine" && cur?.hdr ? h2("Enter", cur.open ? "Thu gọn nhóm" : "Mở nhóm")
+          : tab === "mine" && cur?.more ? h2("Enter", "Hiện hết nhóm")
+          : !split && view === "list" ? h2("Enter", "Xem chi tiết")
+          : h2("Enter", "Lấy việc (Board · /cook · chép)");
+        const filt = tab === "mine" ? [h2("r", "Vai trò"), h2("1-6", "Lọc nhóm")] : tab === "report" ? [] : [h2("f", "Lọc & sắp xếp"), h2("m", "Của tôi"), h2("s", "Trạng thái")];
+        const nav =
+          !split && view === "detail"
+            ? [h2("↑↓", "Đổi mục"), h2("PgUp/PgDn", "Cuộn"), h2("Esc", "Về danh sách")]
+            : [h2("↑↓", "Chọn"), h2("/", "Tìm"), ...filt, h2("Tab", "Đổi loại"), h2("Space", "Chọn nhiều"), ...(split ? [h2("PgUp/PgDn", "Cuộn chi tiết")] : []), h2("Esc", "Thoát")];
+        keys = [[enter, h2("g", "Giao cho Board"), h2("c", "Làm với /cook"), h2("o", "Mở PMS")], nav];
+      }
+      // Wrap between hints, never inside one ("Esc" and "Thoát" stay together). Line numbers are
+      // fixed once the body height is known, so collect first.
+      const footRows: [string, () => void][][] = [];
+      for (const group of keys) {
+        let cur: [string, () => void][] = [];
+        let w = 0;
+        group.forEach(([k, l], i) => {
+          const text = i === 0 && group === keys[0] ? theme.bold(hint(k, l)) : hint(k, l);
+          const data = KEY_DATA[k] ?? (k.length === 1 ? k : "");
+          const tw = visibleWidth(text);
+          if (cur.length && w + 3 + tw > inner - 2) {
+            footRows.push(cur);
+            cur = [];
+            w = 0;
+          }
+          w += (cur.length ? 3 : 0) + tw;
+          cur.push([text, data ? () => handleInput(data) : (undefined as any)]);
+        });
+        if (cur.length) footRows.push(cur);
+      }
+      const note = busy || (error && entries.length ? c("error", error) : "") || (marked.size ? c("success", `Đã chọn ${marked.size} mục: g để giao hết cho Board`) : "");
+      // Body fills the terminal: header + separator + body + separator + note + hints + bottom border.
+      const h = Math.max(4, termRows - head.length - 2 - (note ? 1 : 0) - footRows.length - 1);
+      bodyH = h;
+      const lines = [...head];
+      const bodyY = head.length + 1;
       if (split) {
         const L = Math.floor(inner * 0.45);
         const R = inner - L - 1;
@@ -983,8 +1281,14 @@ function boss(pi: ExtensionAPI, base: string) {
         const right = panel ? panelLines(R, h) : rightLines(R);
         if (!panel) pvTop = Math.max(0, Math.min(pvTop, Math.max(0, right.length - h)));
         const rv = panel ? right : right.slice(pvTop, pvTop + h);
-        for (let i = 0; i < h; i++) lines.push(`${b("│")}${pad(lv[i] ?? "", L)}${b("│")}${pad(rv[i] ?? "", R)}${b("│")}`);
+        const hv = hoverIdx - top;
+        for (let i = 0; i < h; i++) {
+          const l = i === hv && hoverIdx !== sel && lv[i] ? `\x1b[48;5;236m${pad(lv[i], L)}\x1b[49m` : pad(lv[i] ?? "", L);
+          lines.push(`${b("│")}${l}${b("│")}${pad(rv[i] ?? "", R)}${b("│")}`);
+        }
         lines.push(b(`├${"─".repeat(L)}┴${"─".repeat(R)}┤`));
+        listBox = { y: bodyY, h, x0: 1, x1: 1 + L };
+        detailBox = { y: bodyY, h, x0: 2 + L, x1: 2 + L + R };
       } else {
         lines.push(b(`├${"─".repeat(inner)}┤`));
         let body: string[];
@@ -996,52 +1300,68 @@ function boss(pi: ExtensionAPI, base: string) {
         } else body = leftLines(inner, h, false);
         for (let i = 0; i < h; i++) lines.push(row(body[i] ?? ""));
         lines.push(b(`├${"─".repeat(inner)}┤`));
+        const box = { y: bodyY, h, x0: 1, x1: 1 + inner };
+        listBox = view === "list" && !panel ? box : { y: 0, h: 0, x0: 0, x1: 0 };
+        detailBox = view === "detail" && !panel ? box : { y: 0, h: 0, x0: 0, x1: 0 };
       }
-
-      // Bottom bar: the actions first, with what Enter does in this pane spelled out, then navigation.
-      const note = busy || (error && entries.length ? c("error", error) : "") || (marked.size ? c("success", `Đã chọn ${marked.size} mục: g để giao hết cho Board`) : "");
       if (note) lines.push(row(` ${note}`));
-      const S = c("muted", " · ");
-      let keys: string[][];
-      if (typing) keys = [[hint("Enter", tab === "report" ? "Mở report" : "Tìm"), hint("Esc", "Thôi gõ")]];
-      else if (panel && !panel.open) keys = [[hint("↑↓", "Chọn mục"), hint("Enter", "Mở"), hint("Esc", "Đóng (đã áp dụng)")]];
-      else if (panel) {
-        const multi = fields()[panel.field]?.multi;
-        keys = [[hint("↑↓", "Chọn"), hint(multi ? "Space/Enter" : "Enter", multi ? "Bật/tắt" : "Áp dụng"), hint("gõ chữ", "Lọc danh sách"), hint("Esc", "Quay lại")]];
-      }
-      else {
-        const enter = !split && view === "list" ? hint("Enter", "Xem chi tiết") : hint("Enter", "Lấy việc (Board · /cook · chép)");
-        const filt = tab === "report" ? [] : [hint("f", "Lọc & sắp xếp"), hint("m", "Của tôi"), hint("s", "Trạng thái")];
-        const nav =
-          !split && view === "detail"
-            ? [hint("↑↓", "Đổi mục"), hint("PgUp/PgDn", "Cuộn"), hint("Esc", "Về danh sách")]
-            : [hint("↑↓", "Chọn"), hint("/", "Tìm"), ...filt, hint("Tab", "Đổi loại"), hint("Space", "Chọn nhiều"), ...(split ? [hint("PgUp/PgDn", "Cuộn chi tiết")] : []), hint("Esc", "Thoát")];
-        keys = [[theme.bold(enter), hint("g", "Giao cho Board"), hint("c", "Làm với /cook"), hint("o", "Mở PMS")], nav];
-      }
-      // Wrap between hints, never inside one ("Esc" and "Thoát" stay together).
-      for (const group of keys) {
-        let cur = "";
-        for (const k of group) {
-          const next = cur ? `${cur}${S}${k}` : k;
-          if (cur && visibleWidth(next) > inner - 2) {
-            lines.push(row(` ${cur}`));
-            cur = k;
-          } else cur = next;
-        }
-        if (cur) lines.push(row(` ${cur}`));
-      }
+      for (const r of footRows) lines.push(row(clickBar(lines.length, r, S)));
       lines.push(b(`╰${"─".repeat(inner)}╯`));
       return lines;
     }
 
+    function mouse(m: { col: number; row: number; wheel: number | null; leftClick: boolean; motion: boolean }) {
+      const inBox = (bx: typeof listBox) => m.row >= bx.y && m.row < bx.y + bx.h && m.col >= bx.x0 && m.col < bx.x1;
+      if (m.wheel) {
+        if (inBox(detailBox)) pvTop = Math.max(0, pvTop + m.wheel * 3);
+        else if (inBox(listBox)) return move(m.wheel * 3);
+        return redraw();
+      }
+      const idx = inBox(listBox) ? top + (m.row - listBox.y) : -1;
+      const over = idx >= 0 && idx < entries.length ? idx : -1;
+      if (m.motion) {
+        if (over !== hoverIdx) {
+          hoverIdx = over;
+          redraw();
+        }
+        return;
+      }
+      if (!m.leftClick || busy) return;
+      if (typing || panel) {
+        // A click outside the field or panel just closes it.
+        typing = false;
+        panel = null;
+        return redraw();
+      }
+      const hit = hits.find(([y, x0, x1]) => y === m.row && m.col >= x0 && m.col < x1);
+      if (hit) return hit[3]();
+      if (over < 0) return;
+      const e = entries[over];
+      const double = lastClick.idx === over && Date.now() - lastClick.at < 400;
+      lastClick = { idx: over, at: Date.now() };
+      sel = over;
+      if (!isRow(e)) return openRow(e);
+      if (double) return handleInput("\r");
+      preview();
+      redraw();
+    }
+
     function handleInput(data: string) {
+      // Mouse reports (fullscreen overlay); an omp without parseSgrMouse never sends them.
+      const m = data.startsWith("\x1b[<") ? parseSgrMouse?.(data) : null;
+      if (m) return mouse(m);
       if (busy) return;
       if (panel) return panelInput(data);
       if (typing) {
         if (matchesKey(data, "escape")) typing = false;
         else if (matchesKey(data, "enter")) {
           typing = false;
-          void load(true);
+          // The inbox is already here: search it in place.
+          if (tab === "mine") {
+            buildInbox();
+            top = 0;
+            preview();
+          } else void load(true);
         } else input.handleInput(data);
         redraw();
         return;
@@ -1049,6 +1369,14 @@ function boss(pi: ExtensionAPI, base: string) {
       const split = lastWidth >= NARROW;
       if (!split && view === "detail" && (matchesKey(data, "escape") || matchesKey(data, "left"))) {
         view = "list";
+        return redraw();
+      }
+      if (matchesKey(data, "escape") && tab === "mine" && (only || input.getValue())) {
+        // Esc first drops the group filter and the search, then closes.
+        only = null;
+        input.setValue("");
+        buildInbox();
+        preview();
         return redraw();
       }
       if (matchesKey(data, "escape")) {
@@ -1065,10 +1393,11 @@ function boss(pi: ExtensionAPI, base: string) {
         pvTop = Math.max(0, pvTop - rows() + 2);
         return redraw();
       }
-      const order: Tab[] = canReport ? ["ticket", "task", "report"] : ["ticket", "task"];
+      const order: Tab[] = canReport ? ["mine", "ticket", "task", "report"] : ["mine", "ticket", "task"];
       if (matchesKey(data, "shift+tab")) return setTab(order[(order.indexOf(tab) + order.length - 1) % order.length]);
       if (matchesKey(data, "tab")) return setTab(order[(order.indexOf(tab) + 1) % order.length]);
       if (matchesKey(data, "enter")) {
+        if (entries[sel] && !isRow(entries[sel])) return openRow(entries[sel]);
         if (!split && view === "list") {
           if (!entries[sel]) return;
           view = "detail";
@@ -1079,11 +1408,23 @@ function boss(pi: ExtensionAPI, base: string) {
       }
       if (matchesKey(data, "space")) {
         const e = entries[sel];
-        if (e) {
+        if (isRow(e)) {
           if (marked.has(keyOf(e))) marked.delete(keyOf(e));
           else marked.set(keyOf(e), e);
         }
         return move(1);
+      }
+      if (tab === "mine") {
+        if (data === "r") {
+          const rs: Role[] = ["all", "processing", "verification", "reception"];
+          return setRole(rs[(rs.indexOf(role) + 1) % rs.length]);
+        }
+        const n = Number(data);
+        if (/^[1-6]$/.test(data)) {
+          const g = (inbox?.groups ?? []).filter((x: any) => x.items.length)[n - 1];
+          if (g) return setOnly(g.key);
+          return;
+        }
       }
       switch (data) {
         case "/":
@@ -1093,12 +1434,12 @@ function boss(pi: ExtensionAPI, base: string) {
         case "f":
           return openPanel();
         case "m":
-          if (tab === "report") return;
+          if (tab === "report" || tab === "mine") return;
           mine = !mine;
           flt.owner = "";
           return void load(true);
         case "s":
-          if (tab === "report") return;
+          if (tab === "report" || tab === "mine") return;
           status = status === "open" ? "done" : status === "done" ? "all" : "open";
           // The preset replaces any exact statuses picked in the panel.
           flt.statuses = [];
@@ -1149,7 +1490,28 @@ function boss(pi: ExtensionAPI, base: string) {
       ctx.ui.notify("Bản omp này chưa mở được giao diện /pms. Dùng nút Tạo task trên web.", "warning");
       return;
     }
-    const res = await ctx.ui.custom<Picked>((tui, theme, _kb, done) => pmsBrowser(T, tui, theme, done, !!st.report));
+    // "Mới đổi" counts from the previous /pms; the stamp moves when this one closes.
+    const seenFile = join(homedir(), ".cache", "ckit", "pms-last-look");
+    let since = "";
+    try {
+      since = readFileSync(seenFile, "utf8").trim();
+    } catch {
+      /* first look */
+    }
+    const opened = new Date();
+    const res = await ctx.ui.custom<Picked>((tui, theme, _kb, done) => pmsBrowser(T, tui, theme, done, !!st.report, since), {
+      // Fullscreen (alternate screen, mouse on), top-left so a mouse row is a rendered line.
+      overlay: true,
+      overlayOptions: { anchor: "top-left", width: "100%", maxHeight: "100%", margin: 0, fullscreen: true },
+    });
+    try {
+      mkdirSync(dirname(seenFile), { recursive: true });
+      const p2 = (n: number) => String(n).padStart(2, "0");
+      const o = opened;
+      writeFileSync(seenFile, `${o.getFullYear()}-${p2(o.getMonth() + 1)}-${p2(o.getDate())} ${p2(o.getHours())}:${p2(o.getMinutes())}:${p2(o.getSeconds())}\n`);
+    } catch {
+      /* next look counts from the older stamp */
+    }
     if (!res?.picks.length) return;
     const p = res.picks[0];
     let action: string = res.action;

@@ -33,6 +33,8 @@ use serde_json::{json, Value};
 
 use super::{ApiErr, ApiRes};
 
+mod mine;
+
 const TIMEOUT_SECS: u64 = 10;
 const PAGE_ROWS: u64 = 20;
 const COMMENTS: u64 = 5;
@@ -1200,6 +1202,8 @@ pub(super) fn routes<S: Clone + Send + Sync + 'static>() -> Router<S> {
         .route("/api/board/pms/users", get(api_users))
         .route("/api/board/pms/key", routing::post(api_key))
         .route("/api/board/pms/report", get(api_report))
+        .route("/api/board/pms/mine", get(mine::api_mine))
+        .route("/api/board/pms/dates", get(mine::api_dates))
 }
 
 /// Status for the panel. Never the password, access key or token.

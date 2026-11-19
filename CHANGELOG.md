@@ -12,6 +12,15 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.69] - 2026-11-19
+
+### Added
+- **`/pms` opens on "Của tôi": your open tickets, grouped by what needs doing.** Groups: Mới đổi từ lần trước (changed since your last `/pms`) → Quá hạn (up to 90 days) → Sắp hạn (today + 3 days) → Chờ tôi xác minh (Testing / Wait For Verifying where you verify) → Còn lại → Treo lâu (overdue > 90 days); each ticket sits in the first group that fits. Role chips (Tất cả · Xử lý · Xác minh · Tiếp nhận, `r`) with counts, group counters (`1`-`6` or a click) to show one group, rows say "trễ N ng" / "còn N ng", the detail names your roles and the comments since your last look. Read-only: nothing is written to PMS. Last look is kept in `~/.cache/ckit/pms-last-look`.
+- **`/pms` is fullscreen and takes the mouse.** Click a tab, role, counter, group header, "+ N ticket nữa", or a hint in the bottom bar; click a row to select it, double-click to take it; the wheel scrolls the list or the detail. The keyboard works as before. In fullscreen, select text with Option (iTerm/Ghostty) or Shift (kitty) held.
+- **"Của tôi" opens on Xử lý** (tickets you process); Tất cả · Xác minh · Tiếp nhận are a click or `r` away.
+- **Colored detail pane.** Status (done green, in progress blue, waiting yellow, reopened red), priority (Khẩn red, Ưu tiên cao yellow), muted field labels (Dự án, Phụ trách, Ngày mong muốn), colored section heads (Mô tả, Checklist, Việc con, Bình luận), and in the body the ticket sections Các bước tái hiện (blue), Kết quả mong muốn (green), Kết quả thực tế (red) plus any leading `Nhãn:` in yellow.
+- `GET /api/board/pms/mine?today=YYYY-MM-DD&role=all|processing|verification|reception&since=YYYY-MM-DD HH:MM:SS` (open tickets per role from filtered `getListTicket` queries, the first 10 rows per group dated via `retrieveTicket`) and `GET /api/board/pms/dates?ids=…` (≤ 40, cached 10 min).
+
 ## [0.1.68] - 2026-11-19
 
 ### Changed
