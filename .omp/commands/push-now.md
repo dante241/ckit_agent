@@ -19,8 +19,8 @@ Rewrite the `## 🚚 HANDOFF` block (create it right under `## Goal` if absent) 
 - **Repo state:** branch, HEAD short-sha + subject, latest tag, whether the tree is now clean.
 - **What changed THIS session:** the actual files touched (from `git diff --stat`) and WHY — one line each. Name symbols/paths, not vibes.
 - **Done ✓** vs **Next / TODO ▸** vs **Blockers ⚠** — explicit checkboxes. A TODO with no owner-obvious next action is useless; write the exact command or file to touch.
-- **Per-machine (NOT in git)** gotchas that bit this session, so the next box doesn't rediscover them (e.g. broken `npm`/pnpm shim → feynman won't launch; `8sync harness browser`; custom models in `~/.omp/agent/models.yml`; `8sync feynman auth-omp`). Cross-link `su-code/KNOWLEDGE.md` entries.
-- **New-machine runbook** (ordered): `git pull` → `bash scripts/bootstrap.sh` (or install.sh) → `8sync setup` → `8sync harness` → any per-machine re-apply.
+- **Per-machine (NOT in git)** gotchas that bit this session, so the next box doesn't rediscover them (e.g. broken `npm`/pnpm shim → feynman won't launch; `ckit harness browser`; custom models in `~/.omp/agent/models.yml`; `ckit feynman auth-omp`). Cross-link `su-code/KNOWLEDGE.md` entries.
+- **New-machine runbook** (ordered): `git pull` → `bash scripts/bootstrap.sh` (or install.sh) → `ckit setup` → `ckit harness` → any per-machine re-apply.
 
 ## 3. Repo hygiene (only if code changed)
 - Code touched → add a `## [Unreleased]`/version bullet to `CHANGELOG.md` (repo convention).
@@ -35,9 +35,9 @@ Rewrite the `## 🚚 HANDOFF` block (create it right under `## Goal` if absent) 
 
 ## 5. Report (terse)
 Print: pushed **`<sha>` `<subject>`** → `origin/<branch>`, files in the commit, and the exact one-liner for the other machine:
-`git pull && bash scripts/bootstrap.sh && 8sync harness` (+ any per-machine step from §2).
+`git pull && bash scripts/bootstrap.sh && ckit harness` (+ any per-machine step from §2).
 
 ## Guardrails
-Current branch only — never switch/create branches or open a PR (that's `8sync ship`). Never force-push. Never bump a release tag. Scope = the working tree + `su-code/` memory. If the tree is already clean and STATE is current, say so and do nothing rather than an empty commit.
+Current branch only — never switch/create branches or open a PR (that's `ckit ship`). Never force-push. Never bump a release tag. Scope = the working tree + `su-code/` memory. If the tree is already clean and STATE is current, say so and do nothing rather than an empty commit.
 
 Begin: ground, rewrite STATE for a cold resume, then commit + push `$ARGUMENTS`.

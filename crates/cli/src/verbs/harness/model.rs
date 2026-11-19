@@ -199,31 +199,18 @@ fn short_name(id: &str) -> String {
 /// Print the current omp `modelRoles` + reviewer override from config.yml, so
 /// the view answers "which model does omp actually use per role?".
 fn print_omp_roles(omp_cfg: &std::path::Path) {
-    let Ok(raw) = std::fs::read_to_string(omp_cfg) else {
+    if !omp_cfg.exists() {
         return;
-    };
-    println!("  omp modelRoles: {}", omp_cfg.display());
-    let mut in_roles = false;
-    let mut printed = false;
-    for line in raw.lines() {
-        let indented = line.starts_with([' ', '\t']);
-        if !indented {
-            in_roles = line.trim_start().starts_with("modelRoles:");
-            continue;
-        }
-        if in_roles {
-            let t = line.trim();
-            if !t.is_empty() {
-                println!("   {t}");
-                printed = true;
-            }
-        }
-        if let Some(rv) = line.trim().strip_prefix("reviewer:") {
-            println!("   reviewer:{rv}   (subagent)");
-            printed = true;
-        }
     }
-    if !printed {
+    let omp = crate::models::OmpRoles::load(omp_cfg);
+    println!("  omp modelRoles: {}", omp_cfg.display());
+    for (k, v) in &omp.roles {
+        println!("   {k}: {v}");
+    }
+    if let Some(rv) = &omp.reviewer {
+        println!("   reviewer: {rv}   (subagent)");
+    }
+    if omp.roles.is_empty() && omp.reviewer.is_none() {
         println!("   (none set — omp uses its bundled defaults)");
     }
     println!();

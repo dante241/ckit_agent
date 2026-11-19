@@ -13,6 +13,7 @@ pub fn print_cheatsheet() {
         ("8sync harness up --timer 30m",   "run the team loop in the background (periodic refresh + work)"),
         ("8sync harness audit|bench|eval", "doc-hygiene · token budget · loop-quality probe"),
         ("8sync harness web",              "local dashboard (axum+Vite): skills/memory/engines/readiness/team"),
+        ("8sync service install",          "run the Board dashboard in the background (login start, auto-restart; restarts keep running steps)"),
     ]);
     println!("  {}", crate::brand::render("Inside omp (after `8sync .`) — drive the autonomous engine:").dimmed());
     rows(&[
@@ -41,6 +42,7 @@ pub fn print_cheatsheet() {
         ("8sync note \"<msg>\"",   "append timestamped line to agents/NOTES.md"),
         ("8sync run dev|build|test|fmt|lint", "project runner via per-stack recipe"),
         ("8sync ship \"<msg>\"",   "git add -A + commit + push + `gh pr create` in one shot"),
+        ("8sync review <n> [--post]", "AI review of PR/MR n (gh/glab); `review init` = auto-review in CI"),
         ("8sync feynman auth-omp", "reuse omp's Claude OAuth + keys in Feynman (Pi research agent)"),
     ]);
     println!("  {}", crate::brand::render("→ each project gets an AGENTS.md (managed) + agents/ folder (memory) on first `8sync .`").dimmed());

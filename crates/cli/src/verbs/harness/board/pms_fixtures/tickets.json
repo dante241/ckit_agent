@@ -1,0 +1,63 @@
+{
+ "status": 200,
+ "data": {
+  "success": "1",
+  "entry_list": [
+   {
+    "ticketid": "2001",
+    "ticket_no": "#90001",
+    "ticketcategories": "Bug",
+    "label": "Ticket mẫu 1",
+    "ticketpriorities": "High",
+    "ticketstatus": "Wait For Verifying",
+    "createdtime": "2026-01-10 09:00:00",
+    "createdby": "21",
+    "assigned_user_id": "22",
+    "main_owner_id": "23",
+    "hours": "0.00",
+    "id": "2001",
+    "assigned_owners": [
+     {
+      "id": "Users:21",
+      "name": "Nhân viên B (user@example.com)"
+     },
+     {
+      "id": "Users:23",
+      "name": "Nhân viên C (user@example.com)"
+     }
+    ],
+    "follower": [
+     {
+      "id": "Users:21",
+      "name": "Người theo dõi 1 (user@example.com)"
+     }
+    ]
+   },
+   {
+    "ticketid": "2002",
+    "ticket_no": "#90002",
+    "ticketcategories": "",
+    "label": "Ticket mẫu 2",
+    "ticketpriorities": "Normal",
+    "ticketstatus": "Open",
+    "createdtime": "2026-01-09 15:30:00",
+    "createdby": "1",
+    "assigned_user_id": "21",
+    "main_owner_id": "21",
+    "hours": "0.00",
+    "id": "2002",
+    "assigned_owners": [
+     {
+      "id": "Users:21",
+      "name": "Nhân viên B (user@example.com)"
+     }
+    ],
+    "follower": []
+   }
+  ],
+  "paging": {
+   "result_count": "2",
+   "total_count": "2"
+  }
+ }
+}

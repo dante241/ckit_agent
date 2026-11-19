@@ -25,6 +25,7 @@ mod custom_model;
 mod browser;
 pub(crate) mod gateway;
 mod up;
+mod board;
 mod web;
 mod marketplace;
 pub(crate) mod knowledge;
@@ -231,7 +232,7 @@ fn print_help() {
     println!("{}", crate::brand::render("  8sync harness add-local-model <path> [name]  serve a local GGUF via mistral.rs (Rust) + register as omp `local/<name>`"));
     println!("{}", crate::brand::render("  8sync harness add-model <provider/model> --url <baseUrl>  register a REMOTE model omp's catalog lacks (custom provider)"));
     println!("{}", crate::brand::render("  8sync harness browser [fix|status|off]  point omp's browser at system Chromium (ungoogled) — fixes browser control not reaching the internet"));
-    println!("{}", crate::brand::render("  8sync harness web [--port N]    local dashboard (axum+Vite): skills/memory/engines/team/submodules"));
+    println!("{}", crate::brand::render("  8sync harness web [--port N]    local dashboard (axum+Vite): Board (AI delivery pipeline, runs in background) + skills/memory/engines/team"));
     println!("{}", crate::brand::render("  8sync harness toolstats         SQLite tracker: optimizer (codegraph/cbm/serena) vs fallback (grep/read) call ratio + fails"));
     println!("{}", crate::brand::render("  8sync skill [list|add|gen|update]   manage the library (`skill update [name]` re-pulls from skills.toml)"));
     println!("{}", crate::brand::render("  8sync feature [new|switch|status|list]  large multi-phase GSD scope (planning tree + ACTIVE switch); /feature plan|go|ship in omp"));

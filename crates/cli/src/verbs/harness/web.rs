@@ -27,10 +27,18 @@ const MEMORY_ALLOWLIST: &[&str] = &["STATE", "KNOWLEDGE", "PLAYBOOKS", "DECISION
 
 pub(crate) fn harness_web(home: &std::path::Path, port: u16, no_open: bool) -> Result<()> {
     let ctx = Arc::new(Ctx { home: home.to_path_buf() });
-    apply_active_project(home); // honor last-activated project across restarts
+    // Launched inside a project → that project is active (and remembered); launched
+    // elsewhere (e.g. ~) → reopen the last-activated one.
+    match detect_current_project_root() {
+        Some(root) => remember_project(home, &root),
+        None => apply_active_project(home),
+    }
     let app = api_routes()
+        .merge(super::board::routes())
         .merge(Router::new().fallback(static_handler))
+        .layer(axum::middleware::from_fn(local_only))
         .with_state(ctx);
+    let ctx_home = home.to_path_buf();
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     ui::ok(&format!("8sync harness web → http://127.0.0.1:{}  (Ctrl+C to stop)", port));
     if !no_open {
@@ -43,6 +51,10 @@ pub(crate) fn harness_web(home: &std::path::Path, port: u16, no_open: bool) -> R
         .build()?;
     rt.block_on(async {
         let listener = tokio::net::TcpListener::bind(addr).await?;
+        // After the bind: a second dashboard on the same port fails here instead of
+        // resetting the live instance's running tasks and double-running stages.
+        super::board::set_coordinator_port(port);
+        super::board::start_worker(ctx_home);
         axum::serve(listener, app).await?;
         Ok::<(), anyhow::Error>(())
     })?;
@@ -62,6 +74,51 @@ fn apply_active_project(home: &std::path::Path) {
             }
         }
     }
+}
+
+/// Record `root` as the active project in web-session.json (keeps other keys,
+/// e.g. `profile`) and chdir into it.
+fn remember_project(home: &std::path::Path, root: &std::path::Path) {
+    let path = crate::brand::config_dir(home).join("web-session.json");
+    let mut obj: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .filter(|v: &serde_json::Value| v.is_object())
+        .unwrap_or_else(|| serde_json::json!({}));
+    obj["project"] = serde_json::Value::String(root.display().to_string());
+    if let Some(p) = path.parent() {
+        let _ = std::fs::create_dir_all(p);
+    }
+    let _ = std::fs::write(&path, serde_json::to_string_pretty(&obj).unwrap_or_default());
+    let _ = std::env::set_current_dir(root);
+}
+
+/// The API acts on local repos (approve = merge, retry = run a yolo agent), and
+/// bodyless POSTs are "simple" cross-origin requests that any web page can fire at
+/// 127.0.0.1 without a preflight. Accept only requests whose `Host` is loopback
+/// (blocks DNS rebinding) and whose `Origin`, when the browser sends one, is too.
+async fn local_only(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    if !is_local_request(req.headers()) {
+        return (StatusCode::FORBIDDEN, "cross-origin request blocked").into_response();
+    }
+    next.run(req).await
+}
+
+fn is_local_request(h: &axum::http::HeaderMap) -> bool {
+    fn loopback(hostport: &str) -> bool {
+        let name = match hostport.rsplit_once(':') {
+            Some((n, p)) if p.chars().all(|c| c.is_ascii_digit()) => n,
+            _ => hostport,
+        };
+        matches!(name, "127.0.0.1" | "localhost" | "[::1]")
+    }
+    let get = |k: header::HeaderName| h.get(k).and_then(|v| v.to_str().ok());
+    let host_ok = get(header::HOST).is_some_and(loopback);
+    let origin_ok = match get(header::ORIGIN) {
+        None => true,
+        Some(o) => o.strip_prefix("http://").is_some_and(loopback),
+    };
+    host_ok && origin_ok
 }
 
 
@@ -330,11 +387,14 @@ async fn api_eval(State(ctx): State<Arc<Ctx>>) -> Result<Json<super::eval::EvalD
 async fn static_handler(uri: Uri) -> Response {
     let p = uri.path().trim_start_matches('/');
     let p = if p.is_empty() { "index.html" } else { p };
+    // index.html must never be cached: it names the hashed bundle, and a stale copy
+    // keeps the old UI after `ckit` is updated. Hashed `assets/*` never change.
+    let cache = |path: &str| if path.starts_with("assets/") { "public, max-age=31536000, immutable" } else { "no-cache" };
     if let Some(bytes) = assets::web_asset(p) {
-        return ([(header::CONTENT_TYPE, mime_for(p))], bytes).into_response();
+        return ([(header::CONTENT_TYPE, mime_for(p)), (header::CACHE_CONTROL, cache(p))], bytes).into_response();
     }
     if let Some(bytes) = assets::web_asset("index.html") {
-        return ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], bytes).into_response();
+        return ([(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")], bytes).into_response();
     }
     (StatusCode::NOT_FOUND, "8sync web FE not built — run `pnpm --dir web build`").into_response()
 }
@@ -1094,11 +1154,54 @@ fn models_toml_path(home: &std::path::Path) -> std::path::PathBuf {
 }
 
 /// The `/api/models` JSON shape: config path + parsed roles/tasks + the fixed
-/// task-class list the FE renders as editable rows.
-fn models_config_json(path: &std::path::Path) -> serde_json::Value {
-    let cfg = crate::models::ModelConfig::load();
+/// task-class list the FE renders as editable rows, plus what the Board really
+/// runs: one row per step (and the coordinator/answerer/advisor) with the model
+/// omp resolves through its `modelRoles`.
+fn models_config_json(home: &std::path::Path) -> serde_json::Value {
+    use crate::models::{ModelConfig, OmpRoles, TaskClass};
+    let cfg = ModelConfig::load();
+    let omp_path = home.join(".omp/agent/config.yml");
+    let omp = OmpRoles::load(&omp_path);
+    let resolved: serde_json::Map<String, serde_json::Value> = TaskClass::ALL
+        .iter()
+        .map(|c| (c.key().to_string(), serde_json::json!(cfg.resolve(*c, &omp))))
+        .collect();
+    let row = |step: &str, label: &str, who: &str, class: &str| {
+        let mut v = resolved.get(class).cloned().unwrap_or_default();
+        if let Some(o) = v.as_object_mut() {
+            o.insert("step".into(), step.into());
+            o.insert("label".into(), label.into());
+            o.insert("who".into(), who.into());
+            o.insert("class".into(), class.into());
+        }
+        v
+    };
+    let catalog = super::board::step_catalog_json();
+    let mut board: Vec<serde_json::Value> = catalog["catalog"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| {
+            let class = s["class"].as_str()?;
+            Some(row(s["key"].as_str()?, s["label"].as_str()?, s["who"].as_str()?, class))
+        })
+        .collect();
+    // Coordinator (board/coord.rs) and the Leader answering team questions
+    // (board/ask.rs) both run with `class_flags(TaskClass::Plan)`.
+    board.push(row("coordinator", "Điều phối", "Trợ lý của sếp", "plan"));
+    board.push(row("answer", "Leader trả lời team", "Leader", "plan"));
+    if cfg.advisor {
+        let mut v = serde_json::json!(ModelConfig::resolve_advisor(&omp));
+        if let Some(o) = v.as_object_mut() {
+            o.insert("step".into(), "advisor".into());
+            o.insert("label".into(), "Cố vấn (advisor)".into());
+            o.insert("who".into(), "omp advisor".into());
+            o.insert("class".into(), serde_json::Value::Null);
+        }
+        board.push(v);
+    }
     serde_json::json!({
-        "path": path.display().to_string(),
+        "path": models_toml_path(home).display().to_string(),
         "roles": {
             "default": cfg.roles.default,
             "plan": cfg.roles.plan,
@@ -1107,11 +1210,17 @@ fn models_config_json(path: &std::path::Path) -> serde_json::Value {
         },
         "tasks": cfg.tasks,
         "classes": ["plan", "review", "debug", "code", "trivial"],
+        "advisor": cfg.advisor,
+        "resolved": resolved,
+        "board": board,
+        "omp_config": omp_path.display().to_string(),
+        "omp_roles": omp.roles,
+        "omp_reviewer": omp.reviewer,
     })
 }
 
 async fn api_models_get(State(ctx): State<Arc<Ctx>>) -> Json<serde_json::Value> {
-    Json(models_config_json(&models_toml_path(&ctx.home)))
+    Json(models_config_json(&ctx.home))
 }
 
 #[derive(Deserialize)]
@@ -1144,7 +1253,7 @@ async fn api_models_set(
     }
     super::model::set_model_toml(&path, section, key, body.value.trim())
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(models_config_json(&path)))
+    Ok(Json(models_config_json(&ctx.home)))
 }
 
 // ---- Projects (omp session directories) ----
@@ -1156,9 +1265,12 @@ async fn api_models_set(
 /// tokens that names an existing directory. Returns None if it can't be resolved
 /// to an existing path.
 fn slug_to_path(home: &std::path::Path, slug: &str) -> Option<std::path::PathBuf> {
-    let body = slug.strip_prefix('-')?;
+    // omp session dirs: `-a-b` = `~/a/b`; `--a-b--` = `/a/b` (outside home).
+    let (mut cur, body) = match slug.strip_prefix("--").and_then(|s| s.strip_suffix("--")) {
+        Some(abs) => (std::path::PathBuf::from("/"), abs),
+        None => (home.to_path_buf(), slug.strip_prefix('-')?),
+    };
     let tokens: Vec<&str> = body.split('-').collect();
-    let mut cur = home.to_path_buf();
     let mut i = 0;
     while i < tokens.len() {
         let mut advanced = false;
@@ -1228,6 +1340,10 @@ async fn api_projects(State(ctx): State<Arc<Ctx>>) -> Json<Vec<serde_json::Value
         .unwrap_or(0);
     let most_recent = by_path.values().copied().max().unwrap_or(0);
     let current = detect_current_project_root();
+    // The project the dashboard is on is always listed, even with no omp session yet.
+    if let Some(c) = &current {
+        by_path.entry(c.clone()).or_insert(0);
+    }
     let mut out: Vec<serde_json::Value> = by_path
         .into_iter()
         .map(|(path, mtime)| {
@@ -1892,5 +2008,17 @@ mod tests {
         assert_eq!(slug_to_path(&home.0, "-does-not-exist"), None);
         // Missing leading '-' is not a valid slug.
         assert_eq!(slug_to_path(&home.0, "Projects"), None);
+    }
+
+    #[test]
+    fn slug_outside_home_resolves_from_root() {
+        // omp names sessions of `/x/y` as `--x-y--` (vs `-x-y` under home).
+        let home = TmpHome::new("abs-home");
+        let base = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("ckit-abs-{}", std::process::id()));
+        let root = base.join("dante").join("api_gateway-v2");
+        std::fs::create_dir_all(&root).unwrap();
+        let rel = root.to_string_lossy().trim_start_matches('/').replace('/', "-");
+        assert_eq!(slug_to_path(&home.0, &format!("--{rel}--")), Some(root));
+        let _ = std::fs::remove_dir_all(base);
     }
 }

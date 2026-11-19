@@ -1,0 +1,46 @@
+{
+ "status": 200,
+ "data": {
+  "success": "1",
+  "data": {
+   "label": "Ticket mẫu 3",
+   "ticket_no": "#90003",
+   "ticketpriorities": "Normal",
+   "ticketstatus": "Open",
+   "ticketcategories": "Feedback",
+   "createdtime": "2026-01-08 08:00:00",
+   "modifiedtime": "2026-01-08 08:30:00",
+   "ticket_title": "Ticket mẫu 3",
+   "description": "Khách hàng A báo lỗi mẫu khi gửi tệp đính kèm.",
+   "solution": "",
+   "main_owner_id": "11",
+   "steps_to_reproduce": "1. Mở màn hình mẫu<br>2. Gửi tệp",
+   "expected_result": "",
+   "actual_result": "",
+   "expected_date": "2026-01-30",
+   "related_project": "5003",
+   "related_project_name": "Dự án mẫu",
+   "record_id": "2003",
+   "record_module": "HelpDesk",
+   "id": "2003",
+   "assigned_owners": [
+    {
+     "id": "Users:11",
+     "name": "Nhân viên A (user@example.com)"
+    },
+    {
+     "id": "Users:12",
+     "name": "Nhân viên D (user@example.com)"
+    }
+   ],
+   "follower": [
+    {
+     "id": "Users:12",
+     "name": "Người theo dõi 1 (user@example.com)"
+    }
+   ],
+   "editable": "1",
+   "deletable": "1"
+  }
+ }
+}

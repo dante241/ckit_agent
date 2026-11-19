@@ -1,0 +1,31 @@
+{
+ "status": 200,
+ "data": {
+  "success": "1",
+  "entry_list": [
+   {
+    "modcommentsid": "3001",
+    "commentcontent": "Chào <span><span style='color: #1B74E4'>@Nhân viên F</span></span>, kiểm tra lại dữ liệu mẫu &amp; phản hồi nhé",
+    "related_to": "2003",
+    "parent_comments": "0",
+    "userid": "31",
+    "createdtime": "2026-01-09 13:40:00",
+    "modifiedtime": "2026-01-09 13:40:00",
+    "label": "Chào @Nhân viên F, kiểm tra lại dữ liệu mẫu & phản hồi nhé",
+    "main_owner_id": "31",
+    "assigned_owners": [
+     {
+      "id": "Users:31",
+      "name": "Nhân viên E (user@example.com)"
+     }
+    ],
+    "avatar": "https://example.com/avatar.png",
+    "rawcontent": "Chào @Nhân viên F, kiểm tra lại dữ liệu mẫu & phản hồi nhé"
+   }
+  ],
+  "paging": {
+   "result_count": "1",
+   "total_count": "1"
+  }
+ }
+}

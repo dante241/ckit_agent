@@ -3,9 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ckit harness — agent-team dashboard</title>
-    <meta name="description" content="Manage ckit agent harness: skills, memory, engines, readiness, workspaces." />
-    <meta name="color-scheme" content="dark light" />
+    <title>Ckit Harness</title>
+    <meta name="description" content="Ckit Harness: your AI agent team's board, skills, memory, engines and workspaces." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Saved theme before first paint (no dark/light flash). Default: Sáng (light).
+      try {
+        if (localStorage.getItem("ckit.theme") === "dark") document.documentElement.dataset.theme = "dark";
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

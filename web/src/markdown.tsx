@@ -18,8 +18,9 @@ type Inline =
 // **bold** ahead of *italic* and `code` ahead of everything (protects content).
 // Source kept as a string; each parseInline builds a fresh RegExp so recursive
 // calls don't clobber a shared .lastIndex (which would re-match forever).
+// `_`/`__` emphasis only at word boundaries (CommonMark): `test_divide_exact` stays literal.
 const INLINE_SRC =
-  /(`[^`]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(\*[^*\n]+\*\*)|(_[^_\n]+_)|(~~[^~\n]+~~)|(\[[^\]\n]+\]\([^)\s]+\))/.source;
+  /(`[^`]+`)|(\*\*[^*\n]+\*\*)|((?<!\w)__[^_\n]+__(?!\w))|(\*[^*\n]+\*)|((?<!\w)_[^_\n]+_(?!\w))|(~~[^~\n]+~~)|(\[[^\]\n]+\]\([^)\s]+\))/.source;
 
 function parseInline(text: string): Inline[] {
   const out: Inline[] = [];
@@ -84,7 +85,17 @@ type Block =
   | { k: "hr" }
   | { k: "quote"; text: string }
   | { k: "ul"; items: { checked: boolean | null; text: string }[] }
-  | { k: "ol"; items: { checked: boolean | null; text: string }[] };
+  | { k: "ol"; items: { checked: boolean | null; text: string }[] }
+  | { k: "table"; head: string[]; rows: string[][] };
+
+// GFM table row → cells. Leading/trailing pipe optional; `\|` stays a literal pipe.
+function tableCells(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
+  return s.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
+}
+const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 
 function parseBlocks(src: string): Block[] {
   const lines = src.replace(/\r\n?/g, "\n").split("\n");
@@ -112,6 +123,19 @@ function parseBlocks(src: string): Block[] {
       }
       i++; // consume closing fence (or EOF)
       blocks.push({ k: "code", lang, text: buf.join("\n") });
+      continue;
+    }
+    // GFM table: a pipe row followed by a `---|---` separator row.
+    if (line.includes("|") && TABLE_SEP.test(lines[i + 1] ?? "")) {
+      flushPara();
+      const head = tableCells(line);
+      const rows: string[][] = [];
+      i += 2;
+      while (i < lines.length && (lines[i] ?? "").includes("|") && (lines[i] ?? "").trim() !== "") {
+        rows.push(tableCells(lines[i] ?? ""));
+        i++;
+      }
+      blocks.push({ k: "table", head, rows });
       continue;
     }
     // Heading.
@@ -182,6 +206,11 @@ function parseBlocks(src: string): Block[] {
   return blocks;
 }
 
+/** One line of inline markdown (code, bold, links), no block wrapper: summaries, list rows. */
+export function Inline({ text }: { text: string }) {
+  return <>{renderInline(parseInline(text ?? ""), "i")}</>;
+}
+
 export function Markdown({ source }: { source: string }) {
   const blocks = parseBlocks(source ?? "");
   return (
@@ -243,6 +272,21 @@ export function Markdown({ source }: { source: string }) {
                   </li>
                 ))}
               </ol>
+            );
+          case "table":
+            return (
+              <div key={key} className="md-table-wrap">
+                <table className="md-table">
+                  <thead>
+                    <tr>{b.head.map((c, j) => <th key={j}>{renderInline(parseInline(c), `${key}-h${j}`)}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {b.rows.map((r, ri) => (
+                      <tr key={ri}>{b.head.map((_, j) => <td key={j}>{renderInline(parseInline(r[j] ?? ""), `${key}-${ri}-${j}`)}</td>)}</tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             );
         }
       })}

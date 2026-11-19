@@ -23,9 +23,9 @@ Explore code with **codegraph / codebase-memory-mcp / serena** — never grep/Re
 
 ## 3. Prepare the workspace (make it actually runnable HERE)
 Follow the handoff's new-machine runbook + per-machine section. Concretely:
-- **Binary current?** If the pulled diff touched `crates/` or `assets/`, rebuild: `bash scripts/bootstrap.sh` (or `cargo build --release` + install). Then `8sync harness` so skills/commands/AGENTS/codegraph index refresh on THIS box.
-- **Per-machine gotchas** the handoff called out (these live in `~`, NOT git) — verify each that's relevant, e.g.: `npm --version` prints a number (else fix the pnpm shim per KNOWLEDGE), `8sync feynman auth-omp` if using Feynman, `8sync harness browser`, custom models in `~/.omp/agent/models.yml`, VPN. Don't run heavyweight/sudo/reroute steps (`vpn install`/`on`, big AUR) unprompted — list them as "run if you need X".
-- **Sanity:** `8sync doctor` (or the project's build/test smoke) to confirm green before continuing.
+- **Binary current?** If the pulled diff touched `crates/` or `assets/`, rebuild: `bash scripts/bootstrap.sh` (or `cargo build --release` + install). Then `ckit harness` so skills/commands/AGENTS/codegraph index refresh on THIS box.
+- **Per-machine gotchas** the handoff called out (these live in `~`, NOT git) — verify each that's relevant, e.g.: `npm --version` prints a number (else fix the pnpm shim per KNOWLEDGE), `ckit feynman auth-omp` if using Feynman, `ckit harness browser`, custom models in `~/.omp/agent/models.yml`, VPN. Don't run heavyweight/sudo/reroute steps (`vpn install`/`on`, big AUR) unprompted — list them as "run if you need X".
+- **Sanity:** `ckit doctor` (or the project's build/test smoke) to confirm green before continuing.
 
 ## 4. Report — orient the human, then decide
 Print a tight status: **current state** (branch/HEAD, what's done vs in-progress from the handoff), **blockers**, **the single next concrete action** (exact file/command), and any per-machine step still pending.

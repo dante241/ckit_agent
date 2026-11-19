@@ -1,0 +1,29 @@
+# Automated code review on every MR push: `ckit review` (written by `ckit review init`).
+# Include it from .gitlab-ci.yml:   include: { local: .gitlab/ckit-review.yml }
+# Runs in stage `test` (a pipeline of only .pre/.post jobs is never created); rename
+# it if your `stages:` has no `test`. Same-project MRs only.
+# CI/CD variables (masked; not protected, so MR pipelines see them):
+#   GITLAB_TOKEN       project access token, role Reporter (enough to comment), scope `api`.
+#                      Not Developer/Maintainer: any MR branch can edit this job.
+#                      (CI_JOB_TOKEN cannot comment.)
+#   ANTHROPIC_API_KEY  or another provider key omp reads from env
+#   CKIT_REVIEW_MODEL  optional, e.g. claude-sonnet-4-5
+# Comments only: never approves or blocks a merge.
+ckit-review:
+  stage: test
+  needs: []
+  image: debian:bookworm-slim
+  interruptible: true
+  timeout: 30m
+  variables:
+    GIT_DEPTH: "0"
+    GLAB_VERSION: "1.90.0"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID && $CI_MERGE_REQUEST_DRAFT != "true" && $CI_MERGE_REQUEST_LABELS !~ /(^|,)no-ai-review(,|$)/'
+  script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends git curl ca-certificates >/dev/null
+    - curl -fsSL -o /tmp/glab.deb "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_amd64.deb" && dpkg -i /tmp/glab.deb >/dev/null
+    - curl -fsSL https://omp.sh/install | sh
+    - curl -fsSL https://raw.githubusercontent.com/dante241/ckit_agent/main/install.sh | sh
+    - export PATH="$HOME/.local/bin:$PATH" GITLAB_HOST="$CI_SERVER_URL"
+    - ckit review --post ${CKIT_REVIEW_MODEL:+--model "$CKIT_REVIEW_MODEL"}

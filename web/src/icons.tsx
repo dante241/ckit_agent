@@ -22,6 +22,13 @@ const svg = (children: ReactNode): ReactNode => (
 // Keyed by NAV page id. Indexing yields `ReactNode | undefined`; callers fall
 // back to null, so an unknown id renders no glyph rather than crashing.
 const ICONS: Record<string, ReactNode> = {
+  board: svg(
+    <>
+      <rect x="3.5" y="4" width="17" height="16" rx="2" />
+      <path d="M9.2 4v16M14.8 4v16" />
+      <path d="M5.6 7.5h1.6M11.2 7.5h1.6M11.2 10.5h1.6M16.8 7.5h1.6" />
+    </>,
+  ),
   state: svg(<path d="M3 12h4l2.5 6 4-12 2.5 6H21" />),
   context: svg(
     <>
@@ -131,12 +138,10 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M9 13h6M9 16.5h4" />
     </>,
   ),
-  workflow: svg(
+  settings: svg(
     <>
-      <circle cx="6" cy="6" r="2.3" />
-      <circle cx="18" cy="6" r="2.3" />
-      <circle cx="12" cy="18" r="2.3" />
-      <path d="M8 7.6l3 8.2M16 7.6l-3 8.2M8.3 6h7.4" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </>,
   ),
 };
@@ -146,10 +151,12 @@ export function NavIcon({ name }: { name: string }) {
 }
 
 // ── Small UI affordance glyphs (not keyed by page) ─────────────────────────
-export function Glyph({ name }: { name: "chevron" | "folder" | "refresh" | "check" | "alert" | "plus" | "trash" | "export" | "layout" }) {
+export function Glyph({ name }: { name: "chevron" | "next" | "folder" | "refresh" | "check" | "alert" | "plus" | "trash" | "export" | "layout" | "log" | "doc" }) {
   switch (name) {
     case "chevron":
       return svg(<path d="M6 9l6 6 6-6" />);
+    case "next":
+      return svg(<path d="M9 6l6 6-6 6" />);
     case "folder":
       return svg(
         <>
@@ -192,6 +199,20 @@ export function Glyph({ name }: { name: "chevron" | "folder" | "refresh" | "chec
           <path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
         </>,
       );
+    case "log":
+      return svg(
+        <>
+          <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+          <path d="M7.5 9.5l3 2.5-3 2.5M12.5 15h4" />
+        </>,
+      );
+    case "doc":
+      return svg(
+        <>
+          <path d="M6.5 3.5h7l4 4v11.5a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1.5-1.5z" />
+          <path d="M13.5 3.5v4h4M8.5 12.5h7M8.5 16h5" />
+        </>,
+      );
     case "layout":
       return svg(
         <>
@@ -200,25 +221,4 @@ export function Glyph({ name }: { name: "chevron" | "folder" | "refresh" | "chec
         </>,
       );
   }
-}
-
-// Wordmark glyph: two sync arrows on an accent badge (badge styling lives in
-// CSS via .brand-mark). White stroke reads on the violet gradient.
-export function LogoMark() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d="M4.5 10a7.5 7.5 0 0 1 12.4-3.1L19 9" />
-      <path d="M19.5 14a7.5 7.5 0 0 1-12.4 3.1L5 15" />
-      <path d="M19 4.5V9h-4.5M5 19.5V15h4.5" />
-    </svg>
-  );
 }

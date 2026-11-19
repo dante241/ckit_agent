@@ -14,7 +14,7 @@
 // The `/auto` slash command orchestrates these tools into a run-to-done loop.
 // This is THE automation path: a single `/auto` command (no competing `/gs`).
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
@@ -1185,6 +1185,129 @@ export default function (pi: ExtensionAPI) {
       return text(`Removed worktree ${wt}${r.ok ? ` and branch ${branch}` : ""}.`);
     },
   });
+
+  // ── board_ask — Board team members ask each other mid-step ─────────────────
+  // Only inside a Board run (the board sets CKIT_BOARD_ASK_DIR). The question is
+  // a file the board worker routes to the Leader (who planned the phase; a
+  // read-only fork of its plan session) or
+  // to the boss (dashboard); this tool waits for the answer file. Waiting costs
+  // no tokens; the board pauses the step's timeout while a question is open.
+  const askDir = process.env.CKIT_BOARD_ASK_DIR;
+  if (askDir) {
+    const MAX_ASKS = 5;
+    const timeoutMs = (Number(process.env.CKIT_BOARD_ASK_TIMEOUT) || 1200) * 1000;
+    const from = process.env.CKIT_BOARD_STAGE ?? "dev";
+    let asked = 0;
+    const sleep = (ms: number, signal?: AbortSignal) =>
+      new Promise<void>((res) => {
+        const t = setTimeout(res, ms);
+        signal?.addEventListener("abort", () => (clearTimeout(t), res()), { once: true });
+      });
+    pi.registerTool({
+      name: "board_ask",
+      label: "Board: ask the team",
+      description:
+        "Ask a teammate and WAIT for the answer (this run is headless; `ask` is unavailable). `to`: `leader` = requirements, acceptance criteria, scope detail, product or technical trade-off (the Leader who planned the phase answers, or escalates to the boss); `boss` = only what nobody else can decide (money, data, security, business rules). Ask only when the answer changes what you build — never for things the code, docs or planning tree answer. Give your recommended default in the question. Max 5 per run; on timeout decide yourself and mark it `(auto-decided)`.",
+      parameters: z.object({
+        to: z.enum(["leader", "boss"]),
+        question: z.string().default(""),
+        options: z.array(z.string()).max(5).default(() => []),
+        kind: z.enum(["question", "ac_change"]).default("question").describe("`ac_change` = you want to reinterpret, loosen, drop or replace an acceptance criterion (incl. re-grading, 'PASS theo cổng', moving it to Loại): only the boss decides, it never times out; never self-PASS such an AC"),
+        ac: z
+          .object({ ac: z.string(), old: z.string(), new: z.string(), reason: z.string(), evidence: z.string().default("") })
+          .optional()
+          .describe("required for kind=ac_change: AC id (AC-07), its current text, the proposed text/verdict, why, and the evidence (command + output)"),
+      }),
+      async execute(_id, params, signal) {
+        const acChange = params.kind === "ac_change";
+        if (acChange && !params.ac) return text("kind=ac_change needs `ac: {ac, old, new, reason, evidence}`.");
+        if (!acChange && params.question.trim().length < 5) return text("`question` is required (≥5 chars).");
+        // AC changes are decisions the boss must take: never capped, never timed out.
+        if (!acChange && asked >= MAX_ASKS) return text(`Question limit (${MAX_ASKS}) reached for this run — decide yourself and mark it (auto-decided).`);
+        if (!acChange) asked++;
+        mkdirSync(askDir, { recursive: true });
+        // Exclusive create (`wx`): parallel askers in this run never share a number.
+        const q = (n: number) =>
+          JSON.stringify({ id: `Q-${n}`, from, to: acChange ? "boss" : params.to, question: params.question, options: params.options, kind: params.kind, ac: params.ac, at: new Date().toISOString() });
+        let n = 1;
+        for (;;) {
+          try {
+            writeFileSync(join(askDir, `Q-${n}.json`), q(n), { flag: "wx" });
+            break;
+          } catch (e) {
+            if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+            n++;
+          }
+        }
+        const id = `Q-${n}`;
+        const answerPath = join(askDir, `A-${n}.json`);
+        const readAnswer = () => {
+          try {
+            return JSON.parse(readFileSync(answerPath, "utf8")) as { answer: string; by: string };
+          } catch {
+            return null; // absent (the board publishes it complete, via link)
+          }
+        };
+        const deadline = acChange ? Infinity : Date.now() + timeoutMs;
+        while (Date.now() < deadline && !signal?.aborted) {
+          // A pause request beats waiting: return so the steer can be delivered.
+          if (existsSync(join(askDir, "inbox", "PAUSE"))) return text(`The boss asked to pause — ${id} is left open; follow the pause instruction that follows.`);
+          const a = readAnswer();
+          if (a) return text(`Answer from ${a.by} (${id}):\n${a.answer}`);
+          await sleep(2000, signal);
+        }
+        // Aborted (cancel): leave it unanswered — the board closes it.
+        if (signal?.aborted) return text(`${id} cancelled.`);
+        if (acChange) return text(`${id} still open.`);
+        // Claim the timeout exclusively; an answer that landed first wins.
+        try {
+          writeFileSync(answerPath, JSON.stringify({ answer: "", by: "timeout", at: new Date().toISOString() }), { flag: "wx" });
+        } catch {
+          const a = readAnswer();
+          if (a && a.by !== "timeout") return text(`Answer from ${a.by} (${id}):\n${a.answer}`);
+        }
+        return text(`No answer to ${id} in time — decide yourself (take your recommended default), mark it (auto-decided) and say so in your result message.`);
+      },
+    });
+  }
+
+  // ── Inbox: the boss / coordinator interjects into this running step ─────────
+  // Each `inbox/M-<n>.json` is injected into the live session as a steer (at the
+  // next tool boundary). Rename-to-claim makes delivery exactly-once.
+  if (askDir) {
+    const inbox = join(askDir, "inbox");
+    const resultPath = process.env.CKIT_BOARD_RESULT ?? "result.json";
+    const who = (f: string) => (f === "coordinator" ? "the coordinator (acting for the boss)" : "the boss");
+    const deliver = () => {
+      let names: string[] = [];
+      try {
+        names = readdirSync(inbox).filter((n) => /^M-\d+\.json$/.test(n)).sort((a, b) => parseInt(a.slice(2)) - parseInt(b.slice(2)));
+      } catch {
+        return;
+      }
+      for (const name of names) {
+        const sent = join(inbox, name.replace(/\.json$/, ".sent"));
+        try {
+          renameSync(join(inbox, name), sent);
+        } catch {
+          continue; // already claimed
+        }
+        let m: { kind: string; text: string; from: string };
+        try {
+          m = JSON.parse(readFileSync(sent, "utf8"));
+        } catch {
+          continue;
+        }
+        const msg =
+          m.kind === "pause"
+            ? `PAUSE requested by ${who(m.from)}${m.text ? `: ${m.text}` : "."}\nStop at a safe point NOW: finish only the tool call already in progress and start nothing new. If the current engine task's verify already passed, engine_advance it with its files; otherwise leave the edits uncommitted. Then write ${resultPath} = {"verdict": "paused", "message": "<done so far · half-done (files) · next step>"} and end your turn. The step is resumed later in this same session.`
+            : `Message from ${who(m.from)} while you work (it overrides the plan where they conflict): ${m.text}\nAcknowledge it in one line, adjust, and continue.`;
+        pi.sendUserMessage(msg, { deliverAs: "steer" });
+      }
+    };
+    const iv = setInterval(deliver, 2000);
+    (iv as unknown as { unref?: () => void }).unref?.();
+  }
 
   pi.registerCommand("engine", {
     description: "ckit engine status — show plan progress",
