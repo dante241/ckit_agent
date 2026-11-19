@@ -449,6 +449,18 @@ function boss(pi: ExtensionAPI, base: string) {
   const STATUS_FILTER: Record<string, string> = { open: "Đang mở", done: "Đã xong", all: "Mọi tình trạng" };
   const TAB_LABEL: Record<Tab, string> = { ticket: "Ticket", task: "Task", report: "Report" };
   const PRIORITY_VI: Record<string, string> = { urgent: "Khẩn", high: "Ưu tiên cao", normal: "Thường", medium: "Trung bình", low: "Thấp" };
+  type Sort = "updated" | "created" | "due_asc" | "due_desc";
+  /** "Due" is the ticket's "Ngày mong muốn" and the task's planned end ("Hạn"). */
+  const dueLabel = (t: Tab) => (t === "ticket" ? "Ngày mong muốn" : "Hạn");
+  const SORT_LABEL = (t: Tab): Record<Sort, string> => ({
+    updated: "Mới cập nhật",
+    created: "Mới tạo",
+    due_asc: `${dueLabel(t)} gần nhất`,
+    due_desc: `${dueLabel(t)} xa nhất`,
+  });
+  /** Filters sent to /api/board/pms/search on top of "Của tôi" and the status preset. */
+  type Flt = { statuses: string[]; project: string; priority: string; category: string; owner: string; view: string };
+  const NO_FLT = (): Flt => ({ statuses: [], project: "", priority: "", category: "", owner: "", view: "" });
 
   /** The web picker in the terminal: tabs + search + filters over a list | preview split. */
   type Tui = typeof import("@oh-my-pi/pi-tui");
@@ -458,6 +470,13 @@ function boss(pi: ExtensionAPI, base: string) {
     let tab: Tab = "ticket";
     let mine = true;
     let status: "open" | "done" | "all" = "open";
+    let sort: Sort = "updated";
+    let flt = NO_FLT();
+    /** Labels for chosen filter values, so the top bar reads names, not ids. */
+    const fltLabel = new Map<string, string>();
+    const metas = new Map<string, any>();
+    /** The "f" panel: pick a field, then its value(s); type to narrow long lists. */
+    let panel: null | { field: number; open: boolean; cur: number; q: string } = null;
     const input = new Input();
     let typing = false;
     let entries: any[] = []; // search items, or report rows
@@ -511,12 +530,14 @@ function boss(pi: ExtensionAPI, base: string) {
           hasMore = r.has_more;
           if (!entries.length) error = r.chart ? "Report này là biểu đồ, không có dòng để chọn." : "Report này chưa có dòng nào.";
         } else {
-          const q = new URLSearchParams({ kind: tab, q: input.getValue().trim(), mine: mine ? "1" : "0", status, page: String(page) });
+          const q = new URLSearchParams({ kind: tab, q: input.getValue().trim(), mine: mine ? "1" : "0", status, sort, page: String(page) });
+          if (flt.statuses.length) q.set("statuses", flt.statuses.join(","));
+          for (const k of ["project", "priority", "category", "owner", "view"] as const) if (flt[k]) q.set(k, flt[k]);
           const r = await api("GET", `/api/board/pms/search?${q}`);
           if (my !== seq) return;
           entries = reset ? r.items : [...entries, ...r.items];
           hasMore = r.has_more;
-          if (!entries.length) error = `Không tìm thấy ${tab} nào. ${mine || status !== "all" ? "Thử tắt Của tôi (m) hoặc đổi tình trạng (s)." : "Thử từ khoá khác."}`;
+          if (!entries.length) error = `Không tìm thấy ${tab} nào. Thử tắt Của tôi (m), đổi tình trạng (s) hoặc bỏ bớt bộ lọc (f).`;
         }
       } catch (e) {
         if (my === seq) error = (e as Error).message;
@@ -574,6 +595,10 @@ function boss(pi: ExtensionAPI, base: string) {
       marked.clear();
       input.setValue("");
       report = null;
+      // Statuses, categories and priorities are per kind: a ticket filter means nothing to tasks.
+      flt = NO_FLT();
+      fltLabel.clear();
+      panel = null;
       typing = t === "report";
       if (t === "report") {
         ++seq;
@@ -594,6 +619,152 @@ function boss(pi: ExtensionAPI, base: string) {
       preview();
       redraw();
     };
+
+    // ── Filter & sort panel ("f") ──
+    type Opt = { value: string; label: string };
+    type Field = { label: string; multi?: boolean; opts: () => Opt[]; chosen: () => string[]; pick: (o: Opt) => void; text: () => string };
+    const meta = () => metas.get(tab);
+    async function ensureMeta() {
+      if (tab === "report" || metas.has(tab)) return;
+      metas.set(tab, null); // loading
+      try {
+        metas.set(tab, await api("GET", `/api/board/pms/meta?kind=${tab}`));
+      } catch (e) {
+        metas.set(tab, { error: (e as Error).message });
+      }
+      redraw();
+    }
+    const ALL: Opt = { value: "", label: "Tất cả" };
+    const one = (k: "project" | "priority" | "category" | "owner" | "view", list: string, label: string): Field => ({
+      label,
+      opts: () => [ALL, ...(meta()?.[list] ?? [])],
+      chosen: () => [flt[k]],
+      pick: (o) => {
+        flt[k] = o.value;
+        fltLabel.set(k, o.label);
+        // A chosen assignee replaces "Của tôi" (the server lets owner override it).
+        if (k === "owner" && o.value) mine = false;
+      },
+      text: () => (flt[k] ? (fltLabel.get(k) ?? flt[k]) : "Tất cả"),
+    });
+    const fields = (): Field[] => [
+      {
+        label: "Sắp xếp",
+        opts: () => (Object.entries(SORT_LABEL(tab)) as [Sort, string][]).map(([value, label]) => ({ value, label })),
+        chosen: () => [sort],
+        pick: (o) => (sort = o.value as Sort),
+        text: () => SORT_LABEL(tab)[sort],
+      },
+      {
+        label: "Tình trạng",
+        multi: true,
+        opts: () => meta()?.statuses ?? [],
+        chosen: () => flt.statuses,
+        pick: (o) => {
+          flt.statuses = flt.statuses.includes(o.value) ? flt.statuses.filter((v) => v !== o.value) : [...flt.statuses, o.value];
+        },
+        text: () => (flt.statuses.length ? flt.statuses.map(vi).join(", ") : `${STATUS_FILTER[status]} (phím s)`),
+      },
+      one("project", "projects", "Dự án"),
+      one("priority", "priorities", "Mức ưu tiên"),
+      one("category", "categories", tab === "task" ? "Loại công việc" : "Phân loại"),
+      one("owner", "users", "Người phụ trách"),
+      one("view", "views", "Danh sách đã lưu"),
+    ];
+    // Accent-insensitive match, so "nguyen tung" finds "Nguyễn Tùng".
+    const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+    const optsOf = (f: Field, q: string) => {
+      const n = fold(q.trim());
+      return n ? f.opts().filter((o) => fold(o.label).includes(n)) : f.opts();
+    };
+    const fltCount = () => [flt.statuses.length > 0, flt.project, flt.priority, flt.category, flt.owner, flt.view].filter(Boolean).length;
+
+    function openPanel() {
+      if (tab === "report") return;
+      panel = { field: 0, open: false, cur: 0, q: "" };
+      void ensureMeta();
+      redraw();
+    }
+
+    function panelInput(data: string) {
+      const p = panel!;
+      const fs = fields();
+      if (!p.open) {
+        const n = fs.length + 1; // + "Xoá hết bộ lọc"
+        if (matchesKey(data, "escape") || data === "f") panel = null;
+        else if (matchesKey(data, "up")) p.field = (p.field + n - 1) % n;
+        else if (matchesKey(data, "down")) p.field = (p.field + 1) % n;
+        else if (matchesKey(data, "enter") || matchesKey(data, "right")) {
+          if (p.field === fs.length) {
+            flt = NO_FLT();
+            fltLabel.clear();
+            sort = "updated";
+            void load(true);
+          } else {
+            const f = fs[p.field];
+            p.open = true;
+            p.q = "";
+            p.cur = Math.max(0, f.opts().findIndex((o) => f.chosen().includes(o.value)));
+          }
+        }
+        return redraw();
+      }
+      const f = fs[p.field];
+      const list = optsOf(f, p.q);
+      if (matchesKey(data, "escape") || matchesKey(data, "left")) p.open = false;
+      else if (matchesKey(data, "up")) p.cur = Math.max(0, p.cur - 1);
+      else if (matchesKey(data, "down")) p.cur = Math.min(list.length - 1, p.cur + 1);
+      else if (matchesKey(data, "enter") || (f.multi && matchesKey(data, "space"))) {
+        const o = list[p.cur];
+        if (o) {
+          f.pick(o);
+          if (!f.multi) p.open = false;
+          void load(true);
+        }
+      } else if (matchesKey(data, "backspace")) {
+        p.q = p.q.slice(0, -1);
+        p.cur = 0;
+      } else if (!data.startsWith("\x1b") && !/[\x00-\x1f\x7f]/.test(data)) {
+        // Typed text (an IME may send a whole composed syllable) narrows the list.
+        p.q += data;
+        p.cur = 0;
+      }
+      redraw();
+    }
+
+    function panelLines(w: number, h: number): string[] {
+      const p = panel!;
+      const fs = fields();
+      const out: string[] = [];
+      const line = (on: boolean, plain: string, styled: string) => out.push(on ? `${c("accent", "▌")}${selRow(pad(plain, w - 1))}` : ` ${pad(styled, w - 1)}`);
+      if (!p.open) {
+        out.push(` ${theme.bold("Lọc & sắp xếp")} ${c("muted", `· ${TAB_LABEL[tab]}`)}`, "");
+        const LW = 18;
+        fs.forEach((f, i) => line(i === p.field, `${pad(f.label, LW)}${f.text()}`, `${c("muted", pad(f.label, LW))}${f.text()}`));
+        out.push("");
+        line(p.field === fs.length, "Xoá hết bộ lọc", c(fltCount() || sort !== "updated" ? "warning" : "dim", "Xoá hết bộ lọc"));
+        return out;
+      }
+      const f = fs[p.field];
+      const m = meta();
+      out.push(` ${theme.bold(f.label)}${f.multi ? c("muted", " · chọn nhiều") : ""}`);
+      out.push(` ${c("muted", "Tìm:")} ${p.q}${c("accent", "▏")}`);
+      if (f.label !== "Sắp xếp" && m === null) return [...out, c("muted", " Đang tải danh sách…")];
+      if (m?.error && f.label !== "Sắp xếp") return [...out, c("error", ` ${m.error}`)];
+      const list = optsOf(f, p.q);
+      if (!list.length) return [...out, c("muted", " Không có lựa chọn nào khớp.")];
+      const room = Math.max(1, h - out.length);
+      const start = Math.max(0, Math.min(p.cur - Math.floor(room / 2), list.length - room));
+      const chosen = f.chosen();
+      for (let i = start; i < Math.min(list.length, start + room); i++) {
+        const o = list[i];
+        const on = chosen.includes(o.value);
+        const box = f.multi ? (on ? "☑ " : "☐ ") : on ? "● " : "○ ";
+        const label = nfc(o.label);
+        line(i === p.cur, `${box}${label}`, `${on ? c("success", box) : c("muted", box)}${label}`);
+      }
+      return out;
+    }
 
     // ── Drawing ──
     // Width breakpoints: ≥ WIDE list | detail 45/55 with an assignee column (when "Của tôi" is off);
@@ -630,10 +801,18 @@ function boss(pi: ExtensionAPI, base: string) {
       const idW = Math.min(9, Math.max(0, ...entries.map((e) => visibleWidth(nfc(e.no)))));
       // The mark column exists only while something is marked, so every row keeps the same columns.
       const MW = marked.size ? 2 : 0;
+      // Due column (ticket "Ngày mong muốn", task "Hạn"): dd/mm, plus /yy outside this year.
+      const year = String(new Date().getFullYear());
+      const dueText = (e: any) => {
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(nfc(e.due));
+        return m ? `${m[3]}/${m[2]}${m[1] === year ? "" : `/${m[1].slice(2)}`}` : "";
+      };
+      const DW = Math.max(0, ...entries.map((e) => visibleWidth(dueText(e))));
+      const fixed = MW + ST + 1 + (idW ? idW + 1 : 0) + (DW ? DW + 1 : 0);
       // Assignee column: given name (last two words), and only while the title keeps ≥ 24 columns.
       const short = (s: unknown) => nfc(s).trim().split(/\s+/).slice(-2).join(" ");
       let OW = showOwner ? Math.min(12, Math.max(4, ...entries.map((e) => visibleWidth(short(e.assignee))))) : 0;
-      if (OW && body - MW - ST - 1 - (idW ? idW + 1 : 0) - OW - 1 < 24) OW = 0;
+      if (OW && body - fixed - OW - 1 < 24) OW = 0;
       const out: string[] = [];
       shown.forEach((e, j) => {
         const on = top + j === sel;
@@ -652,12 +831,14 @@ function boss(pi: ExtensionAPI, base: string) {
         const st = pad(vi(nfc(e.status)), ST);
         const id = idW ? pad(nfc(e.no), idW) : "";
         const owner = OW ? pad(short(e.assignee), OW) : "";
-        const titleW = Math.max(4, body - MW - ST - 1 - (idW ? idW + 1 : 0) - (OW ? OW + 1 : 0));
+        const due = DW ? pad(dueText(e), DW) : "";
+        const titleW = Math.max(4, body - fixed - (OW ? OW + 1 : 0));
         const title = pad(nfc(e.title), titleW);
-        if (on) out.push(`${c("accent", "▌")}${selRow([`${mark}${st}`, id, title, owner].filter(Boolean).join(" "))}`);
+        const late = overdue(nfc(e.due), e.status);
+        if (on) out.push(`${c("accent", "▌")}${selRow([`${mark}${st}`, id, title, due, owner].filter(Boolean).join(" "))}`);
         else {
-          const stS = c(overdue(nfc(e.due), e.status) ? "error" : "muted", st);
-          out.push(` ${[`${markS}${stS}`, id ? c("accent", id) : "", title, owner ? c("muted", owner) : ""].filter(Boolean).join(" ")}`);
+          const dueS = due ? c(late ? "error" : "muted", due) : "";
+          out.push(` ${[`${markS}${c(late ? "error" : "muted", st)}`, id ? c("accent", id) : "", title, dueS, owner ? c("muted", owner) : ""].filter(Boolean).join(" ")}`);
         }
       });
       if (hasMore) out.push(c("muted", "  ↓ xuống cuối để tải thêm"));
@@ -691,7 +872,7 @@ function boss(pi: ExtensionAPI, base: string) {
           status ? theme.bold(vi(nfc(status))) : "",
           prio ? (PRIORITY_VI[prio.toLowerCase()] ?? nfc(prio)) : "",
           overdue(due, status) ? theme.bold(c("error", "Quá hạn")) : "",
-          due ? viDate(due) : "",
+          due ? `${dueLabel(k)} ${viDate(due)}` : "",
         ]
           .filter(Boolean)
           .join(sep),
@@ -738,17 +919,25 @@ function boss(pi: ExtensionAPI, base: string) {
         .filter((t) => t !== "report" || canReport)
         .map((t) => (t === tab ? theme.bold(c("accent", `[${TAB_LABEL[t]}]`)) : c("muted", ` ${TAB_LABEL[t]} `)))
         .join(" ");
-      const filters = tab === "report" ? "" : c("muted", `${mine ? "Của tôi ✓" : "Mọi người"} · ${STATUS_FILTER[status]}`);
-      const left = ` ${tabs}   ${filters}`;
+      // Active filters in words; the right side is the search field ("/").
+      const summary = () => {
+        const parts = [flt.owner ? `Phụ trách: ${fltLabel.get("owner") ?? flt.owner}` : mine ? "Của tôi ✓" : "Mọi người"];
+        parts.push(flt.statuses.length ? flt.statuses.map(vi).join(", ") : STATUS_FILTER[status]);
+        for (const k of ["project", "priority", "category", "view"] as const) if (flt[k]) parts.push(fltLabel.get(k) ?? flt[k]);
+        if (sort !== "updated") parts.push(`↕ ${SORT_LABEL(tab)[sort]}`);
+        return parts.join(" · ");
+      };
       const label = tab === "report" ? "Report:" : "Tìm:";
-      const box = Math.max(12, Math.min(40, inner - visibleWidth(left) - label.length - 4));
       input.focused = typing;
       const q = input.getValue();
+      const fieldW = typing ? Math.max(12, Math.min(40, Math.floor(inner / 3))) : 0;
       const field = typing
-        ? `${c("accent", label)} ${input.render(box)[0] ?? ""}`
+        ? `${c("accent", label)} ${input.render(fieldW)[0] ?? ""}`
         : q
-          ? `${c("muted", label)} ${truncateToWidth(nfc(q), box)}`
+          ? `${c("muted", label)} ${truncateToWidth(nfc(q), 30)}`
           : c("dim", tab === "report" ? "/ dán ID / link report" : "/ tìm");
+      const roomForSummary = Math.max(10, inner - visibleWidth(tabs) - visibleWidth(field) - 7);
+      const left = ` ${tabs}   ${tab === "report" ? "" : c(fltCount() || sort !== "updated" ? "accent" : "muted", truncateToWidth(summary(), roomForSummary))}`;
       const gap = Math.max(2, inner - visibleWidth(left) - visibleWidth(field) - 1);
       lines.push(row(`${left}${" ".repeat(gap)}${field}`));
 
@@ -757,15 +946,16 @@ function boss(pi: ExtensionAPI, base: string) {
         const R = inner - L - 1;
         lines.push(b(`├${"─".repeat(L)}┬${"─".repeat(R)}┤`));
         const lv = leftLines(L, h, width >= WIDE && !mine && tab !== "report");
-        const right = rightLines(R);
-        pvTop = Math.max(0, Math.min(pvTop, Math.max(0, right.length - h)));
-        const rv = right.slice(pvTop, pvTop + h);
+        const right = panel ? panelLines(R, h) : rightLines(R);
+        if (!panel) pvTop = Math.max(0, Math.min(pvTop, Math.max(0, right.length - h)));
+        const rv = panel ? right : right.slice(pvTop, pvTop + h);
         for (let i = 0; i < h; i++) lines.push(`${b("│")}${pad(lv[i] ?? "", L)}${b("│")}${pad(rv[i] ?? "", R)}${b("│")}`);
         lines.push(b(`├${"─".repeat(L)}┴${"─".repeat(R)}┤`));
       } else {
         lines.push(b(`├${"─".repeat(inner)}┤`));
         let body: string[];
-        if (view === "detail") {
+        if (panel) body = panelLines(inner, h);
+        else if (view === "detail") {
           const right = rightLines(inner);
           pvTop = Math.max(0, Math.min(pvTop, Math.max(0, right.length - h)));
           body = right.slice(pvTop, pvTop + h);
@@ -780,9 +970,14 @@ function boss(pi: ExtensionAPI, base: string) {
       const S = c("muted", " · ");
       let keys: string[][];
       if (typing) keys = [[hint("Enter", tab === "report" ? "Mở report" : "Tìm"), hint("Esc", "Thôi gõ")]];
+      else if (panel && !panel.open) keys = [[hint("↑↓", "Chọn mục"), hint("Enter", "Mở"), hint("Esc", "Đóng (đã áp dụng)")]];
+      else if (panel) {
+        const multi = fields()[panel.field]?.multi;
+        keys = [[hint("↑↓", "Chọn"), hint(multi ? "Space/Enter" : "Enter", multi ? "Bật/tắt" : "Áp dụng"), hint("gõ chữ", "Lọc danh sách"), hint("Esc", "Quay lại")]];
+      }
       else {
         const enter = !split && view === "list" ? hint("Enter", "Xem chi tiết") : hint("Enter", "Lấy việc (Board · /cook · chép)");
-        const filt = tab === "report" ? [] : [hint("m", "Của tôi"), hint("s", "Trạng thái")];
+        const filt = tab === "report" ? [] : [hint("f", "Lọc & sắp xếp"), hint("m", "Của tôi"), hint("s", "Trạng thái")];
         const nav =
           !split && view === "detail"
             ? [hint("↑↓", "Đổi mục"), hint("PgUp/PgDn", "Cuộn"), hint("Esc", "Về danh sách")]
@@ -807,6 +1002,7 @@ function boss(pi: ExtensionAPI, base: string) {
 
     function handleInput(data: string) {
       if (busy) return;
+      if (panel) return panelInput(data);
       if (typing) {
         if (matchesKey(data, "escape")) typing = false;
         else if (matchesKey(data, "enter")) {
@@ -860,13 +1056,18 @@ function boss(pi: ExtensionAPI, base: string) {
           view = "list";
           typing = true;
           return redraw();
+        case "f":
+          return openPanel();
         case "m":
           if (tab === "report") return;
           mine = !mine;
+          flt.owner = "";
           return void load(true);
         case "s":
           if (tab === "report") return;
           status = status === "open" ? "done" : status === "done" ? "all" : "open";
+          // The preset replaces any exact statuses picked in the panel.
+          flt.statuses = [];
           return void load(true);
         case "g":
           return void finish("board");

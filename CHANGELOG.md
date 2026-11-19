@@ -12,6 +12,13 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.67] - 2026-11-19
+
+### Added
+- **`/pms` in omp: Lọc & sắp xếp (`f`).** A panel in place of the detail pane: Sắp xếp (Mới cập nhật · Mới tạo · Ngày mong muốn / Hạn gần nhất · xa nhất), Tình trạng (several at once, PMS picklist), Dự án, Mức ưu tiên, Phân loại / Loại công việc, Người phụ trách, Danh sách đã lưu, and Xoá hết bộ lọc. Long lists narrow as you type, accent-insensitive ("nguyen tung" finds "Nguyễn Tùng"). Each choice reloads the list at once; the top bar spells out what is active (`Của tôi ✓ · Đang mở · Dự án X · ↕ Ngày mong muốn gần nhất`). `m` clears a chosen assignee, `s` clears exact statuses.
+- **Ngày mong muốn on tickets.** The list has a date column (`dd/mm`, `/yy` outside this year; red when overdue) — ticket "Ngày mong muốn", task "Hạn" — and the detail reads `Ngày mong muốn 15/10/2026` / `Hạn …`. `getListTicket` returns no `expected_date` and takes no field selection, so `/api/board/pms/search` fills it per ticket with `retrieveTicket`, 8 at a time (a page of 20 ≈ 1 s); the web picker gets the same dates.
+- `/api/board/pms/search?sort=updated|created|due_asc|due_desc` (`expected_date` for tickets, `end_date_plan` for tasks). `due_asc` leaves out undated items (`ny` filter), which PMS would otherwise sort first.
+
 ## [0.1.66] - 2026-11-19
 
 ### Changed

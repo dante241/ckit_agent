@@ -541,6 +541,9 @@ pub(super) struct Filters {
     pub(super) priority: Option<String>,
     /// Ticket category / task type.
     pub(super) category: Option<String>,
+    /// `updated` (default) | `created` | `due_asc` | `due_desc`. Due = ticket "Ngày mong muốn"
+    /// (`expected_date`) / task planned end; `due_asc` leaves out items without one.
+    pub(super) sort: String,
 }
 
 /// A picklist value safe to put in a CloudWORK filter: short, no list separator,
@@ -594,9 +597,20 @@ pub(super) fn search_params(kind: &str, f: &Filters, page: u64) -> Value {
             filters.push(cond(if task { "label" } else { "ticket_title" }, &q, "c"));
         }
     }
+    let due = if task { "end_date_plan" } else { "expected_date" };
+    let (order_by, sort_order) = match f.sort.as_str() {
+        "created" => ("createdtime", "DESC"),
+        "due_asc" => {
+            // Undated items would sort first; nearest dates are what this order is for.
+            filters.push(cond(due, "", "ny"));
+            (due, "ASC")
+        }
+        "due_desc" => (due, "DESC"),
+        _ => ("modifiedtime", "DESC"),
+    };
     let mut p = json!({
         "filters": filters,
-        "paging": { "offset": page * PAGE_ROWS, "max_rows": PAGE_ROWS, "order_by": "modifiedtime", "sort_order": "DESC" },
+        "paging": { "offset": page * PAGE_ROWS, "max_rows": PAGE_ROWS, "order_by": order_by, "sort_order": sort_order },
     });
     if let Some(cv) = f.view.as_deref().filter(|v| is_id(v)) {
         p["cvid"] = json!(cv);
@@ -1328,6 +1342,9 @@ struct SearchQ {
     /// Main owner's user id; overrides "Của tôi".
     #[serde(default)]
     owner: String,
+    /// `updated` | `created` | `due_asc` | `due_desc`.
+    #[serde(default)]
+    sort: String,
     #[serde(default)]
     page: u64,
 }
@@ -1356,6 +1373,10 @@ impl SearchQ {
             view: id(&self.view, "Bộ lọc")?,
             priority: opt(&self.priority),
             category: opt(&self.category),
+            sort: match self.sort.as_str() {
+                "" | "updated" | "created" | "due_asc" | "due_desc" => self.sort.clone(),
+                _ => return Err(err(StatusCode::BAD_REQUEST, "Cách sắp xếp không hợp lệ")),
+            },
         })
     }
 }
@@ -1413,6 +1434,28 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, ApiErr> + Sen
     tokio::task::spawn_blocking(f).await.map_err(|_| no_answer())?.map(Json)
 }
 
+/// `getListTicket` rows carry no "Ngày mong muốn" (`expected_date`) and the list
+/// takes no field selection, so each row's date comes from `retrieveTicket`,
+/// a few at a time. A failed lookup leaves that row undated; the list still loads.
+fn fill_ticket_dates(c: &Creds, items: &mut [Item]) {
+    for chunk in items.chunks_mut(8) {
+        std::thread::scope(|s| {
+            let jobs: Vec<_> = chunk
+                .iter()
+                .map(|it| {
+                    let id = it.id.parse::<u64>().unwrap_or(0);
+                    s.spawn(move || cloudwork(c, "retrieveTicket", json!({ "id": id })).ok().map(|d| field(d.get("data").unwrap_or(&d), "expected_date")))
+                })
+                .collect();
+            for (it, job) in chunk.iter_mut().zip(jobs) {
+                if let Ok(Some(due)) = job.join() {
+                    it.due = due;
+                }
+            }
+        });
+    }
+}
+
 async fn api_search(Query(q): Query<SearchQ>) -> ApiRes<Value> {
     let kind = kind_of(&q.kind)?;
     let mut f = q.filters()?;
@@ -1441,7 +1484,10 @@ async fn api_search(Query(q): Query<SearchQ>) -> ApiRes<Value> {
         }
         let action = if kind == "task" { "getListProjectTask" } else { "getListTicket" };
         let data = cloudwork(&c, action, search_params(kind, &f, page))?;
-        let (items, has_more) = parse_list(kind, &c.base, &data);
+        let (mut items, has_more) = parse_list(kind, &c.base, &data);
+        if kind == "ticket" {
+            fill_ticket_dates(&c, &mut items);
+        }
         Ok(json!({ "items": items, "has_more": has_more }))
     })
     .await
@@ -1604,6 +1650,13 @@ mod tests {
         let p = search_params("ticket", &f(" mẫu ", None, "open"), 0);
         assert_eq!(p["filters"][0], json!({ "name": "ticketstatus", "value": "Closed,Cancel,Reject", "operator": "n" }));
         assert_eq!(p["filters"][1], json!({ "name": "ticket_title", "value": "mẫu", "operator": "c" }));
+        // Nearest "Ngày mong muốn" first: undated tickets are left out, not sorted to the top.
+        let p = search_params("ticket", &Filters { status: "all".into(), sort: "due_asc".into(), ..Filters::default() }, 0);
+        assert_eq!(p["filters"], json!([{ "name": "expected_date", "value": "", "operator": "ny" }]));
+        assert_eq!((&p["paging"]["order_by"], &p["paging"]["sort_order"]), (&json!("expected_date"), &json!("ASC")));
+        let p = search_params("task", &Filters { status: "all".into(), sort: "due_desc".into(), ..Filters::default() }, 0);
+        assert_eq!(p["filters"], json!([]));
+        assert_eq!((&p["paging"]["order_by"], &p["paging"]["sort_order"]), (&json!("end_date_plan"), &json!("DESC")));
     }
 
     #[test]
