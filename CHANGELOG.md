@@ -12,6 +12,10 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.65] - 2026-11-19
+
+Board ships: the work previously held unreleased on `feat/export-wip` is now in the release binary (`ckit service`, `ckit review`, the Board dashboard and `ckit-board.ts`).
+
 ### Added
 - **`ckit review`: automated PR/MR code review**, similar to Claude Code's GitHub review. `ckit review <n>` reviews a PR (GitHub, via `gh`) or MR (GitLab, via `glab`; the host comes from the CI env or `origin`) and prints the result. `--post` comments on the PR/MR: one summary comment, edited in place on every push (marker `<!-- ckit-review head=<sha> -->`), plus inline comments, only for blocking findings on added lines and never posted twice (keyed per finding). Drafts, the `no-ai-review` label and an already-reviewed head commit are skipped (`--force` reviews them anyway); `--model` picks the omp model. The review only comments: it never approves or blocks a merge and never pushes.
   - **Read-only sandbox.** The PR head is checked out in a detached temp worktree. The diff is taken against the merge base with the target branch. omp runs in profile `ckit-review` with the user's `models.yml` and model roles, but no MCP servers, no xd:// devices, no memory and no auto-learn, and with only `--tools read,grep,glob`. Plain `--no-tools` is not enough: omp still exposes every MCP tool, plus `learn` and `manage_skill`. The PR text and diff go in as files marked as data. Comment text from the model cannot forge the markers.
