@@ -565,7 +565,8 @@ pub(super) fn search_params(kind: &str, f: &Filters, page: u64) -> Value {
         match f.status.as_str() {
             "done" => filters.push(cond(col, if task { "Completed" } else { "Closed" }, "e")),
             "all" => {}
-            _ => filters.push(cond(col, if task { "Completed,Canceled" } else { "Closed,Cancel" }, "n")),
+            // "Đang mở" = work still to do: a rejected ticket ("Từ chối") is as finished as a cancelled one.
+            _ => filters.push(cond(col, if task { "Completed,Canceled" } else { "Closed,Cancel,Reject" }, "n")),
         }
     }
     if task {
@@ -1601,6 +1602,7 @@ mod tests {
         assert_eq!(p["filters"][0], json!({ "name": "ticketstatus", "value": "Closed", "operator": "e" }));
         assert_eq!(p["filters"][1], json!({ "name": "ticket_no", "value": "#67890", "operator": "e" }));
         let p = search_params("ticket", &f(" mẫu ", None, "open"), 0);
+        assert_eq!(p["filters"][0], json!({ "name": "ticketstatus", "value": "Closed,Cancel,Reject", "operator": "n" }));
         assert_eq!(p["filters"][1], json!({ "name": "ticket_title", "value": "mẫu", "operator": "c" }));
     }
 

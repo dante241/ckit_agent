@@ -397,8 +397,11 @@ function boss(pi: ExtensionAPI, base: string) {
   // Same words as the web picker (web/src/PmsPicker.tsx STATUS_VI).
   const STATUS_VI: Record<string, string> = {
     Open: "Mới", Assigned: "Đã giao", "In Progress": "Đang làm", Testing: "Đang test", "Wait For Verifying": "Chờ xác minh", "Wait Close": "Chờ đóng",
-    "Follow Up": "Theo dõi", Pending: "Tạm hoãn", Reopen: "Mở lại", Completed: "Hoàn thành", Closed: "Đã đóng", Canceled: "Đã huỷ", Cancel: "Đã huỷ",
+    "Wait For Response": "Chờ phản hồi", "Follow Up": "Theo dõi", Pending: "Tạm hoãn", "Pending Golive": "Chờ golive", Reopen: "Mở lại",
+    Completed: "Hoàn thành", Closed: "Đã đóng", Canceled: "Đã huỷ", Cancel: "Đã huỷ", Reject: "Từ chối",
   };
+  /** Statuses with no work left: never "Quá hạn". */
+  const FINISHED = new Set(["Completed", "Closed", "Canceled", "Cancel", "Reject", "Wait Close"]);
   const vi = (s: string) => STATUS_VI[s] ?? s;
   const viDate = (s: string) => {
     const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/.exec(s);
@@ -467,6 +470,9 @@ function boss(pi: ExtensionAPI, base: string) {
     let sel = 0;
     let top = 0;
     let pvTop = 0;
+    /** Below NARROW columns one pane shows at a time: the list, or the selected item's detail. */
+    let view: "list" | "detail" = "list";
+    let lastWidth = process.stdout.columns || 120;
     const marked = new Map<string, any>();
     const details = new Map<string, any>();
     let seq = 0;
@@ -590,29 +596,71 @@ function boss(pi: ExtensionAPI, base: string) {
     };
 
     // ── Drawing ──
+    // Width breakpoints: ≥ WIDE list | detail 45/55 with an assignee column (when "Của tôi" is off);
+    // ≥ NARROW the same split without it; below NARROW one pane at a time.
+    const WIDE = 120;
+    const NARROW = 100;
     const pad = (s: string, w: number) => truncateToWidth(s, w, undefined, true);
-    const rows = () => Math.max(8, (process.stdout.rows || 40) - 14);
+    const rows = () => Math.max(8, (process.stdout.rows || 40) - 12);
+    // PMS text may arrive decomposed (NFD); compose it so the width math and the terminal agree.
+    const nfc = (s: unknown) => String(s ?? "").normalize("NFC");
+    // Selected row: soft dark-blue background, white text. Callers pass plain text (no ANSI), already
+    // fitted: truncateToWidth resets SGR before its ellipsis, which would drop the background.
+    const selRow = (plain: string) => `\x1b[48;5;24m\x1b[97m${plain}\x1b[39m\x1b[49m`;
+    const today = () => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    const overdue = (due: string, status: string) => !!due && !FINISHED.has(status) && due.slice(0, 10) < today();
+    // Form placeholders such as "Kết quả mong muốn:\n." add nothing to a preview; the task text keeps them.
+    const previewText = (s: string) => s.replace(/(^|\n)[^\n]{1,60}:[ \t]*\n[ \t]*\.[ \t]*(?=\n|$)/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
+    const hint = (k: string, label: string) => `${c("accent", k)} ${c("muted", label)}`;
 
-    function leftLines(w: number, h: number): string[] {
+    function leftLines(w: number, h: number, showOwner: boolean): string[] {
       if (loading && !entries.length) return [c("muted", " Đang tải…")];
       if (!entries.length) return wrapTextWithAnsi(c("muted", ` ${error || (tab === "report" ? "Dán ID hoặc link report rồi Enter." : "")}`), w);
-      const fit = Math.max(1, Math.floor((h - (hasMore ? 1 : 0)) / 2));
+      const fit = Math.max(1, h - (hasMore ? 1 : 0));
       if (sel < top) top = sel;
       if (sel >= top + fit) top = sel - fit + 1;
+      const shown = entries.slice(top, top + fit);
+      const body = w - 1; // after the 1-column selection bar
+      // Fixed columns: status, then the ID, each as wide as its widest loaded value (not just the
+      // visible rows, so columns stay put while scrolling); the title takes the rest.
+      const ST = Math.min(12, Math.max(3, ...entries.map((e) => visibleWidth(vi(nfc(e.status))))));
+      const idW = Math.min(9, Math.max(0, ...entries.map((e) => visibleWidth(nfc(e.no)))));
+      // The mark column exists only while something is marked, so every row keeps the same columns.
+      const MW = marked.size ? 2 : 0;
+      // Assignee column: given name (last two words), and only while the title keeps ≥ 24 columns.
+      const short = (s: unknown) => nfc(s).trim().split(/\s+/).slice(-2).join(" ");
+      let OW = showOwner ? Math.min(12, Math.max(4, ...entries.map((e) => visibleWidth(short(e.assignee))))) : 0;
+      if (OW && body - MW - ST - 1 - (idW ? idW + 1 : 0) - OW - 1 < 24) OW = 0;
       const out: string[] = [];
-      for (let i = top; i < Math.min(entries.length, top + fit); i++) {
-        const e = entries[i];
-        const on = i === sel;
-        const mark = marked.has(keyOf(e)) ? c("success", "☑ ") : "  ";
-        const no = e.no ? `${c("accent", e.no)} ` : "";
-        const line1 = `${on ? c("accent", "▌") : " "}${mark}${no}${on ? theme.bold(e.title) : e.title}`;
-        const meta =
-          tab === "report"
-            ? (e.cells ?? []).filter((x: any) => x.value !== e.title).slice(0, 2).map((x: any) => x.value.replace(/\s+/g, " ")).join(" · ")
-            : [vi(e.status), e.due ? `hạn ${viDate(e.due)}` : "", e.assignee].filter(Boolean).join(" · ");
-        out.push(on ? theme.bg("selectedBg", pad(line1, w)) : line1, `    ${c("muted", meta)}`);
-      }
-      if (hasMore) out.push(c("muted", "    ↓ xuống cuối để tải thêm"));
+      shown.forEach((e, j) => {
+        const on = top + j === sel;
+        const mark = MW ? (marked.has(keyOf(e)) ? "☑ " : "  ") : "";
+        const markS = mark.trim() ? c("success", mark) : mark;
+        if (tab === "report") {
+          const meta = (e.cells ?? []).filter((x: any) => x.value !== e.title).slice(0, 2).map((x: any) => nfc(x.value).replace(/\s+/g, " ")).join(" · ");
+          const title = nfc(e.title);
+          out.push(
+            on
+              ? `${c("accent", "▌")}${selRow(pad(`${mark}${title}${meta ? ` · ${meta}` : ""}`, body))}`
+              : ` ${pad(`${markS}${title}${meta ? c("muted", ` · ${meta}`) : ""}`, body)}`,
+          );
+          return;
+        }
+        const st = pad(vi(nfc(e.status)), ST);
+        const id = idW ? pad(nfc(e.no), idW) : "";
+        const owner = OW ? pad(short(e.assignee), OW) : "";
+        const titleW = Math.max(4, body - MW - ST - 1 - (idW ? idW + 1 : 0) - (OW ? OW + 1 : 0));
+        const title = pad(nfc(e.title), titleW);
+        if (on) out.push(`${c("accent", "▌")}${selRow([`${mark}${st}`, id, title, owner].filter(Boolean).join(" "))}`);
+        else {
+          const stS = c(overdue(nfc(e.due), e.status) ? "error" : "muted", st);
+          out.push(` ${[`${markS}${stS}`, id ? c("accent", id) : "", title, owner ? c("muted", owner) : ""].filter(Boolean).join(" ")}`);
+        }
+      });
+      if (hasMore) out.push(c("muted", "  ↓ xuống cuối để tải thêm"));
       return out;
     }
 
@@ -624,83 +672,135 @@ function boss(pi: ExtensionAPI, base: string) {
       const k = kindOf();
       if (!k) {
         add(c("accent", `${report?.module || "Report"} #${e.id}`));
-        add(theme.bold(e.title));
+        add(theme.bold(nfc(e.title)));
         add();
-        for (const x of e.cells ?? []) add(`${c("muted", `${x.label}:`)} ${x.value}`);
+        for (const x of e.cells ?? []) add(`${c("muted", `${nfc(x.label)}:`)} ${nfc(x.value)}`);
         return out;
       }
       const d = details.get(keyOf(e));
-      add(c("accent", `${TAB_LABEL[k]} ${d?.no || e.no || `#${e.id}`}`));
-      add(theme.bold(d?.title ?? e.title));
-      const due = d?.due ?? e.due;
-      const facts = [
-        ["Tình trạng", vi(d?.status ?? e.status ?? "")],
-        ["Ưu tiên", PRIORITY_VI[String(d?.priority ?? e.priority ?? "").toLowerCase()] ?? (d?.priority ?? e.priority)],
-        ["Hạn", due ? viDate(due) : ""],
-        ["Dự án", d?.project ?? e.project],
-        ["Phụ trách", d?.assignee ?? e.assignee],
-      ].filter(([, v]) => v);
-      add(facts.map(([l, v]) => `${c("muted", `${l}:`)} ${v}`).join("   "));
+      const status = d?.status ?? e.status ?? "";
+      const due = nfc(d?.due ?? e.due);
+      const prio = String(d?.priority ?? e.priority ?? "");
+      add(c("accent", `${nfc(d?.no || e.no || `#${e.id}`)} · ${TAB_LABEL[k]}`));
+      add(theme.bold(nfc(d?.title ?? e.title)));
+      add();
+      // Two fixed metadata rows: state and dates, then where/who. Each wraps on its own.
+      const sep = c("muted", " · ");
+      add(
+        [
+          status ? theme.bold(vi(nfc(status))) : "",
+          prio ? (PRIORITY_VI[prio.toLowerCase()] ?? nfc(prio)) : "",
+          overdue(due, status) ? theme.bold(c("error", "Quá hạn")) : "",
+          due ? viDate(due) : "",
+        ]
+          .filter(Boolean)
+          .join(sep),
+      );
+      add([nfc(d?.project ?? e.project), nfc(d?.assignee ?? e.assignee)].filter(Boolean).join(sep));
       add();
       if (!d) add(c("muted", "Đang tải mô tả…"));
       else if (d.error) add(c("error", d.error));
       else {
-        add(c("muted", "Mô tả"));
-        for (const p of String(d.description || "PMS chưa có mô tả, tiêu đề sẽ được dùng làm yêu cầu.").split("\n")) add(p);
+        add(theme.bold("Mô tả"));
+        for (const p of (previewText(nfc(d.description)) || "PMS chưa có mô tả, tiêu đề sẽ được dùng làm yêu cầu.").split("\n")) add(p);
         if (d.checklist?.length) {
           add();
-          add(c("muted", `Checklist ${d.checklist.filter((x: any) => x.done).length}/${d.checklist.length}`));
-          for (const x of d.checklist) add(`${x.done ? c("success", "✓") : "○"} ${x.name}`);
+          add(theme.bold(`Checklist ${d.checklist.filter((x: any) => x.done).length}/${d.checklist.length}`));
+          for (const x of d.checklist) add(`${x.done ? c("success", "✓") : "○"} ${nfc(x.name)}`);
         }
         if (d.subtasks?.length) {
           add();
-          add(c("muted", `Việc con (${d.subtasks.length})`));
-          for (const x of d.subtasks) add(`- ${x.title} ${c("muted", `(${vi(x.status)})`)}`);
+          add(theme.bold(`Việc con (${d.subtasks.length})`));
+          for (const x of d.subtasks) add(`- ${nfc(x.title)} ${c("muted", `(${vi(x.status)})`)}`);
         }
         if (d.comments?.length) {
           add();
-          add(c("muted", `Bình luận gần đây (${d.comments.length})`));
-          for (const x of d.comments) add(`${theme.bold(x.author || "Ẩn danh")} ${c("muted", viDate(x.at))}: ${String(x.text).replace(/\n+/g, " ")}`);
+          add(theme.bold(`Bình luận gần đây (${d.comments.length})`));
+          for (const x of d.comments) add(`${theme.bold(nfc(x.author) || "Ẩn danh")} ${c("muted", viDate(x.at))}: ${nfc(x.text).replace(/\n+/g, " ")}`);
         }
       }
       return out;
     }
 
     function render(width: number): string[] {
+      lastWidth = width;
       const inner = Math.max(40, width - 2);
       const h = rows();
+      const split = width >= NARROW;
+      if (split) view = "list";
       const b = (s: string) => c("borderMuted", s);
+      const row = (s: string) => `${b("│")}${pad(s, inner)}${b("│")}`;
       const title = " Lấy việc từ PMS ";
       const lines: string[] = [b(`╭─${title}${"─".repeat(Math.max(0, inner - 1 - visibleWidth(title)))}╮`)];
+
+      // Top bar: tabs and the active filters; "/" turns the right side into the search field.
       const tabs = (["ticket", "task", "report"] as Tab[])
         .filter((t) => t !== "report" || canReport)
         .map((t) => (t === tab ? theme.bold(c("accent", `[${TAB_LABEL[t]}]`)) : c("muted", ` ${TAB_LABEL[t]} `)))
         .join(" ");
-      const filters = tab === "report" ? "" : `   ${mine ? c("success", "☑") : "☐"} Của tôi ${c("dim", "m")}   ${c("muted", "Tình trạng:")} ${STATUS_FILTER[status]} ${c("dim", "s")}`;
+      const filters = tab === "report" ? "" : c("muted", `${mine ? "Của tôi ✓" : "Mọi người"} · ${STATUS_FILTER[status]}`);
+      const left = ` ${tabs}   ${filters}`;
       const label = tab === "report" ? "Report:" : "Tìm:";
-      const box = Math.max(12, inner - visibleWidth(tabs) - visibleWidth(filters) - label.length - 4);
+      const box = Math.max(12, Math.min(40, inner - visibleWidth(left) - label.length - 4));
       input.focused = typing;
+      const q = input.getValue();
       const field = typing
-        ? (input.render(box)[0] ?? "")
-        : input.getValue()
-          ? truncateToWidth(input.getValue(), box)
-          : c("dim", tab === "report" ? "dán ID / link (/)" : "gõ / để tìm");
-      lines.push(`${b("│")}${pad(` ${tabs}  ${c("muted", label)} ${pad(field, box)}${filters}`, inner)}${b("│")}`);
-      const L = Math.floor(inner * 0.46);
-      const R = inner - L - 1;
-      lines.push(b(`├${"─".repeat(L)}┬${"─".repeat(R)}┤`));
-      const left = leftLines(L, h);
-      const right = rightLines(R);
-      pvTop = Math.max(0, Math.min(pvTop, Math.max(0, right.length - h)));
-      const rv = right.slice(pvTop, pvTop + h);
-      for (let i = 0; i < h; i++) lines.push(`${b("│")}${pad(left[i] ?? "", L)}${b("│")}${pad(rv[i] ?? "", R)}${b("│")}`);
-      lines.push(b(`├${"─".repeat(L)}┴${"─".repeat(R)}┤`));
+        ? `${c("accent", label)} ${input.render(box)[0] ?? ""}`
+        : q
+          ? `${c("muted", label)} ${truncateToWidth(nfc(q), box)}`
+          : c("dim", tab === "report" ? "/ dán ID / link report" : "/ tìm");
+      const gap = Math.max(2, inner - visibleWidth(left) - visibleWidth(field) - 1);
+      lines.push(row(`${left}${" ".repeat(gap)}${field}`));
+
+      if (split) {
+        const L = Math.floor(inner * 0.45);
+        const R = inner - L - 1;
+        lines.push(b(`├${"─".repeat(L)}┬${"─".repeat(R)}┤`));
+        const lv = leftLines(L, h, width >= WIDE && !mine && tab !== "report");
+        const right = rightLines(R);
+        pvTop = Math.max(0, Math.min(pvTop, Math.max(0, right.length - h)));
+        const rv = right.slice(pvTop, pvTop + h);
+        for (let i = 0; i < h; i++) lines.push(`${b("│")}${pad(lv[i] ?? "", L)}${b("│")}${pad(rv[i] ?? "", R)}${b("│")}`);
+        lines.push(b(`├${"─".repeat(L)}┴${"─".repeat(R)}┤`));
+      } else {
+        lines.push(b(`├${"─".repeat(inner)}┤`));
+        let body: string[];
+        if (view === "detail") {
+          const right = rightLines(inner);
+          pvTop = Math.max(0, Math.min(pvTop, Math.max(0, right.length - h)));
+          body = right.slice(pvTop, pvTop + h);
+        } else body = leftLines(inner, h, false);
+        for (let i = 0; i < h; i++) lines.push(row(body[i] ?? ""));
+        lines.push(b(`├${"─".repeat(inner)}┤`));
+      }
+
+      // Bottom bar: the actions first, with what Enter does in this pane spelled out, then navigation.
       const note = busy || (error && entries.length ? c("error", error) : "") || (marked.size ? c("success", `Đã chọn ${marked.size} mục: g để giao hết cho Board`) : "");
-      const keys = typing
-        ? "Enter tìm · Esc thôi gõ"
-        : "↑↓ chọn · Tab đổi loại · / tìm · Space chọn nhiều · PgUp/PgDn cuộn chi tiết · Enter chọn · g Giao cho Board · c /cook · o mở PMS · Esc thoát";
-      if (note) lines.push(`${b("│")}${pad(` ${note}`, inner)}${b("│")}`);
-      for (const l of wrapTextWithAnsi(c("muted", keys), inner - 2)) lines.push(`${b("│")}${pad(` ${l}`, inner)}${b("│")}`);
+      if (note) lines.push(row(` ${note}`));
+      const S = c("muted", " · ");
+      let keys: string[][];
+      if (typing) keys = [[hint("Enter", tab === "report" ? "Mở report" : "Tìm"), hint("Esc", "Thôi gõ")]];
+      else {
+        const enter = !split && view === "list" ? hint("Enter", "Xem chi tiết") : hint("Enter", "Lấy việc (Board · /cook · chép)");
+        const filt = tab === "report" ? [] : [hint("m", "Của tôi"), hint("s", "Trạng thái")];
+        const nav =
+          !split && view === "detail"
+            ? [hint("↑↓", "Đổi mục"), hint("PgUp/PgDn", "Cuộn"), hint("Esc", "Về danh sách")]
+            : [hint("↑↓", "Chọn"), hint("/", "Tìm"), ...filt, hint("Tab", "Đổi loại"), hint("Space", "Chọn nhiều"), ...(split ? [hint("PgUp/PgDn", "Cuộn chi tiết")] : []), hint("Esc", "Thoát")];
+        keys = [[theme.bold(enter), hint("g", "Giao cho Board"), hint("c", "Làm với /cook"), hint("o", "Mở PMS")], nav];
+      }
+      // Wrap between hints, never inside one ("Esc" and "Thoát" stay together).
+      for (const group of keys) {
+        let cur = "";
+        for (const k of group) {
+          const next = cur ? `${cur}${S}${k}` : k;
+          if (cur && visibleWidth(next) > inner - 2) {
+            lines.push(row(` ${cur}`));
+            cur = k;
+          } else cur = next;
+        }
+        if (cur) lines.push(row(` ${cur}`));
+      }
       lines.push(b(`╰${"─".repeat(inner)}╯`));
       return lines;
     }
@@ -715,6 +815,11 @@ function boss(pi: ExtensionAPI, base: string) {
         } else input.handleInput(data);
         redraw();
         return;
+      }
+      const split = lastWidth >= NARROW;
+      if (!split && view === "detail" && (matchesKey(data, "escape") || matchesKey(data, "left"))) {
+        view = "list";
+        return redraw();
       }
       if (matchesKey(data, "escape")) {
         clearTimeout(pvTimer);
@@ -733,7 +838,15 @@ function boss(pi: ExtensionAPI, base: string) {
       const order: Tab[] = canReport ? ["ticket", "task", "report"] : ["ticket", "task"];
       if (matchesKey(data, "shift+tab")) return setTab(order[(order.indexOf(tab) + order.length - 1) % order.length]);
       if (matchesKey(data, "tab")) return setTab(order[(order.indexOf(tab) + 1) % order.length]);
-      if (matchesKey(data, "enter")) return void finish("menu");
+      if (matchesKey(data, "enter")) {
+        if (!split && view === "list") {
+          if (!entries[sel]) return;
+          view = "detail";
+          pvTop = 0;
+          return redraw();
+        }
+        return void finish("menu");
+      }
       if (matchesKey(data, "space")) {
         const e = entries[sel];
         if (e) {
@@ -744,6 +857,7 @@ function boss(pi: ExtensionAPI, base: string) {
       }
       switch (data) {
         case "/":
+          view = "list";
           typing = true;
           return redraw();
         case "m":

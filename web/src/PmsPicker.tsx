@@ -22,25 +22,28 @@ const STATUS_VI: Record<string, string> = {
   Testing: "Đang test",
   "Wait For Verifying": "Chờ xác minh",
   "Wait Close": "Chờ đóng",
+  "Wait For Response": "Chờ phản hồi",
   "Follow Up": "Theo dõi",
   Pending: "Tạm hoãn",
+  "Pending Golive": "Chờ golive",
   Reopen: "Mở lại",
   Completed: "Hoàn thành",
   Closed: "Đã đóng",
   Canceled: "Đã huỷ",
   Cancel: "Đã huỷ",
+  Reject: "Từ chối",
 };
 
 export function pmsStatusLabel(s: string): string {
   return s ? (STATUS_VI[s] ?? s) : "Chưa có trạng thái";
 }
 
-const DONE = new Set(["Completed", "Closed", "Canceled", "Cancel"]);
+const DONE = new Set(["Completed", "Closed", "Canceled", "Cancel", "Reject"]);
 
 /** Tone class shared by the status chip and the row's left bar. */
 function statusTone(s: string): "new" | "run" | "ok" | "idle" | "wait" {
   if (s === "Completed" || s === "Closed") return "ok";
-  if (s === "Canceled" || s === "Cancel" || s === "") return "idle";
+  if (s === "Canceled" || s === "Cancel" || s === "Reject" || s === "") return "idle";
   if (s === "In Progress" || s === "Testing") return "run";
   if (s === "Open" || s === "Assigned" || s === "Reopen") return "new";
   return "wait";
