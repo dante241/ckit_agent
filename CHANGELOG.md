@@ -12,6 +12,11 @@ và redeploy — mục Changelog trên trang docs tự cập nhật (không sử
 
 ## [Unreleased]
 
+## [0.1.68] - 2026-11-19
+
+### Changed
+- **`/pms` Lọc → Dự án searches PMS.** The list still opens on the 100 newest open projects; typing (300 ms pause) also asks `/api/board/pms/projects`, which finds any project by name, closed ones too, and its hits are added below the local matches ("Đang tìm trên PMS…" while it runs). "livespo" now finds the LiveSpo projects that were not among the 100.
+
 ## [0.1.67] - 2026-11-19
 
 ### Added

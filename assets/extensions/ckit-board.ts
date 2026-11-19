@@ -622,7 +622,7 @@ function boss(pi: ExtensionAPI, base: string) {
 
     // ── Filter & sort panel ("f") ──
     type Opt = { value: string; label: string };
-    type Field = { label: string; multi?: boolean; opts: () => Opt[]; chosen: () => string[]; pick: (o: Opt) => void; text: () => string };
+    type Field = { label: string; multi?: boolean; remote?: boolean; opts: () => Opt[]; chosen: () => string[]; pick: (o: Opt) => void; text: () => string };
     const meta = () => metas.get(tab);
     async function ensureMeta() {
       if (tab === "report" || metas.has(tab)) return;
@@ -665,7 +665,7 @@ function boss(pi: ExtensionAPI, base: string) {
         },
         text: () => (flt.statuses.length ? flt.statuses.map(vi).join(", ") : `${STATUS_FILTER[status]} (phím s)`),
       },
-      one("project", "projects", "Dự án"),
+      { ...one("project", "projects", "Dự án"), remote: true },
       one("priority", "priorities", "Mức ưu tiên"),
       one("category", "categories", tab === "task" ? "Loại công việc" : "Phân loại"),
       one("owner", "users", "Người phụ trách"),
@@ -673,9 +673,35 @@ function boss(pi: ExtensionAPI, base: string) {
     ];
     // Accent-insensitive match, so "nguyen tung" finds "Nguyễn Tùng".
     const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+    // Projects: the cached list holds only the 100 newest open ones, so typed text also asks
+    // PMS (/api/board/pms/projects, any project by name, closed too) and its hits are added.
+    let found: { q: string; items: Opt[] | null; error?: string } | null = null;
+    let findTimer: ReturnType<typeof setTimeout> | undefined;
+    function findRemote(q: string) {
+      clearTimeout(findTimer);
+      const t = q.trim();
+      // The server rejects these (PMS builds a LIKE from the text).
+      if (!t || t.length > 60 || /[,'"\\;%_]/.test(t)) return void (found = null);
+      found = { q: t, items: null };
+      findTimer = setTimeout(async () => {
+        let res: typeof found;
+        try {
+          res = { q: t, items: (await api("GET", `/api/board/pms/projects?q=${encodeURIComponent(t)}`)).items ?? [] };
+        } catch (e) {
+          res = { q: t, items: [], error: (e as Error).message };
+        }
+        if (found?.q === t) {
+          found = res;
+          redraw();
+        }
+      }, 300);
+    }
     const optsOf = (f: Field, q: string) => {
       const n = fold(q.trim());
-      return n ? f.opts().filter((o) => fold(o.label).includes(n)) : f.opts();
+      const local = n ? f.opts().filter((o) => fold(o.label).includes(n)) : f.opts();
+      if (!f.remote || !n || found?.q !== q.trim() || !found.items) return local;
+      const seen = new Set(local.map((o) => o.value));
+      return [...local, ...found.items.filter((o) => !seen.has(o.value))];
     };
     const fltCount = () => [flt.statuses.length > 0, flt.project, flt.priority, flt.category, flt.owner, flt.view].filter(Boolean).length;
 
@@ -724,10 +750,12 @@ function boss(pi: ExtensionAPI, base: string) {
       } else if (matchesKey(data, "backspace")) {
         p.q = p.q.slice(0, -1);
         p.cur = 0;
+        if (f.remote) findRemote(p.q);
       } else if (!data.startsWith("\x1b") && !/[\x00-\x1f\x7f]/.test(data)) {
         // Typed text (an IME may send a whole composed syllable) narrows the list.
         p.q += data;
         p.cur = 0;
+        if (f.remote) findRemote(p.q);
       }
       redraw();
     }
@@ -752,7 +780,13 @@ function boss(pi: ExtensionAPI, base: string) {
       if (f.label !== "Sắp xếp" && m === null) return [...out, c("muted", " Đang tải danh sách…")];
       if (m?.error && f.label !== "Sắp xếp") return [...out, c("error", ` ${m.error}`)];
       const list = optsOf(f, p.q);
-      if (!list.length) return [...out, c("muted", " Không có lựa chọn nào khớp.")];
+      // Remote search state for projects: below the query, above the hits.
+      const q = p.q.trim();
+      if (f.remote && q && found?.q === q) {
+        if (!found.items) out.push(c("muted", " Đang tìm trên PMS…"));
+        else if (found.error) out.push(c("error", ` ${found.error}`));
+      }
+      if (!list.length) return [...out, c("muted", found?.items === null && f.remote ? "" : " Không có lựa chọn nào khớp.")];
       const room = Math.max(1, h - out.length);
       const start = Math.max(0, Math.min(p.cur - Math.floor(room / 2), list.length - room));
       const chosen = f.chosen();
