@@ -12,6 +12,11 @@ pub struct Assets;
 #[folder = "../../web/dist/"]
 pub struct WebAssets;
 
+// build.rs sets this to a hash of web/dist/index.html. Referencing it makes a
+// changed bundle a changed rustc input, so the crate is recompiled and the
+// derive above re-reads web/dist (a cached expansion shipped a stale UI).
+const _WEB_DIST_STAMP: &str = env!("WEB_DIST_STAMP");
+
 /// Binary-safe embedded web file (JS/CSS/html). None only if the path doesn't
 /// exist in the embedded dist tree.
 pub fn web_asset(path: &str) -> Option<Vec<u8>> {

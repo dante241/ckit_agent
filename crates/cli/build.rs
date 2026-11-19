@@ -27,6 +27,12 @@ fn main() {
         let _ = std::fs::write(&web_dist, FALLBACK_HTML);
         println!("cargo:warning=ckit: web FE not built (no bun/pnpm/npm found) — embedded fallback page; install bun then rebuild for the full dashboard");
     }
+    // Content stamp of the bundle (assets.rs reads it with env!): a new
+    // bundle forces a recompile so rust-embed embeds it.
+    let stamp = std::fs::read(&web_dist)
+        .map(|b| b.iter().fold(0xcbf29ce484222325u64, |h, x| (h ^ u64::from(*x)).wrapping_mul(0x100000001b3)))
+        .unwrap_or(0);
+    println!("cargo:rustc-env=WEB_DIST_STAMP={stamp:016x}");
     println!("cargo:rerun-if-changed=../../web/dist/index.html");
     // rust-embed's `compression` (include-flate) does not make cargo track assets/,
     // so an edited prompt/skill could ship stale. Any change under assets/ reruns

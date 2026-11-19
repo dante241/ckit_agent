@@ -25,3 +25,5 @@ pub mod locate;
 pub mod feature;
 pub mod feynman;
 pub mod vpn;
+pub mod service;
+pub mod review;

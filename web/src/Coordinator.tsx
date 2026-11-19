@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ChatMsg, type CoordState } from "./api";
 import { Markdown } from "./markdown";
-import { EndpointMissing, ErrorState, Loading, isMissing } from "./ui";
+import { EndpointMissing, ErrorState, Loading, isMissing, useFollowBottom } from "./ui";
 import { serverMessage } from "./Steps";
 
 /** Coordinator state; polls every 3s while the chat is open (or busy), 10s otherwise. */
@@ -113,7 +113,7 @@ function CoordPanel({ root, onClose }: { root: string; onClose: () => void }) {
           </button>
           <p className="co-power-desc">
             {enabled
-              ? "Thay bạn: trả lời câu hỏi PO, duyệt kế hoạch, nhắn/tạm dừng bước đang chạy, giao task. Không bao giờ nghiệm thu hay merge."
+              ? "Trợ lý của bạn: duyệt kế hoạch thay bạn, nhắn/tạm dừng bước đang chạy, giao task. Câu hỏi của team do Leader trả lời. Không bao giờ nghiệm thu hay tạo MR."
               : "Đang tắt: Điều phối chỉ trò chuyện, không tự làm gì trên board."}
           </p>
           {toggle.error ? <p className="hint hint-err">{serverMessage(toggle.error as Error)}</p> : null}
@@ -161,12 +161,10 @@ function CoordPanel({ root, onClose }: { root: string; onClose: () => void }) {
 
 function Chat({ msgs, busy }: { msgs: ChatMsg[]; busy: boolean }) {
   const endRef = useRef<HTMLDivElement>(null);
-  // Block body: scrollIntoView may return a Promise in newer Chromium.
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [msgs.length, busy]);
+  // Pin the drawer body to the newest message only while the boss is at the bottom.
+  useFollowBottom(endRef, `${msgs.length}:${busy}`);
   if (msgs.length === 0 && !busy) {
-    return <p className="bd-empty">Chưa có trao đổi. Hỏi Điều phối tình hình dự án, hoặc nhờ giao việc, trả lời team thay bạn.</p>;
+    return <p className="bd-empty">Chưa có trao đổi. Hỏi trợ lý Điều phối tình hình dự án, hoặc nhờ giao việc, duyệt kế hoạch thay bạn.</p>;
   }
   return (
     <div className="bd-thread co-chat" aria-live="polite">

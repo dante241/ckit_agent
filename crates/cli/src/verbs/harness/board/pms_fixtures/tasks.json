@@ -1,0 +1,76 @@
+{
+ "status": 200,
+ "data": {
+  "success": "1",
+  "entry_list": [
+   {
+    "projectid": "5001",
+    "projectid_label": "Dự án mẫu 1",
+    "projecttaskname": "Task mẫu 1",
+    "projecttaskstatus": "Open",
+    "enddate": "",
+    "projecttaskpriority": "normal",
+    "projecttaskprogress": "0%",
+    "projecttasktype": "Coding",
+    "start_date_plan": "",
+    "end_date_plan": "",
+    "startdate": "2026-01-05",
+    "projecttaskid": "1001",
+    "main_owner_id": "11",
+    "description": "Mô tả mẫu dòng 1\n\nDòng 2",
+    "assigned_user_id": "11",
+    "createdby": "11",
+    "module": "ProjectTask",
+    "id": "1001",
+    "assigned_owners": [
+     {
+      "id": "Users:11",
+      "name": "Nhân viên A (user@example.com)"
+     }
+    ],
+    "follower": []
+   },
+   {
+    "projectid": "5002",
+    "projectid_label": "Dự án mẫu 2",
+    "projecttaskname": "Task mẫu 2",
+    "projecttaskstatus": "",
+    "enddate": "",
+    "projecttaskpriority": "",
+    "projecttaskprogress": "",
+    "projecttasktype": "",
+    "start_date_plan": "",
+    "end_date_plan": "2026-01-20",
+    "startdate": "2026-01-02",
+    "projecttaskid": "1002",
+    "main_owner_id": "13",
+    "description": "Mô tả mẫu dòng 1\n\nDòng 2",
+    "assigned_user_id": "12",
+    "createdby": "1",
+    "module": "ProjectTask",
+    "id": "1002",
+    "assigned_owners": [
+     {
+      "id": "Users:12",
+      "name": "Nhân viên B (user@example.com)"
+     },
+     {
+      "id": "Users:13",
+      "name": "Nhân viên A (user@example.com)"
+     }
+    ],
+    "follower": [
+     {
+      "id": "Users:12",
+      "name": "Người theo dõi 1 (user@example.com)"
+     }
+    ]
+   }
+  ],
+  "paging": {
+   "result_count": "2",
+   "total_count": "40",
+   "next_offset": "2"
+  }
+ }
+}

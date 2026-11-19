@@ -2,20 +2,25 @@
 //!
 //! A running step calls the `board_ask` tool (engine extension), which writes
 //! `ask/Q-<n>.json` and waits for `ask/A-<n>.json`. The worker routes each new
-//! question: to the boss (dashboard), or to a short read-only BA / PO session
-//! that answers or escalates to the boss. Those sessions bypass the project's
-//! single run slot — the asking run holds it while it waits, so queueing the
-//! answer behind it would deadlock.
+//! question: to the boss (dashboard), or to the Leader, who answers or escalates
+//! to the boss. The Leader answering is the Leader who planned the phase: its
+//! Kế hoạch session is copied to a temp dir and continued read-only, so the
+//! answer comes from the one who knows the plan best (no plan session → a fresh
+//! read-only Leader session). Those sessions bypass the project's single run
+//! slot — the asking run holds it while it waits, so queueing the answer behind
+//! it would deadlock.
 
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::path::{Path as FsPath, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use super::{guard, iso_now, list, load, save, task_dir, Stage, Status, Task};
+use super::{guard, iso_now, list, load, save, task_dir, Msg, Stage, Status, Task};
 use crate::models::{ModelConfig, TaskClass};
 
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(15 * 60);
@@ -29,20 +34,72 @@ pub(super) struct Ask {
     #[serde(default)]
     pub options: Vec<String>,
     pub at: String,
-    /// answering (BA/PO session) · boss · answered · timeout · closed (run ended first)
+    /// answering (Leader session) · boss · answered · timeout · closed (run ended first)
     pub status: String,
     pub answer: Option<String>,
     pub by: Option<String>,
     pub answered_at: Option<String>,
+    /// `ac_change`: a request to change an acceptance criterion — only the boss
+    /// decides it, it never times out and a run's end does not close it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ac: Option<AcChange>,
+    /// `/feature` phase the question belongs to (AC ids restart per phase).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+}
+
+/// What an AC change request proposes.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub(super) struct AcChange {
+    pub ac: String,
+    #[serde(default)]
+    pub old: String,
+    #[serde(default)]
+    pub new: String,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub evidence: String,
+}
+
+pub(super) const AC_CHANGE: &str = "ac_change";
+/// Options of an AC change card; the answer's first word decides it.
+pub(super) const AC_OPTIONS: [&str; 2] = ["Duyệt", "Không duyệt"];
+
+impl Ask {
+    pub(super) fn is_ac_change(&self) -> bool {
+        self.kind.as_deref() == Some(AC_CHANGE)
+    }
+
+    /// Some(true) approved, Some(false) rejected, None not decided (yet).
+    pub(super) fn approved(&self) -> Option<bool> {
+        if !self.is_ac_change() || self.status != "answered" || self.by.as_deref() != Some("boss") {
+            return None;
+        }
+        Some(approves(self.answer.as_deref().unwrap_or("")))
+    }
+}
+
+/// `Duyệt …` / `Đồng ý` / `ok` / `approve` = yes; `Không duyệt`, anything else = no.
+pub(super) fn approves(answer: &str) -> bool {
+    let a = answer.trim().to_lowercase();
+    ["duyệt", "đồng ý", "ok", "approve", "yes", "có"].iter().any(|w| a.starts_with(w)) && !a.starts_with("không")
 }
 
 #[derive(Deserialize)]
 struct QFile {
     id: String,
     to: String,
+    #[serde(default)]
     question: String,
     #[serde(default)]
     options: Vec<String>,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    ac: Option<AcChange>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -65,7 +122,7 @@ pub(super) fn has_open_question(dir: &FsPath) -> bool {
 }
 
 /// Publish the answer file the tool polls — complete (temp + link) and exclusive:
-/// the tool's timeout, the BA/PO session and the boss may race; the first one to
+/// the tool's timeout, the Leader session and the boss may race; the first one to
 /// land wins and `absorb` records exactly that one (`AlreadyExists` for losers).
 fn write_answer(dir: &FsPath, qid: &str, answer: &str, by: &str) -> std::io::Result<()> {
     let n = qid.trim_start_matches("Q-");
@@ -82,7 +139,7 @@ fn in_flight() -> &'static Mutex<HashSet<String>> {
 }
 
 /// Pull new questions and answers from the ask dir into the task. Returns the
-/// questions that need a BA/PO session. Caller holds the board lock and saves.
+/// questions that need a Leader session. Caller holds the board lock and saves.
 fn absorb(root: &FsPath, t: &mut Task) -> (bool, Vec<Ask>) {
     let dir = ask_dir(root, &t.id);
     let mut changed = false;
@@ -99,18 +156,27 @@ fn absorb(root: &FsPath, t: &mut Task) -> (bool, Vec<Ask>) {
             if t.asks.iter().any(|a| a.id == q.id) {
                 continue;
             }
-            let to = if matches!(q.to.as_str(), "ba" | "po") { q.to.clone() } else { "boss".to_string() };
+            let ac_change = q.kind.as_deref() == Some(AC_CHANGE);
+            // AC changes go to the boss whoever the run addressed.
+            let to = if ac_change { "boss" } else { route_to(&q.to) };
+            let (question, options) = match (&q.ac, ac_change) {
+                (Some(c), true) => (ac_question(c, &q.question), AC_OPTIONS.map(String::from).to_vec()),
+                _ => (q.question, q.options),
+            };
             let ask = Ask {
                 id: q.id,
                 from: t.stage,
-                to: to.clone(),
-                question: q.question,
-                options: q.options,
+                to: to.into(),
+                question,
+                options,
                 at: iso_now(),
-                status: if !running { "closed" } else if to == "boss" { "boss" } else { "answering" }.into(),
+                status: if ac_change || (running && to == "boss") { "boss" } else if !running { "closed" } else { "answering" }.into(),
                 answer: None,
                 by: None,
                 answered_at: None,
+                kind: ac_change.then(|| AC_CHANGE.to_string()),
+                ac: q.ac.filter(|_| ac_change),
+                phase: t.runs.last().and_then(|r| r.phase.clone()).or_else(|| super::active_phase(root, t)),
             };
             let opts = if ask.options.is_empty() { String::new() } else { format!("\n\nLựa chọn: {}", ask.options.join(" · ")) };
             t.say(&format!("{} → {}", t.stage.key(), to), &format!("[{}] {}{opts}", ask.id, ask.question));
@@ -127,6 +193,12 @@ fn absorb(root: &FsPath, t: &mut Task) -> (bool, Vec<Ask>) {
         let Some(f) = std::fs::read_to_string(dir.join(format!("A-{n}.json"))).ok().and_then(|s| serde_json::from_str::<AFile>(&s).ok()) else {
             continue;
         };
+        if f.by == "timeout" && a.is_ac_change() {
+            // Only the boss decides an AC change: a timeout (an older engine) is not
+            // an answer; clear it so the boss's answer can land.
+            let _ = std::fs::remove_file(dir.join(format!("A-{n}.json")));
+            continue;
+        }
         a.answered_at = Some(iso_now());
         a.by = Some(f.by.clone());
         if f.by == "timeout" {
@@ -145,11 +217,12 @@ fn absorb(root: &FsPath, t: &mut Task) -> (bool, Vec<Ask>) {
     (changed, route)
 }
 
-/// The run ended (done, failed, cancelled): unanswered questions are closed.
+/// The run ended (done, failed, cancelled): unanswered questions are closed —
+/// except AC change requests, which wait for the boss (the phase-close gate uses them).
 pub(super) fn close_open(root: &FsPath, t: &mut Task) {
     let _ = absorb(root, t);
     let dir = ask_dir(root, &t.id);
-    for a in t.asks.iter_mut().filter(|a| matches!(a.status.as_str(), "answering" | "boss")) {
+    for a in t.asks.iter_mut().filter(|a| matches!(a.status.as_str(), "answering" | "boss") && !a.is_ac_change()) {
         a.status = "closed".into();
         // Publish an answer file so the question no longer counts as open (the
         // timeout clock and later runs check `has_open_question`).
@@ -157,36 +230,79 @@ pub(super) fn close_open(root: &FsPath, t: &mut Task) {
     }
 }
 
-/// Worker tick: route new questions, record answers.
-pub(super) fn sync(root: &FsPath) {
-    let routes: Vec<(String, Ask)> = {
-        let _g = guard();
-        let mut out = Vec::new();
-        for mut t in list(root).into_iter().filter(|t| t.status == Status::Running) {
-            let (changed, route) = absorb(root, &mut t);
-            if changed {
-                let _ = save(root, &mut t);
+/// The card text of an AC change request.
+pub(super) fn ac_question(c: &AcChange, extra: &str) -> String {
+    let mut s = format!("[Đổi AC] {}", c.ac);
+    if !c.old.trim().is_empty() {
+        s.push_str(&format!("\nĐang là: {}", c.old.trim()));
+    }
+    if !c.new.trim().is_empty() {
+        s.push_str(&format!("\nĐề xuất: {}", c.new.trim()));
+    }
+    if !c.reason.trim().is_empty() {
+        s.push_str(&format!("\nLý do: {}", c.reason.trim()));
+    }
+    if !c.evidence.trim().is_empty() {
+        s.push_str(&format!("\nBằng chứng: {}", c.evidence.trim()));
+    }
+    if !extra.trim().is_empty() {
+        s.push_str(&format!("\n{}", extra.trim()));
+    }
+    s
+}
+
+/// Open an AC change card for the boss outside a run (the phase-close gate):
+/// writes the question file (so ids never collide with the runs') and records it.
+pub(super) fn open_ac_change(root: &FsPath, t: &mut Task, c: AcChange, phase: Option<String>) -> std::io::Result<String> {
+    let dir = ask_dir(root, &t.id);
+    std::fs::create_dir_all(&dir)?;
+    let mut n = 1;
+    let id = loop {
+        let id = format!("Q-{n}");
+        let body = serde_json::json!({ "id": id, "from": t.stage.key(), "to": "boss", "kind": AC_CHANGE, "ac": c, "question": "", "at": iso_now() });
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(dir.join(format!("{id}.json"))) {
+            Ok(mut f) => {
+                use std::io::Write;
+                f.write_all(body.to_string().as_bytes())?;
+                break id;
             }
-            out.extend(route.into_iter().map(|a| (t.id.clone(), a)));
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+            Err(e) => return Err(e),
         }
-        out
     };
-    for (id, ask) in routes {
-        // With the coordinator on, PO questions go to it: it already holds every
-        // task's context. BA questions keep their own short session.
-        if ask.to == "po" && super::coord::enabled(root) {
-            let opts = if ask.options.is_empty() { String::new() } else { format!(" Lựa chọn: {}.", ask.options.join(" · ")) };
-            super::coord::event(
-                root,
-                format!(
-                    "{id} {}: bước {} hỏi PO (đang chờ, tối đa ~20 phút): \"{}\".{opts} Trả lời bằng board_answer, hoặc board_escalate nếu chỉ sếp được quyết.",
-                    ask.id,
-                    ask.from.key(),
-                    ask.question
-                ),
-            );
-            continue;
-        }
+    let ask = Ask {
+        id: id.clone(),
+        from: t.stage,
+        to: "boss".into(),
+        question: ac_question(&c, ""),
+        options: AC_OPTIONS.map(String::from).to_vec(),
+        at: iso_now(),
+        status: "boss".into(),
+        answer: None,
+        by: None,
+        answered_at: None,
+        kind: Some(AC_CHANGE.into()),
+        ac: Some(c),
+        phase,
+    };
+    t.say(&format!("{} → boss", t.stage.key()), &format!("[{}] {}\n\nLựa chọn: {}", ask.id, ask.question, AC_OPTIONS.join(" · ")));
+    t.asks.push(ask);
+    Ok(id)
+}
+
+/// Who answers: the Leader (also the legacy `ba` / `po` targets) or the boss.
+fn route_to(to: &str) -> &'static str {
+    if matches!(to, "leader" | "ba" | "po") {
+        "leader"
+    } else {
+        "boss"
+    }
+}
+
+/// Worker tick: route new questions, record answers. Every question for the
+/// Leader gets its own answering session; nothing goes to the coordinator.
+pub(super) fn sync(root: &FsPath) {
+    for (id, ask) in collect(root) {
         let key = format!("{}|{id}|{}", root.display(), ask.id);
         if !in_flight().lock().map(|mut s| s.insert(key.clone())).unwrap_or(false) {
             continue;
@@ -199,19 +315,32 @@ pub(super) fn sync(root: &FsPath) {
     }
 }
 
-/// The coordinator hands a question to the boss.
-pub(super) fn escalate(t: &mut Task, qid: &str, reason: &str, from: &str) -> Result<(), String> {
-    let a = t
-        .asks
-        .iter_mut()
-        .find(|a| a.id == qid && a.status == "answering")
-        .ok_or_else(|| format!("{qid} không còn chờ trả lời"))?;
-    a.status = "boss".into();
-    t.say(from, &format!("[{qid}] chuyển cho sếp: {}", reason.trim()));
-    Ok(())
+/// Absorb every running task's ask dir; the questions the Leader must answer:
+/// new ones, plus open ones without an answer (a restarted dashboard adopted the
+/// run and lost the answering threads; `in_flight` keeps one answer per question).
+fn collect(root: &FsPath) -> Vec<(String, Ask)> {
+    let _g = guard();
+    let mut out = Vec::new();
+    for mut t in list(root).into_iter().filter(|t| t.status == Status::Running) {
+        let (changed, mut route) = absorb(root, &mut t);
+        if changed {
+            let _ = save(root, &mut t);
+        }
+        let dir = ask_dir(root, &t.id);
+        let open: Vec<Ask> = t
+            .asks
+            .iter()
+            .filter(|a| a.status == "answering" && !route.iter().any(|r| r.id == a.id))
+            .filter(|a| !dir.join(format!("A-{}.json", a.id.trim_start_matches("Q-"))).exists())
+            .cloned()
+            .collect();
+        route.extend(open);
+        out.extend(route.into_iter().map(|a| (t.id.clone(), a)));
+    }
+    out
 }
 
-/// Answer from the dashboard (boss) or the coordinator (as po/ba); pre-empts a BA/PO session.
+/// The boss answers from the dashboard / Telegram; pre-empts the Leader's answer.
 pub(super) fn answer_as(root: &FsPath, t: &mut Task, qid: &str, answer: &str, by: &str) -> Result<(), String> {
     let answer = answer.trim();
     if answer.is_empty() {
@@ -226,6 +355,8 @@ pub(super) fn answer_as(root: &FsPath, t: &mut Task, qid: &str, answer: &str, by
         _ => e.to_string(),
     })?;
     let _ = absorb(root, t);
+    // The last open AC change card of a held phase close decides where it goes.
+    super::goals::resolve_gate(root, t);
     Ok(())
 }
 
@@ -238,12 +369,12 @@ struct Verdict {
     reason: String,
 }
 
-/// Run the BA / PO session for one question; answer, or escalate to the boss.
+/// Run the Leader session for one question; answer, or escalate to the boss.
 fn answer(root: &FsPath, id: &str, ask: &Ask) {
     let Some(t) = load(root, id) else { return };
     let dir = ask_dir(root, id);
     let n = ask.id.trim_start_matches("Q-");
-    let log = dir.join(format!("{}-{n}.jsonl", ask.to));
+    let log = dir.join(format!("leader-{n}.jsonl"));
     let verdict = run_answerer(root, &t, ask, &log);
     let _g = guard();
     let Some(mut cur) = load(root, id) else { return };
@@ -252,7 +383,7 @@ fn answer(root: &FsPath, id: &str, ask: &Ask) {
     if still_open {
         match verdict {
             Some(v) if v.verdict == "answer" && !v.answer.trim().is_empty() => {
-                let _ = write_answer(&dir, &ask.id, v.answer.trim(), &ask.to);
+                let _ = write_answer(&dir, &ask.id, v.answer.trim(), "leader");
                 let _ = absorb(root, &mut cur);
             }
             v => {
@@ -260,39 +391,153 @@ fn answer(root: &FsPath, id: &str, ask: &Ask) {
                 if let Some(a) = cur.asks.iter_mut().find(|a| a.id == ask.id) {
                     a.status = "boss".into();
                 }
-                cur.say(&ask.to, &format!("[{}] chuyển cho sếp: {reason}", ask.id));
+                cur.say("leader", &format!("[{}] chuyển cho sếp: {reason}", ask.id));
             }
         }
     }
     let _ = save(root, &mut cur);
 }
 
-fn run_answerer(root: &FsPath, t: &Task, ask: &Ask, log: &FsPath) -> Option<Verdict> {
+/// The Leader's planning session: the session file written by the task's latest
+/// finished Kế hoạch run.
+fn plan_session(dir: &FsPath, t: &Task) -> Option<PathBuf> {
+    run_session(dir, t.runs.iter().rev().find(|r| r.stage == Stage::Solution)?)
+}
+
+/// The session file a finished run wrote (`sessions/` is shared by every run of
+/// the task): its log names the session id; else the first session created inside
+/// the run's [started, ended] window (the next run may start in the same second).
+pub(super) fn run_session(dir: &FsPath, run: &super::Run) -> Option<PathBuf> {
+    let ended = run.ended.as_deref()?;
+    let files: Vec<(String, PathBuf)> = std::fs::read_dir(dir.join("sessions"))
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "jsonl"))
+        .filter_map(|p| Some((p.file_name()?.to_str()?.to_string(), p)))
+        .filter(|(name, _)| !name.starts_with('.'))
+        .collect();
+    if let Some(id) = super::usage::log_session_id(&dir.join("logs").join(&run.log)) {
+        if let Some((_, p)) = files.iter().find(|(name, _)| name.contains(&id)) {
+            return Some(p.clone());
+        }
+    }
+    let (from, to) = (run.started.get(..19)?, ended.get(..19)?);
+    files
+        .into_iter()
+        .filter_map(|(name, p)| Some((session_stamp(&name)?, p)))
+        .filter(|(at, _)| at.as_str() >= from && at.as_str() <= to)
+        .min_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, p)| p)
+}
+
+/// `2026-10-15T16-44-28-390Z_<id>.jsonl` → `2026-10-15T16:44:28` (comparable
+/// with the first 19 chars of `iso_now()`).
+fn session_stamp(name: &str) -> Option<String> {
+    let s = name.get(..19)?;
+    let b = s.as_bytes();
+    (b[10] == b'T' && b[13] == b'-' && b[16] == b'-').then(|| format!("{}:{}:{}", &s[..13], &s[14..16], &s[17..19]))
+}
+
+/// A private copy of the plan session for one question; removed on drop. The
+/// original is never opened for writing: `omp --continue` appends to the copy.
+pub(super) struct Fork(pub(super) PathBuf);
+
+impl Drop for Fork {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+pub(super) fn fork_session(plan: &FsPath, task: &str, qid: &str) -> Option<Fork> {
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, Ordering::Relaxed);
+    let fork = Fork(std::env::temp_dir().join(format!("ckit-leader-{}-{task}-{qid}-{n}", std::process::id())));
+    let _ = std::fs::remove_dir_all(&fork.0);
+    std::fs::create_dir_all(&fork.0).ok()?;
+    std::fs::copy(plan, fork.0.join(plan.file_name()?)).ok()?;
+    Some(fork)
+}
+
+/// omp arguments of the Leader answering, the prompt excluded. Read-only and
+/// isolated: no write/edit/bash tools, no extensions (the engine tools commit),
+/// so it can never touch the tree the asking run is editing. `skills`: the
+/// project's skills are listed (the task chat's Leader names the one an action
+/// should use); a team question's answerer runs without them. `fork` = continue
+/// the copied plan session; None = a fresh session-less Leader.
+pub(super) fn answerer_args(root: &FsPath, fork: Option<&FsPath>, skills: bool) -> Vec<OsString> {
+    let mut a: Vec<OsString> = vec!["--cwd".into(), root.into()];
+    a.extend(["--mode", "json", "--no-extensions", "--tools=read,grep,glob"].map(Into::into));
+    if !skills {
+        a.push("--no-skills".into());
+    }
+    match fork {
+        Some(dir) => a.extend(["--continue".into(), "--session-dir".into(), dir.into()]),
+        None => a.push("--no-session".into()),
+    }
+    a.extend(ModelConfig::load().class_flags(TaskClass::Plan).into_iter().map(Into::into));
+    a
+}
+
+/// Thread for the Leader: every message from the boss and every Leader
+/// decision/answer (legacy po/ba too), plus the last `OTHERS` other messages.
+pub(super) fn thread_context(thread: &[Msg]) -> String {
+    const OTHERS: usize = 15;
+    let decides = |m: &Msg| matches!(m.from.as_str(), "user" | "boss" | "leader" | "po" | "ba");
+    let mut skip = thread.iter().filter(|m| !decides(m)).count().saturating_sub(OTHERS);
+    thread
+        .iter()
+        .filter(|m| {
+            if decides(m) || skip == 0 {
+                return true;
+            }
+            skip -= 1;
+            false
+        })
+        .map(|m| format!("[{}] {}", m.from, m.text))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn answer_prompt(root: &FsPath, t: &Task, ask: &Ask, forked: bool) -> Option<String> {
     let tpl = crate::assets::read("board/answer.md")?;
-    let role = if ask.to == "ba" { "BA (business analyst)" } else { "PO (the Leader, product owner)" };
-    let thread = t.thread.iter().rev().take(30).rev().map(|m| format!("[{}] {}", m.from, m.text)).collect::<Vec<_>>().join("\n\n");
+    let who = if forked {
+        "You are the Leader (team lead, also the BA) who planned this phase: the conversation above is your own planning session. Planning is over; you now answer a teammate's question about it, consistent with the decisions you recorded."
+    } else {
+        "You are the Leader (team lead, also the BA) of an AI delivery team."
+    };
     let fdir = super::feature_dir(root, t).map(|p| p.display().to_string()).unwrap_or_else(|| "(none)".into());
-    let prompt = tpl
-        .replace("{{ROLE}}", role)
-        .replace("{{FROM}}", ask.from.key())
-        .replace("{{QUESTION}}", &ask.question)
-        .replace("{{OPTIONS}}", &if ask.options.is_empty() { "(none)".into() } else { ask.options.join(" · ") })
-        .replace("{{ID}}", &t.id)
-        .replace("{{TITLE}}", &t.title)
-        .replace("{{REQUEST}}", &t.request)
-        .replace("{{THREAD}}", &thread)
-        .replace("{{FEATURE_DIR}}", &fdir)
-        .replace("{{DIR}}", &task_dir(root, &t.id).display().to_string());
+    let digest = t
+        .runs
+        .last()
+        .map(|r| task_dir(root, &t.id).join("logs").join(&r.log))
+        .filter(|p| p.exists())
+        .map(|p| super::pm::run_digest_of(t, &p))
+        .unwrap_or_else(|| "(none)".into());
+    Some(
+        tpl.replace("{{WHO}}", who)
+            .replace("{{FROM}}", ask.from.key())
+            .replace("{{ID}}", &t.id)
+            .replace("{{TITLE}}", &t.title)
+            .replace("{{FEATURE_DIR}}", &fdir)
+            .replace("{{DIR}}", &task_dir(root, &t.id).display().to_string())
+            .replace("{{THREAD}}", &thread_context(&t.thread))
+            .replace("{{RUN}}", &digest)
+            .replace("{{OPTIONS}}", &if ask.options.is_empty() { "(none)".into() } else { ask.options.join(" · ") })
+            // Free text last: a request/question containing `{{…}}` is never expanded.
+            .replace("{{REQUEST}}", &t.request)
+            .replace("{{QUESTION}}", &ask.question),
+    )
+}
+
+fn run_answerer(root: &FsPath, t: &Task, ask: &Ask, log: &FsPath) -> Option<Verdict> {
+    let fork = plan_session(&task_dir(root, &t.id), t).and_then(|p| fork_session(&p, &t.id, &ask.id));
+    let prompt = answer_prompt(root, t, ask, fork.is_some())?;
     let f = std::fs::File::create(log).ok()?;
     let err = f.try_clone().ok()?;
-    // Read-only and isolated: no write/edit/bash tools, no extensions (the engine
-    // tools commit), so it can never touch the tree the asking run is editing.
     let mut child = super::omp_cmd()
         .current_dir(root)
-        .arg("--cwd")
-        .arg(root)
-        .args(["--mode", "json", "--no-session", "--no-extensions", "--no-skills", "--tools=read,grep,glob"])
-        .args(ModelConfig::load().class_flags(TaskClass::Plan))
+        .args(answerer_args(root, fork.as_ref().map(|f| f.0.as_path()), false))
         .arg("-p")
         .arg(prompt)
         .stdin(Stdio::null())
@@ -313,6 +558,7 @@ fn run_answerer(root: &FsPath, t: &Task, ask: &Ask, log: &FsPath) -> Option<Verd
             Err(_) => return None,
         }
     }
+    drop(fork);
     let text = super::pm::answer_text(&std::fs::read_to_string(log).ok()?)?;
     parse_verdict(&text)
 }
@@ -328,6 +574,7 @@ fn parse_verdict(text: &str) -> Option<Verdict> {
 mod tests {
     use super::*;
     use crate::verbs::harness::board::tests::task;
+    use std::io::Write;
 
     fn tmp_root(tag: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("ckit-ask-{tag}-{}", std::process::id()));
@@ -351,7 +598,8 @@ mod tests {
         assert!(has_open_question(&dir));
         let (changed, route) = absorb(&root, &mut t);
         assert!(changed);
-        assert_eq!(route.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["Q-1"], "only BA/PO questions spawn a session");
+        assert_eq!(route.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["Q-1"], "only Leader questions spawn a session");
+        assert_eq!(t.asks[0].to, "leader", "legacy ba → leader");
         assert_eq!(t.asks[1].status, "boss");
         assert!(absorb(&root, &mut t).1.is_empty(), "a question is routed once");
 
@@ -384,5 +632,143 @@ mod tests {
     fn verdict_parses_from_fenced_text() {
         let v = parse_verdict("ok\n```json\n{\"verdict\":\"escalate\",\"reason\":\"tiền\"}\n```").unwrap();
         assert_eq!((v.verdict.as_str(), v.reason.as_str()), ("escalate", "tiền"));
+    }
+
+    #[test]
+    fn legacy_ba_po_route_to_the_leader_everything_else_to_the_boss() {
+        let root = tmp_root("legacy");
+        let mut t = task(Stage::Dev, Status::Running);
+        let dir = ask_dir(&root, &t.id);
+        for (n, to) in [(1, "ba"), (2, "po"), (3, "leader"), (4, "boss"), (5, "dev")] {
+            write_q(&dir, n, to);
+        }
+        let (_, route) = absorb(&root, &mut t);
+        assert_eq!(t.asks.iter().map(|a| a.to.as_str()).collect::<Vec<_>>(), ["leader", "leader", "leader", "boss", "boss"]);
+        assert_eq!(route.len(), 3);
+        assert!(t.thread.iter().any(|m| m.from == "dev → leader"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn run(stage: Stage, n: u32, started: &str, ended: Option<&str>) -> super::super::Run {
+        super::super::Run { stage, n, started: started.into(), ended: ended.map(Into::into), exit: None, cost: 0.0, verdict: None, log: format!("{}-{n}.jsonl", stage.key()), phase: None, round: None, title: None }
+    }
+
+    /// sessions/ of a task: intake, solution, then review starting in the second the solution ended.
+    fn sessions_fixture(dir: &FsPath) -> [PathBuf; 3] {
+        let s = dir.join("sessions");
+        std::fs::create_dir_all(s.join("2026-10-15T16-44-28-390Z_bbb")).unwrap(); // subagent sessions
+        std::fs::write(s.join(".2026-10-15T16-44-28-390Z_bbb.jsonl.lock.os"), "").unwrap();
+        let files = [
+            s.join("2026-10-15T16-41-41-873Z_aaa.jsonl"),
+            s.join("2026-10-15T16-44-28-390Z_bbb.jsonl"),
+            s.join("2026-10-15T17-27-28-595Z_ccc.jsonl"),
+        ];
+        for f in &files {
+            std::fs::write(f, "{\"type\":\"session\"}\n{\"type\":\"plan\"}\n").unwrap();
+        }
+        files
+    }
+
+    #[test]
+    fn fork_picks_the_plan_session_and_never_changes_it() {
+        let root = tmp_root("fork");
+        let mut t = task(Stage::Dev, Status::Running);
+        let dir = task_dir(&root, &t.id);
+        let [_, plan, _] = sessions_fixture(&dir);
+        t.runs = vec![
+            run(Stage::Intake, 1, "2026-10-15T16:41:41Z", Some("2026-10-15T16:44:27Z")),
+            run(Stage::Solution, 1, "2026-10-15T16:44:28Z", Some("2026-10-15T17:27:28Z")),
+            run(Stage::Review, 1, "2026-10-15T17:27:28Z", Some("2026-10-15T17:30:59Z")),
+            run(Stage::Dev, 1, "2026-10-15T17:43:11Z", None),
+        ];
+        // No run log: the first session inside the Kế hoạch window (not Review's, same second).
+        assert_eq!(plan_session(&dir, &t).as_deref(), Some(plan.as_path()));
+        // The run log names its session: that file wins.
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+        std::fs::write(dir.join("logs/solution-1.jsonl"), "{\"type\":\"session\",\"id\":\"bbb\"}\n").unwrap();
+        assert_eq!(plan_session(&dir, &t).as_deref(), Some(plan.as_path()));
+
+        let meta = |p: &FsPath| std::fs::metadata(p).map(|m| (m.len(), m.modified().unwrap())).unwrap();
+        let before = meta(&plan);
+        let (a, b) = (fork_session(&plan, &t.id, "Q-1").unwrap(), fork_session(&plan, &t.id, "Q-2").unwrap());
+        assert_ne!(a.0, b.0, "concurrent questions get their own copy");
+        let copy = a.0.join(plan.file_name().unwrap());
+        assert_eq!(std::fs::read(&copy).unwrap(), std::fs::read(&plan).unwrap());
+        // What `omp --continue` does to the copy.
+        std::fs::OpenOptions::new().append(true).open(&copy).unwrap().write_all(b"{\"type\":\"answer\"}\n").unwrap();
+        let args = answerer_args(&root, Some(&a.0), false);
+        let s: Vec<String> = args.iter().map(|x| x.to_string_lossy().into_owned()).collect();
+        let at = s.iter().position(|x| x == "--session-dir").unwrap();
+        assert_eq!((s.contains(&"--continue".to_string()), s[at + 1].as_str()), (true, a.0.to_str().unwrap()));
+        assert!(s.contains(&"--tools=read,grep,glob".to_string()) && !s.contains(&"--no-session".to_string()));
+        let tmp = a.0.clone();
+        drop(a);
+        drop(b);
+        assert!(!tmp.exists(), "temp session dir deleted");
+        assert_eq!(meta(&plan), before, "the Leader's plan session is unchanged");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn without_a_finished_plan_run_the_leader_answers_fresh() {
+        let root = tmp_root("fresh");
+        let mut t = task(Stage::Dev, Status::Running);
+        let dir = task_dir(&root, &t.id);
+        sessions_fixture(&dir);
+        // Quick task: no Kế hoạch run at all.
+        t.runs = vec![run(Stage::Dev, 1, "2026-10-15T16:41:41Z", None)];
+        assert!(plan_session(&dir, &t).is_none());
+        // Kế hoạch still running (it asked itself): no fork of a half-written session.
+        t.runs = vec![run(Stage::Solution, 1, "2026-10-15T16:44:28Z", None)];
+        assert!(plan_session(&dir, &t).is_none());
+        let s: Vec<String> = answerer_args(&root, None, false).iter().map(|x| x.to_string_lossy().into_owned()).collect();
+        assert!(s.contains(&"--no-session".to_string()) && !s.contains(&"--continue".to_string()) && s.contains(&"--tools=read,grep,glob".to_string()));
+        let ask = Ask { id: "Q-1".into(), from: Stage::Dev, to: "leader".into(), question: "tên hàm {{ID}}?".into(), options: vec![], at: String::new(), status: "answering".into(), answer: None, by: None, answered_at: None, kind: None, ac: None, phase: None };
+        let p = answer_prompt(&root, &t, &ask, false).unwrap();
+        assert!(p.starts_with("You are the Leader") && p.contains("tên hàm {{ID}}?"), "question is data, never expanded");
+        assert!(!p.contains("{{WHO}}") && !p.contains("{{RUN}}") && !p.contains("{{THREAD}}"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn context_keeps_every_decision_and_the_last_15_others() {
+        let msg = |from: &str, text: String| Msg { from: from.into(), text, at: String::new() };
+        let mut thread = vec![msg("user", "yêu cầu gốc".into()), msg("leader", "quyết định D1".into()), msg("po", "trả lời cũ".into())];
+        thread.extend((0..40).map(|i| msg("system", format!("note {i}"))));
+        thread.push(msg("boss", "chốt: dùng bảng messages".into()));
+        thread.extend((40..45).map(|i| msg("dev → leader", format!("note {i}"))));
+        let c = thread_context(&thread);
+        for d in ["yêu cầu gốc", "quyết định D1", "trả lời cũ", "chốt: dùng bảng messages"] {
+            assert!(c.contains(d), "{d} kept");
+        }
+        assert_eq!(c.matches("note ").count(), 15);
+        assert!(!c.contains("note 29\n") && c.contains("note 30") && c.contains("note 44"));
+        assert!(c.find("quyết định D1").unwrap() < c.find("note 30").unwrap(), "oldest first");
+    }
+}
+
+#[cfg(test)]
+mod coord_tests {
+    use super::*;
+    use crate::verbs::harness::board::{coord, tests::task};
+
+    #[test]
+    fn the_coordinator_receives_no_team_question_events() {
+        let root = std::env::temp_dir().join(format!("ckit-ask-coord-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        coord::set_port(1);
+        coord::set_enabled(&root, true).unwrap();
+        assert!(coord::enabled(&root));
+        let mut t = task(Stage::Dev, Status::Running);
+        save(&root, &mut t).unwrap();
+        let dir = ask_dir(&root, &t.id);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (n, to) in [(1, "po"), (2, "leader")] {
+            std::fs::write(dir.join(format!("Q-{n}.json")), serde_json::json!({ "id": format!("Q-{n}"), "to": to, "question": "bảng nào?" }).to_string()).unwrap();
+        }
+        let routed = collect(&root);
+        assert_eq!(routed.iter().map(|(_, a)| a.to.as_str()).collect::<Vec<_>>(), ["leader", "leader"]);
+        assert!(coord::chat(&root, 50).is_empty() && !coord::busy(&root), "no event reached the coordinator");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -16,6 +16,9 @@ export function workflowName(t: Pick<BoardTaskSummary, "workflow">): string | nu
 
 const STEPS: BoardStage[] = ["solution", "approval", "dev", "acceptance"];
 
+/** Tạo task starts on this command when the project has it enabled (else /feature). */
+export const DEFAULT_WORKFLOW = "cook";
+
 /** The step names a workflow task shows instead of the /feature labels. */
 export function workflowStepLabel(name: string, stage: BoardStage): string | null {
   switch (stage) {
@@ -48,7 +51,8 @@ export function WorkflowPicker({ root, value, onChange }: { root: string; value:
   const q = useCommands(root);
   const [manage, setManage] = useState(false);
   const commands = q.data?.commands ?? [];
-  const enabled = commands.filter((c) => c.enabled);
+  // The default command first, the rest in name order.
+  const enabled = commands.filter((c) => c.enabled).sort((a, b) => Number(b.name === DEFAULT_WORKFLOW) - Number(a.name === DEFAULT_WORKFLOW));
   const toggle = useMutation({
     mutationFn: (c: BoardCommand) => api.boardWorkflowToggle(root, c.name, !c.enabled),
     onSuccess: (d, c) => {
@@ -70,9 +74,6 @@ export function WorkflowPicker({ root, value, onChange }: { root: string; value:
         </button>
       </span>
       <div className="bd-presets" role="group" aria-labelledby="bd-wf-label">
-        <button type="button" className={`bd-preset ${value === null ? "on" : ""}`} aria-pressed={value === null} onClick={() => onChange(null)}>
-          /feature (mặc định)
-        </button>
         {enabled.map((c) => (
           <button
             type="button"
@@ -82,13 +83,16 @@ export function WorkflowPicker({ root, value, onChange }: { root: string; value:
             title={c.description || c.path}
             onClick={() => onChange(c.name)}
           >
-            /{c.name}
+            /{c.name}{c.name === DEFAULT_WORKFLOW ? " (mặc định)" : ""}
           </button>
         ))}
+        <button type="button" className={`bd-preset ${value === null ? "on" : ""}`} aria-pressed={value === null} onClick={() => onChange(null)}>
+          /feature
+        </button>
       </div>
       {manage ? (
         <div className="bd-wf-panel">
-          <p className="bd-steps-preview">Lệnh omp của bạn (trong ~/.omp/agent/commands và .omp/commands của dự án). Bật lệnh nào thì lệnh đó hiện ở Giao việc cho dự án này.</p>
+          <p className="bd-steps-preview">Lệnh omp của bạn (trong ~/.omp/agent/commands và .omp/commands của dự án). Bật lệnh nào thì lệnh đó hiện khi tạo task cho dự án này.</p>
           {q.error ? <p className="hint hint-err">{serverMessage(q.error as Error)}</p> : null}
           {q.data && !commands.length ? <p className="bd-steps-preview">Chưa có lệnh nào. Tạo file .md trong ~/.omp/agent/commands để có quy trình riêng.</p> : null}
           {commands.length ? (

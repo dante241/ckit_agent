@@ -1191,10 +1191,10 @@ fn models_config_json(home: &std::path::Path) -> serde_json::Value {
             Some(row(s["key"].as_str()?, s["label"].as_str()?, s["who"].as_str()?, class))
         })
         .collect();
-    // Coordinator (board/coord.rs) and the mid-step answerer (board/ask.rs) both
-    // run with `class_flags(TaskClass::Plan)`.
-    board.push(row("coordinator", "Điều phối", "Leader", "plan"));
-    board.push(row("answer", "Trả lời câu hỏi của team", "Leader / BA", "plan"));
+    // Coordinator (board/coord.rs) and the Leader answering team questions
+    // (board/ask.rs) both run with `class_flags(TaskClass::Plan)`.
+    board.push(row("coordinator", "Điều phối", "Trợ lý của sếp", "plan"));
+    board.push(row("answer", "Leader trả lời team", "Leader", "plan"));
     if cfg.advisor {
         let mut v = serde_json::json!(ModelConfig::resolve_advisor(&omp));
         if let Some(o) = v.as_object_mut() {

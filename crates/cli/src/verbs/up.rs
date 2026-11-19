@@ -53,6 +53,9 @@ pub fn run(a: Args) -> Result<()> {
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
+    // The service's program path is the swapped binary: a restart runs the new one
+    // (a running Board step keeps going; the new dashboard adopts it).
+    crate::verbs::service::restart_if_installed();
 
     ui::header("next steps");
     if applied {

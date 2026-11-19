@@ -9,7 +9,9 @@ import { askingYou } from "./Asks";
 import { isNew, isPaused, pauseLabel } from "./Interject";
 import { STAGE_LABEL, StatusPill, ago, isTerminal, money, needLabel } from "./Board";
 import { WorkflowChip, taskStageLabel } from "./Workflows";
+import { PmsSourceChip } from "./PmsPicker";
 import { CardAction } from "./CardActions";
+import { ModelChip } from "./ModelChip";
 
 export type Lane = "new" | "plan" | "you" | "dev" | "test" | "done";
 
@@ -122,6 +124,7 @@ function EpicCard({ t, root, need, onOpen }: { t: BoardTaskSummary; root: string
           )}
         </span>
         {meta ? <span className="bd-card-meta">{meta}</span> : null}
+        {t.status === "running" ? <ModelChip m={t.run_model} className="bd-card-model" /> : null}
         {p ? (
           <span className={`bd-card-bar${failed ? " is-err" : full ? " is-full" : ""}`} role="progressbar" aria-label="Tiến độ phase" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.done}>
             <span style={{ width: `${Math.round((p.done / p.total) * 100)}%` }} />
@@ -133,6 +136,11 @@ function EpicCard({ t, root, need, onOpen }: { t: BoardTaskSummary; root: string
           <span>{ago(t.updated)}</span>
         </span>
       </button>
+      {t.source ? (
+        <div className="bd-card-src">
+          <PmsSourceChip source={t.source} />
+        </div>
+      ) : null}
       <CardAction t={t} root={root} onOpen={() => onOpen(t.id)} />
     </article>
   );

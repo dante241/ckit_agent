@@ -5,13 +5,11 @@ import { createContext, useContext, useEffect, useRef, useState, type FormEvent,
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
-  type BoardDetail,
-  type BoardLogLine,
-  type BoardMsg,
   type BoardRun,
   type BoardStage,
   type BoardStatus,
   type BoardTask,
+  type BoardSource,
   type BoardTaskSummary,
   type PmEntry,
   type ProjectBoard,
@@ -20,15 +18,20 @@ import { Markdown } from "./markdown";
 import { Glyph } from "./icons";
 import { Page, Loading, isMissing, ErrorState, EndpointMissing, EmptyState } from "./ui";
 import { FULL_STEPS, StepPicker, hasStepAfter, serverMessage, useStepCatalog, validateSteps } from "./Steps";
-import { answeringSeats, askingYou, senderLabel } from "./Asks";
+import { acGateOf, answeringSeats, askingYou } from "./Asks";
+import { ACCEPT_MR_EVENT, FOCUS_CHAT_EVENT } from "./MrCard";
 import { Interject, isNew, isPaused, pauseLabel } from "./Interject";
 import { CoordButton, useCoord } from "./Coordinator";
 import { TaskPage, goTo, useTaskRoute } from "./TaskPage";
 import { TelegramButton } from "./Telegram";
+import { PmsButton, PmsConnectLink } from "./PmsConnect";
+import { QuotaButton } from "./Quota";
 import { EpicBoard, laneOf } from "./EpicBoard";
 import { StatusStrip, matches, type StripFilter } from "./StatusStrip";
 import { CardAction, cardAction } from "./CardActions";
-import { WorkflowChip, WorkflowPicker, WorkflowSteps, taskStageLabel } from "./Workflows";
+import { DEFAULT_WORKFLOW, WorkflowChip, WorkflowPicker, WorkflowSteps, taskStageLabel } from "./Workflows";
+import { PmsPicker, usePmsConfigured } from "./PmsPicker";
+import { MrReviews } from "./MrReviews";
 
 // ── Vocabulary ─────────────────────────────────────────────────────────────
 // Board stage → the `/feature` step it runs.
@@ -36,13 +39,14 @@ export const STAGE_LABEL: Record<BoardStage, string> = {
   investigate: "Điều tra",
   intake: "Tiếp nhận (new)",
   solution: "Kế hoạch phase (plan)",
-  review: "PO duyệt",
+  review: "Phản biện kế hoạch",
   approval: "Bạn duyệt kế hoạch",
   dev: "Phát triển (go)",
   test: "Kiểm thử (ship)",
   security: "Review bảo mật",
   report: "Báo cáo",
   acceptance: "Nghiệm thu",
+  action: "Thực hiện",
   done: "Hoàn tất",
   cancelled: "Đã huỷ",
 };
@@ -52,13 +56,14 @@ export const STAGE_WHO: Record<BoardStage, string> = {
   investigate: "Leader",
   intake: "Leader",
   solution: "Leader + BA",
-  review: "Leader (PO)",
+  review: "Reviewer",
   approval: "Bạn",
   dev: "Dev",
   test: "Tester",
   security: "Reviewer bảo mật",
   report: "Leader",
   acceptance: "Bạn",
+  action: "Agent",
   done: "",
   cancelled: "",
 };
@@ -68,6 +73,7 @@ const GATES = new Set<BoardStage>(["investigate", "approval", "acceptance"]);
 
 // What the user has to do for a waiting (or asking) task, by stage.
 export function needLabel(t: { stage: BoardStage; status: BoardStatus; asking?: number; paused?: boolean; note?: string | null }): string {
+  if (acGateOf(t)) return "Chờ bạn duyệt thay đổi AC";
   if (askingYou(t)) return "Trả lời câu hỏi";
   if (isPaused(t)) return isNew(t) ? "Bấm Bắt đầu" : "Đang tạm dừng";
   const stage = t.stage;
@@ -106,7 +112,7 @@ export function clock(iso: string): string {
   return d.toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 }
 
-function duration(run: BoardRun): string {
+export function duration(run: BoardRun): string {
   const a = Date.parse(run.started);
   const b = run.ended ? Date.parse(run.ended) : Date.now();
   if (Number.isNaN(a) || Number.isNaN(b)) return "";
@@ -131,7 +137,7 @@ function useBoard() {
 // Project every query/action below the list is bound to (the list's `project`;
 // the task page pins the project its task came from). Part of every query key.
 const RootCtx = createContext("");
-const useRoot = () => useContext(RootCtx);
+export const useRoot = () => useContext(RootCtx);
 
 // Every project's board in one poll. Key sits under ["board"] so any
 // invalidation of the current board also refreshes the multi-project view.
@@ -177,13 +183,14 @@ export function StatusPill({ status, stage, asking, paused }: { status: BoardSta
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
-// View lives in the URL next to the page id: ?page=board&view=all|room|kanban.
-// "all" (every project) is the default; room/kanban show the current project.
-type View = "all" | "room" | "kanban";
+// View lives in the URL next to the page id: ?page=board&view=all|room|kanban|mr.
+// "kanban" (Bảng, current project) is the default; "all" shows every project;
+// "mr" lists the project's open merge requests and their AI review.
+type View = "all" | "room" | "kanban" | "mr";
 const SHOW_DONE_KEY = "ckit.board.showDone";
 function viewFromUrl(): View {
   const v = new URLSearchParams(window.location.search).get("view");
-  return v === "room" || v === "kanban" ? v : "all";
+  return v === "all" || v === "room" || v === "mr" ? v : "kanban";
 }
 
 export function BoardPage() {
@@ -275,39 +282,60 @@ export function BoardPage() {
       <Page
         title="Board"
         sub={
-          waitingN + runningN + failedN > 0 ? (
+          // While tasks load, a blank line holds the summary's height (the intro sentence
+          // would show first, wrap differently, then swap to the counts).
+          view === "mr" ? (
+            "Merge request đang mở của dự án. AI review chỉ đọc code; bạn xem kết quả rồi mới đăng lên GitLab/GitHub."
+          ) : (view === "all" ? all.isLoading : isLoading) ? (
+            "\u00a0"
+          ) : waitingN + runningN + failedN > 0 ? (
             <span className="bd-sum">
               {waitingN > 0 && <span className="bd-sum-item is-need">{waitingN} việc cần bạn</span>}
               {runningN > 0 && <span className="bd-sum-item is-run">{runningN} đang chạy</span>}
               {failedN > 0 && <span className="bd-sum-item is-fail">{failedN} lỗi</span>}
             </span>
           ) : (
-            "Giao việc cho Leader. Team lập kế hoạch từng phase, code, kiểm thử theo AC; bạn chỉ duyệt kế hoạch và nghiệm thu."
+            "Tạo task cho Leader: team lên kế hoạch từng phase, code và kiểm thử theo AC. Bạn chỉ cần duyệt kế hoạch và nghiệm thu."
           )
         }
         action={
           <div className="bd-head-actions">
             <CoordButton root={data?.project || all.data?.current || ""} />
             <TelegramButton />
+            <PmsButton />
+            <QuotaButton />
             <button className="primary bd-new" onClick={() => setCreating(true)} disabled={missing}>
-              <Glyph name="plus" /> Giao việc
+              <Glyph name="plus" /> Tạo task
             </button>
           </div>
         }
+        fill={view === "kanban"}
+        toolbar={
+          <>
+            {/* While tasks load, empty tile frames hold the strip's height so nothing jumps. */}
+            {view !== "mr" && (scope.length > 0 || (view === "all" ? all.isLoading : isLoading)) && (
+              <StatusStrip tasks={scope} active={filter} onPick={setFilter} loading={scope.length === 0} />
+            )}
+            <div className="bd-toolbar">
+              <div className="seg bd-views" role="tablist" aria-label="Kiểu xem">
+                <button role="tab" aria-selected={view === "all"} className={view === "all" ? "seg-on" : ""} onClick={() => setView("all")}>Tất cả dự án</button>
+                <button role="tab" aria-selected={view === "room"} className={view === "room" ? "seg-on" : ""} onClick={() => setView("room")}>Phòng dự án</button>
+                <button role="tab" aria-selected={view === "kanban"} className={view === "kanban" ? "seg-on" : ""} onClick={() => setView("kanban")}>Bảng</button>
+                <button role="tab" aria-selected={view === "mr"} className={view === "mr" ? "seg-on" : ""} onClick={() => setView("mr")}>Review MR</button>
+              </div>
+              {view !== "mr" && (
+                <label className="bd-done-toggle">
+                  <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} />
+                  Hiện việc đã xong ({hiddenN})
+                </label>
+              )}
+            </div>
+          </>
+        }
       >
-        {scope.length > 0 && <StatusStrip tasks={scope} active={filter} onPick={setFilter} />}
-        <div className="bd-toolbar">
-          <div className="seg bd-views" role="tablist" aria-label="Kiểu xem">
-            <button role="tab" aria-selected={view === "all"} className={view === "all" ? "seg-on" : ""} onClick={() => setView("all")}>Tất cả dự án</button>
-            <button role="tab" aria-selected={view === "room"} className={view === "room" ? "seg-on" : ""} onClick={() => setView("room")}>Phòng dự án</button>
-            <button role="tab" aria-selected={view === "kanban"} className={view === "kanban" ? "seg-on" : ""} onClick={() => setView("kanban")}>Bảng</button>
-          </div>
-          <label className="bd-done-toggle">
-            <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} />
-            Hiện việc đã xong ({hiddenN})
-          </label>
-        </div>
-        {filterEmpty ? (
+        {view === "mr" ? (
+          <MrReviews root={createRoot} />
+        ) : filterEmpty ? (
           filterEmpty
         ) : view === "all" ? (
           isMissing(all.error) ? (
@@ -347,7 +375,7 @@ export function BoardPage() {
               <EmptyState
                 icon={<Glyph name="plus" />}
                 title="Chưa có việc nào"
-                hint="Bấm “Giao việc” và mô tả bạn cần gì. Leader làm rõ yêu cầu, chia phase, lập kế hoạch kèm tiêu chí nghiệm thu (AC), rồi gửi bạn duyệt trước khi code."
+                hint="Bấm “Tạo task”, chọn một task hoặc ticket từ PMS (hoặc tự mô tả việc cần làm). Leader sẽ làm rõ yêu cầu, chia phase, lập kế hoạch kèm tiêu chí nghiệm thu (AC) và gửi bạn duyệt trước khi code."
               />
             ) : (
               <EpicBoard
@@ -408,10 +436,10 @@ function AllProjects({
         title="Chưa có việc nào ở dự án nào"
         hint={
           <>
-            Giao việc cho Leader ở bất kỳ dự án nào. Việc của mọi dự án hiện chung ở đây; việc cần bạn duyệt nổi lên đầu.
+            Tạo task cho Leader ở dự án bất kỳ. Task của mọi dự án đều hiện ở đây, task đang chờ bạn luôn nằm trên cùng.
             <span className="bd-empty-act">
               <button className="primary bd-new" onClick={onCreate} disabled={!canCreate}>
-                <Glyph name="plus" /> Giao việc
+                <Glyph name="plus" /> Tạo task
               </button>
             </span>
           </>
@@ -580,11 +608,17 @@ function CreateModal({
   const [title, setTitle] = useState("");
   const [request, setRequest] = useState("");
   const [steps, setSteps] = useState<BoardStage[]>(FULL_STEPS);
-  const [workflow, setWorkflow] = useState<string | null>(null);
+  // /cook by default; the picker falls back to /feature when the project has it off.
+  const [workflow, setWorkflow] = useState<string | null>(DEFAULT_WORKFLOW);
+  const pmsOn = usePmsConfigured();
+  // Opens on PMS by default once an account is connected; "Tự nhập" (✕) switches to typing.
+  const [pmsChoice, setPmsOpen] = useState<boolean | null>(null);
+  const pmsOpen = pmsChoice ?? pmsOn === true;
+  const [source, setSource] = useState<BoardSource | null>(null);
   const { catalog } = useStepCatalog();
   const stepsErr = workflow ? null : validateSteps(steps, catalog);
   const create = useMutation({
-    mutationFn: (r: string) => api.boardCreate(r, title.trim(), request.trim(), workflow ? undefined : steps, workflow),
+    mutationFn: (r: string) => api.boardCreate(r, title.trim(), request.trim(), workflow ? undefined : steps, workflow, source),
     onSuccess: (t, r) => {
       qc.invalidateQueries({ queryKey: ["board"] });
       onCreated(t.id, r);
@@ -599,36 +633,70 @@ function CreateModal({
   };
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <form className="modal" role="dialog" aria-modal="true" aria-label="Giao việc" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+      <form className="modal modal-create" role="dialog" aria-modal="true" aria-label="Tạo task" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-head">
-          <strong>Giao việc cho Leader</strong>
+          <strong>Tạo task mới</strong>
           <button type="button" className="icon-btn ghost" onClick={onClose} aria-label="Đóng">✕</button>
         </div>
         <div className="modal-body">
-          <p className="bd-create-proj" title={root}>Dự án: <strong>{name || "chưa chọn"}</strong></p>
-          <label className="field">
-            <span className="field-label">Tiêu đề</span>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="VD: Thêm xuất Excel cho danh sách đơn hàng" autoFocus />
-          </label>
-          <label className="field">
-            <span className="field-label">Yêu cầu</span>
-            <textarea
-              className="bd-textarea"
-              value={request}
-              onChange={(e) => setRequest(e.target.value)}
-              onKeyDown={(e) => submitOnMetaEnter(e, send)}
-              placeholder="Cần làm gì, cho ai, kết quả mong muốn. Leader sẽ hỏi lại nếu còn thiếu."
-              rows={5}
+          <p className="bd-create-proj" title={root}>Dự án: <strong>{name || "chưa chọn dự án"}</strong></p>
+          {pmsOpen ? (
+            <PmsPicker
+              onClose={() => {
+                setPmsOpen(false);
+                // "Tự nhập": the button unmounts, so hand focus to the title the boss will type into.
+                requestAnimationFrame(() => document.getElementById("bd-create-title")?.focus());
+              }}
+              onPick={(p) => {
+                setTitle(p.title);
+                setRequest(p.request);
+                setSource(p.source);
+                setPmsOpen(false);
+              }}
             />
-          </label>
-          <WorkflowPicker root={root} value={workflow} onChange={setWorkflow} />
-          {workflow ? <WorkflowSteps name={workflow} /> : <StepPicker value={steps} onChange={setSteps} />}
+          ) : null}
+          <div className="bd-create-cols">
+            <div className="bd-create-main">
+              <div className="field">
+                <div className="bd-field-head">
+                  <label className="field-label" htmlFor="bd-create-title">Tiêu đề</label>
+                  {source ? (
+                    <span className="tag accent bd-pms-picked">
+                      Từ PMS: {source.no || `#${source.id}`}
+                      <button type="button" className="bd-pms-unpick" onClick={() => setSource(null)} aria-label="Bỏ liên kết PMS" title="Bỏ liên kết PMS">✕</button>
+                    </span>
+                  ) : null}
+                  {pmsOn === true && !pmsOpen ? (
+                    <button type="button" className="ghost bd-pms-open" onClick={() => setPmsOpen(true)}>Lấy từ PMS</button>
+                  ) : pmsOn === false ? (
+                    <PmsConnectLink />
+                  ) : null}
+                </div>
+                <input id="bd-create-title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="VD: Thêm nút xuất Excel cho danh sách đơn hàng" autoFocus={!pmsOpen} />
+              </div>
+              <label className="field bd-create-req">
+                <span className="field-label">Yêu cầu</span>
+                <textarea
+                  className="bd-textarea"
+                  value={request}
+                  onChange={(e) => setRequest(e.target.value)}
+                  onKeyDown={(e) => submitOnMetaEnter(e, send)}
+                  placeholder="Mô tả việc cần làm, cho ai dùng và kết quả bạn mong muốn. Thiếu gì Leader sẽ hỏi lại."
+                  rows={12}
+                />
+              </label>
+            </div>
+            <div className="bd-create-side">
+              <WorkflowPicker root={root} value={workflow} onChange={setWorkflow} />
+              {workflow ? <WorkflowSteps name={workflow} /> : <StepPicker value={steps} onChange={setSteps} />}
+            </div>
+          </div>
           {create.error ? <p className="hint hint-err">{serverMessage(create.error as Error)}</p> : null}
         </div>
         <div className="modal-foot">
-          <span className="faint hint-inline">⌘/Ctrl + Enter để gửi</span>
+          <span className="faint hint-inline">⌘/Ctrl + Enter để tạo nhanh</span>
           <button type="submit" className="primary" disabled={!ok}>
-            {create.isPending ? "Đang gửi…" : "Giao cho Leader"}
+            {create.isPending ? "Đang tạo…" : "Tạo task"}
           </button>
         </div>
       </form>
@@ -670,156 +738,15 @@ export function TaskActions({ t }: { t: BoardTask }) {
   return <Actions t={t} busy={act.isPending ? act.variables?.kind : undefined} error={act.error as Error | null} onAct={(a) => act.mutate(a)} onCancel={cancel} />;
 }
 
-// ── Thread ─────────────────────────────────────────────────────────────────
-export function Thread({ msgs }: { msgs: BoardMsg[] }) {
-  const endRef = useRef<HTMLDivElement>(null);
-  // Follow NEW messages only: scrolling on mount would yank the task page down
-  // to the thread the moment it opens, past the header and the action bar.
-  const seen = useRef(msgs.length);
-  // Block body: newer Chromium returns a Promise from scrollIntoView, which
-  // React would otherwise call as the effect cleanup.
-  useEffect(() => {
-    if (msgs.length > seen.current) endRef.current?.scrollIntoView({ block: "end" });
-    seen.current = msgs.length;
-  }, [msgs.length]);
-  if (msgs.length === 0) return <p className="bd-empty">Chưa có trao đổi. Leader sẽ nhắn ở đây khi cần bạn.</p>;
-  return (
-    <div className="bd-thread">
-      {msgs.map((m, i) =>
-        m.from === "system" ? (
-          <div key={i} className="bd-sys"><span>{m.text}</span> <time className="faint">{clock(m.at)}</time></div>
-        ) : (
-          <div key={i} className={`bd-msg from-${threadClass(m.from)}`}>
-            <div className="bd-msg-head">
-              <strong>{senderLabel(m.from)}</strong>
-              <time className="faint">{clock(m.at)}</time>
-            </div>
-            {m.from === "user" || m.from === "boss" || m.from.startsWith("user → ") ? <p className="bd-msg-text">{m.text}</p> : <Markdown source={m.text} />}
-          </div>
-        ),
-      )}
-      <div ref={endRef} />
-    </div>
-  );
-}
-
-// ── Artifacts ──────────────────────────────────────────────────────────────
-export function Docs({ d, docs }: { d: BoardDetail; docs: BoardDetail["docs"] }) {
-  const names = docs.map((x) => x.name);
-  const fallback = d.focus && names.includes(d.focus) ? d.focus : names[names.length - 1];
-  const [pick, setPick] = useState<string | null>(null);
-  const cur = pick && names.includes(pick) ? pick : fallback;
-  if (!cur) return <p className="bd-empty">Chưa có tài liệu. ROADMAP xuất hiện sau bước tiếp nhận.</p>;
-  return (
-    <div className="bd-docs">
-      <div className="bd-doc-tabs" role="tablist" aria-label="Tài liệu">
-        {names.map((k) => (
-          <button key={k} role="tab" aria-selected={k === cur} className={`link ${k === cur ? "is-on" : ""}`} aria-current={k === cur} onClick={() => setPick(k)}>
-            {k}
-          </button>
-        ))}
-      </div>
-      <div className="bd-doc">
-        <Markdown source={docs.find((x) => x.name === cur)?.content ?? ""} />
-      </div>
-    </div>
-  );
-}
-
-// ── Runs + live log ────────────────────────────────────────────────────────
-export function Log({ task }: { task: BoardTask }) {
-  const root = useRoot();
-  const [runIdx, setRunIdx] = useState<number | null>(null); // null = latest
-  const latest = task.runs.length - 1;
-  const sel = runIdx ?? latest;
-  const log = useQuery({
-    queryKey: ["board-log", root, task.id, runIdx],
-    queryFn: () => api.boardLog(root, task.id, runIdx ?? undefined),
-    enabled: task.runs.length > 0,
-    refetchInterval: (q) => (q.state.data?.running || (runIdx === null && task.status === "running") ? 2000 : false),
-  });
-
-  const boxRef = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
-  const lines = log.data?.lines ?? [];
-  useEffect(() => {
-    const el = boxRef.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [lines.length, sel]);
-
-  if (task.runs.length === 0) return <p className="bd-empty">Chưa có lần chạy nào. Việc đang chờ tới lượt.</p>;
-
-  return (
-    <div className="bd-logwrap">
-      <div className="bd-runs" role="listbox" aria-label="Các lần chạy">
-        {task.runs.map((r, i) => (
-          <button
-            key={i}
-            role="option"
-            aria-selected={i === sel}
-            className={`bd-run ${i === sel ? "is-on" : ""}`}
-            onClick={() => { stick.current = true; setRunIdx(i === latest ? null : i); }}
-          >
-            <span className="bd-run-name">
-              {r.ended === null && <span className="bd-spin" aria-hidden="true" />}
-              {STAGE_LABEL[r.stage]} #{r.n}
-            </span>
-            <span className="bd-run-meta">
-              {r.verdict ? <span className={`tag ${verdictTone(r.verdict)}`}>{r.verdict}</span> : null}
-              {r.exit !== null && r.exit !== 0 ? <span className="tag err">exit {r.exit}</span> : null}
-              <span className="mono faint">{money(r.cost)} · {duration(r)}</span>
-            </span>
-          </button>
-        ))}
-      </div>
-      {isMissing(log.error) ? (
-        <EndpointMissing endpoint={`/api/board/${task.id}/log`} />
-      ) : log.error ? (
-        <ErrorState message={(log.error as Error).message} />
-      ) : (
-        <div
-          className="bd-log"
-          ref={boxRef}
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-          }}
-          aria-live={log.data?.running ? "polite" : undefined}
-          aria-busy={log.isLoading}
-        >
-          {log.isLoading ? (
-            <span className="faint">Đang tải log…</span>
-          ) : lines.length === 0 ? (
-            <span className="faint">Log trống.</span>
-          ) : (
-            lines.map((l, i) => <LogRow key={i} l={l} />)
-          )}
-          {log.data?.running ? <div className="bd-log-live"><span className="bd-spin" aria-hidden="true" /> đang chạy</div> : null}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LogRow({ l }: { l: BoardLogLine }) {
-  return <div className={`bd-line k-${l.kind}`}>{l.text}</div>;
-}
-
-function verdictTone(v: string): string {
+// Run verdict → tag tone (task page runs, log drawer).
+export function verdictTone(v: string): string {
   const s = v.toLowerCase();
   if (/(pass|ok|approve|đạt)/.test(s)) return "ok";
   if (/(fail|reject|error|không đạt)/.test(s)) return "err";
   return "";
 }
 
-// ── Gate actions (task page header) ────────────────────────────────────────
-/** Thread bubble class: boss interjections sit with the boss, coordinator ones with the coordinator. */
-function threadClass(from: string): string {
-  if (from.startsWith("user → ")) return "user";
-  if (from.startsWith("coordinator → ")) return "coordinator";
-  return from.includes(" → ") ? "ask" : from;
-}
-
+// ── Gate actions (task page "Bây giờ" band) ────────────────────────────────
 function Actions({
   t, busy, error, onAct, onCancel,
 }: {
@@ -858,18 +785,25 @@ function Actions({
   const investigate = t.stage === "investigate";
   // A "Chỉ kế hoạch" task at its approval gate: approve and code it, or just keep the plan.
   const planOnly = waiting && t.stage === "approval" && !(t.steps ?? []).includes("dev");
-  const composing = waiting && (writing || !gate);
+  // The AC gate is answered on its cards (Duyệt / Không duyệt), not by a reply to the Leader.
+  // At acceptance, "Yêu cầu sửa" goes to the Leader chat (it can open a new round) instead.
+  const accepting = waiting && t.stage === "acceptance";
+  const composing = waiting && (writing || !gate) && !acGateOf(t) && !accepting;
   const send = () => {
     const v = text.trim();
     if (!v || busy) return;
     sentRef.current = true;
     onAct({ kind: "reply", text: v });
   };
+  const mrNo = t.mr ? /\/(\d+)\/?$/.exec(t.mr.url)?.[1] : undefined;
+  // The acceptance action (agent creating the MR) is running: nothing to click until it reports.
+  const acting = accepting && t.runs.some((r) => r.stage === "action" && r.ended === null);
+  // Acceptance = create the MR (never a local merge): with no MR yet the task page opens the MR card;
+  // an existing MR is linked by the plain approve.
   const approve = () => {
-    if (t.stage === "acceptance") {
-      const into = t.base ? ` vào ${t.base}` : "";
-      const msg = t.branch ? `Nghiệm thu sẽ merge nhánh ${t.branch}${into}. Tiếp tục?` : "Nghiệm thu và đóng việc này?";
-      if (!window.confirm(msg)) return;
+    if (accepting && !t.mr) {
+      window.dispatchEvent(new Event(ACCEPT_MR_EVENT));
+      return;
     }
     onAct({ kind: "approve" });
   };
@@ -879,15 +813,15 @@ function Actions({
       <div className="tp-act-row">
         <p className={`bd-gate-msg ${failed ? "err" : ""}`}>
           {failed
-            ? `Bước ${STAGE_LABEL[t.stage]} bị lỗi. Xem Nhật ký, rồi chạy lại.`
+            ? `Bước ${STAGE_LABEL[t.stage]} bị lỗi. Xem log, rồi chạy lại.`
             : !waiting
               ? "Việc đang chờ tới lượt chạy."
               : planOnly
-                ? "Kế hoạch đã qua PO duyệt. Đọc CONTEXT và PLAN ở tab Tài liệu. Việc này chỉ lập kế hoạch: duyệt và code luôn, hoặc chỉ lưu kế hoạch để code sau."
+                ? "Kế hoạch đã qua Reviewer phản biện. Đọc CONTEXT và PLAN trong Tài liệu. Việc này chỉ lập kế hoạch: duyệt và code luôn, hoặc chỉ lưu kế hoạch để code sau."
               : t.stage === "approval"
-                ? "Kế hoạch phase đã qua PO duyệt. Đọc CONTEXT (Goal + bảng AC) và PLAN ở tab Tài liệu, rồi duyệt để Dev bắt đầu."
+                ? "Kế hoạch phase đã qua Reviewer phản biện. Đọc CONTEXT (Goal + bảng AC) và PLAN trong Tài liệu, rồi duyệt để Dev bắt đầu."
                 : t.stage === "acceptance"
-                  ? "Đã kiểm thử xong. Đọc REPORT ở tab Tài liệu rồi nghiệm thu để merge."
+                  ? acting ? "Agent đang tạo MR bằng skill của dự án (xem log ở dòng trên). Có link MR thì việc chuyển sang Xong." : t.mr ? `Đã kiểm thử xong. Task đã có MR${mrNo ? ` !${mrNo}` : ""}: nghiệm thu để đóng việc.` : "Đã kiểm thử xong. Đọc REPORT trong Tài liệu rồi nghiệm thu: agent đẩy nhánh và tạo merge request bằng skill của dự án."
                   : investigate
                     ? "Leader đã trả lời. Hỏi tiếp, hoặc tiếp tục / đóng."
                     : "Leader đang chờ bạn trả lời."}
@@ -895,7 +829,7 @@ function Actions({
         <div className="tp-act-btns">
           {cancelBtn}
           {waiting && gate && (
-            <button onClick={() => setWriting(!writing)} aria-expanded={writing} disabled={busy !== undefined}>
+            <button onClick={() => (accepting ? window.dispatchEvent(new Event(FOCUS_CHAT_EVENT)) : setWriting(!writing))} aria-expanded={accepting ? undefined : writing} disabled={busy !== undefined || acting} title={accepting ? "Nhắn Leader trong Trao đổi với Leader" : undefined}>
               {investigate ? "Hỏi tiếp" : "Yêu cầu sửa"}
             </button>
           )}
@@ -910,8 +844,8 @@ function Actions({
             </button>
           )}
           {waiting && gate && !planOnly && (
-            <button className="primary" onClick={approve} disabled={busy !== undefined}>
-              <Glyph name="check" /> {busy === "approve" ? "Đang xử lý…" : t.stage === "approval" ? "Duyệt kế hoạch" : investigate ? (hasStepAfter(t, "investigate") ? "Tiếp tục" : "Đóng") : "Nghiệm thu"}
+            <button className="primary" onClick={approve} disabled={busy !== undefined || acting}>
+              <Glyph name="check" /> {busy === "approve" ? "Đang xử lý…" : acting ? "Đang tạo MR…" : t.stage === "approval" ? "Duyệt kế hoạch" : investigate ? (hasStepAfter(t, "investigate") ? "Tiếp tục" : "Đóng") : t.mr ? `Nghiệm thu (MR${mrNo ? ` !${mrNo}` : ""} đã có)` : "Nghiệm thu: tạo MR"}
             </button>
           )}
           {failed && (
@@ -956,12 +890,13 @@ function Actions({
 }
 
 // ── Project room ───────────────────────────────────────────────────────────
-type SeatId = "boss" | "coord" | "leader" | "ba" | "dev" | "tester" | "pm";
+type SeatId = "boss" | "coord" | "leader" | "ba" | "reviewer" | "dev" | "tester" | "pm";
 const SEATS: { id: SeatId; name: string; role: string; initials: string }[] = [
   { id: "boss", name: "Sếp", role: "Bạn · duyệt và nghiệm thu", initials: "S" },
-  { id: "coord", name: "Điều phối", role: "Thay bạn trả lời, duyệt kế hoạch, giao việc", initials: "ĐP" },
-  { id: "leader", name: "Leader", role: "Trưởng nhóm · PO", initials: "L" },
+  { id: "coord", name: "Điều phối", role: "Trợ lý của bạn: duyệt kế hoạch, giao việc, nhắn team", initials: "ĐP" },
+  { id: "leader", name: "Leader", role: "Trưởng nhóm · trả lời câu hỏi của team", initials: "L" },
   { id: "ba", name: "BA", role: "Phân tích, thiết kế", initials: "BA" },
+  { id: "reviewer", name: "Reviewer", role: "Phản biện kế hoạch", initials: "R" },
   { id: "dev", name: "Dev", role: "Lập trình", initials: "D" },
   { id: "tester", name: "Tester", role: "Kiểm thử độc lập", initials: "T" },
   { id: "pm", name: "PM", role: "Theo dõi tiến độ", initials: "PM" },
@@ -979,14 +914,14 @@ const STAGE_SEATS: Partial<Record<BoardStage, { seat: SeatId; doing: string }[]>
   investigate: [{ seat: "leader", doing: "Điều tra" }],
   intake: [{ seat: "leader", doing: "Tiếp nhận yêu cầu" }],
   solution: [{ seat: "leader", doing: "Lập kế hoạch phase" }, { seat: "ba", doing: "Phân tích yêu cầu, AC" }],
-  review: [{ seat: "leader", doing: "PO duyệt" }],
+  review: [{ seat: "reviewer", doing: "Phản biện kế hoạch" }],
   dev: [{ seat: "dev", doing: "Lập trình" }],
   test: [{ seat: "tester", doing: "Kiểm thử" }],
   security: [{ seat: "tester", doing: "Review bảo mật" }],
   report: [{ seat: "leader", doing: "Viết báo cáo" }],
 };
 
-function usePm() {
+export function usePm() {
   const root = useRoot();
   return useQuery({
     queryKey: ["board-pm", root],
@@ -1029,7 +964,7 @@ function Room({ tasks, onOpen }: { tasks: BoardTaskSummary[]; onOpen: (id: strin
   for (const t of running) {
     for (const s of STAGE_SEATS[t.stage] ?? []) if (!busy.has(s.seat)) busy.set(s.seat, { t, doing: `Đang làm · ${s.doing}` });
   }
-  // BA/PO answering a teammate's question (shares the task page's cache).
+  // Leader answering a teammate's question (shares the task page's cache).
   const details = useQueries({
     queries: running.map((t) => ({ queryKey: ["board-task", root, t.id], queryFn: () => api.boardTask(root, t.id), refetchInterval: 5000 })),
   });
@@ -1217,20 +1152,6 @@ function PmList({ entries, onOpen }: { entries: PmEntry[]; onOpen?: (id: string)
         );
       })}
     </ol>
-  );
-}
-
-// PM entries for one task, shown in the task page's Nhật ký tab. Silent when the
-// feed is unavailable or empty for this task.
-export function TaskPm({ id }: { id: string }) {
-  const pm = usePm();
-  const mine = (pm.data?.entries ?? []).filter((e) => e.task === id);
-  if (mine.length === 0) return null;
-  return (
-    <section className="bd-taskpm" aria-label="PM theo dõi">
-      <h4 className="bd-taskpm-title">PM theo dõi</h4>
-      <PmList entries={mine} />
-    </section>
   );
 }
 

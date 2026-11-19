@@ -1,0 +1,37 @@
+# Automated code review on every PR push: `ckit review` (written by `ckit review init`).
+# Needs repo secret ANTHROPIC_API_KEY (or another provider key omp reads from env);
+# optional repo variable CKIT_REVIEW_MODEL (e.g. claude-sonnet-4-5). Fork PRs get no
+# secrets, so they are not reviewed. Comments only: never approves or blocks a merge.
+name: ckit review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ckit-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: ${{ !github.event.pull_request.draft && !contains(github.event.pull_request.labels.*.name, 'no-ai-review') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install omp + ckit
+        run: |
+          curl -fsSL https://omp.sh/install | sh
+          curl -fsSL https://raw.githubusercontent.com/dante241/ckit_agent/main/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CKIT_REVIEW_MODEL: ${{ vars.CKIT_REVIEW_MODEL }}
+        run: ckit review --post ${CKIT_REVIEW_MODEL:+--model "$CKIT_REVIEW_MODEL"}

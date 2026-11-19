@@ -151,7 +151,7 @@ export function NavIcon({ name }: { name: string }) {
 }
 
 // ── Small UI affordance glyphs (not keyed by page) ─────────────────────────
-export function Glyph({ name }: { name: "chevron" | "next" | "folder" | "refresh" | "check" | "alert" | "plus" | "trash" | "export" | "layout" }) {
+export function Glyph({ name }: { name: "chevron" | "next" | "folder" | "refresh" | "check" | "alert" | "plus" | "trash" | "export" | "layout" | "log" | "doc" }) {
   switch (name) {
     case "chevron":
       return svg(<path d="M6 9l6 6 6-6" />);
@@ -197,6 +197,20 @@ export function Glyph({ name }: { name: "chevron" | "next" | "folder" | "refresh
           <path d="M12 15V4" />
           <path d="M8 7.5L12 4l4 3.5" />
           <path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+        </>,
+      );
+    case "log":
+      return svg(
+        <>
+          <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+          <path d="M7.5 9.5l3 2.5-3 2.5M12.5 15h4" />
+        </>,
+      );
+    case "doc":
+      return svg(
+        <>
+          <path d="M6.5 3.5h7l4 4v11.5a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1.5-1.5z" />
+          <path d="M13.5 3.5v4h4M8.5 12.5h7M8.5 16h5" />
         </>,
       );
     case "layout":

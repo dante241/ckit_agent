@@ -3,7 +3,7 @@
 //! One bot, paired to ONE chat (the boss sends `/start <code>` shown in the
 //! dashboard; every other chat is ignored). The worker watches every board task
 //! and sends a message when a task newly needs the boss: plan approval,
-//! acceptance (merge), a question from the team, intake questions, an
+//! acceptance (= create the MR), a question from the team, intake questions, an
 //! investigate answer, a parked task to start/continue, a failure. Buttons act
 //! directly; replying to a message answers that gate/question; any other text
 //! goes to the project's coordinator. HTTP via `curl` (no HTTP client crate).
@@ -171,11 +171,16 @@ fn attention(t: &Task) -> Option<Attention> {
         options: Vec::new(),
     };
     if let Some(a) = t.asks.iter().find(|a| a.status == "boss") {
-        let escalated = if a.to == "boss" { String::new() } else { format!(" (được {} chuyển lên)", a.to.to_uppercase()) };
+        let escalated = if a.to == "boss" { "" } else { " (được Leader chuyển lên)" };
+        let body = if a.is_ac_change() {
+            format!("🔁 {} xin đổi AC, chỉ bạn duyệt được [{}]:\n{}", a.from.label(), a.id, a.question)
+        } else {
+            format!("❓ {} hỏi bạn{escalated} [{}]:\n{}", a.from.label(), a.id, a.question)
+        };
         return Some(Attention {
             key: format!("ask|{}", a.id),
             kind: "ask",
-            body: format!("❓ {} hỏi bạn{escalated} [{}]:\n{}", a.from.label(), a.id, a.question),
+            body,
             buttons: a.options.iter().enumerate().map(|(i, o)| (clip(o, 40), format!("o{i}"))).collect(),
             qid: Some(a.id.clone()),
             options: a.options.clone(),
@@ -194,8 +199,8 @@ fn attention(t: &Task) -> Option<Attention> {
         }
         (Status::Waiting, Stage::Acceptance) => Some(base(
             "acceptance",
-            format!("📦 Xong, chờ bạn nghiệm thu (merge {} → {}).\n\n{}", t.branch.clone().unwrap_or_default(), t.base.clone().unwrap_or_default(), last_from(t, "leader")),
-            vec![("✅ Nghiệm thu (merge)", "mg")],
+            format!("📦 Xong, chờ bạn nghiệm thu: tạo merge request từ {}.\n\n{}", t.branch.clone().unwrap_or_default(), last_from(t, "leader")),
+            vec![("🔀 Tạo MR (nghiệm thu)", "mg")],
         )),
         (Status::Waiting, Stage::Intake) => Some(base("intake", format!("❓ Leader cần làm rõ yêu cầu:\n\n{}", last_from(t, "leader")), vec![])),
         (Status::Waiting, Stage::Investigate) => {
@@ -278,9 +283,11 @@ fn notify_root(root: &FsPath) {
 
 /// Start the long-poll thread (one per dashboard). Idle until a bot is configured.
 pub(super) fn start() {
-    // A dashboard killed mid-request leaves its curl config (it holds the token).
+    // A dashboard killed mid-request leaves its curl config (it holds the token);
+    // the PMS client's configs (session token) live in the same directory.
     for e in std::fs::read_dir(crate::brand::config_dir(&home())).into_iter().flatten().flatten() {
-        if e.file_name().to_string_lossy().starts_with(".tg-curl-") {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if name.starts_with(".tg-curl-") || name.starts_with(super::pms::CURL_CFG_PREFIX) {
             let _ = std::fs::remove_file(e.path());
         }
     }
@@ -388,8 +395,9 @@ fn handle(cfg: &Config, u: &serde_json::Value) {
             let qid = s.qid.clone().unwrap_or_default();
             act(&s, |root, t| ask::answer_as(root, t, &qid, &text, "boss")).map(|_| format!("Đã gửi câu trả lời {qid} cho {}.", s.id))
         }
-        Some(s) if s.kind == "done" => Err("việc đã xong — giao việc mới qua Điều phối (gửi tin không reply)".into()),
-        Some(s) => act(&s, |_, t| reply(t, &text)).map(|_| format!("Đã chuyển cho {} ({}).", s.id, project_name(&s.root))),
+        // A finished task: the reply is a chat message to its Leader (answer comes back here).
+        Some(s) => act(&s, |root, t| if to_chat(&s.kind, t.status) { super::chat::post(root, t, &text, Some("telegram")) } else { reply(t, &text) })
+            .map(|_| format!("Đã chuyển cho {} ({}).", s.id, project_name(&s.root))),
         // Free text → the coordinator of the project last heard from.
         None => match load_state().last_root.or_else(|| roots(&home()).into_iter().next()) {
             Some(root) => coord::say_via(&root, &text, "telegram").map(|_| format!("Đã chuyển cho Điều phối dự án {}, trả lời sẽ gửi về đây.", project_name(&root))),
@@ -399,6 +407,12 @@ fn handle(cfg: &Config, u: &serde_json::Value) {
     send(cfg, chat, &out.unwrap_or_else(|e| format!("Không làm được: {e}")), mid);
 }
 
+/// A reply to a task notification (not a question card) goes to the task's Leader
+/// chat once the task is done; before that it answers the task's gate.
+fn to_chat(kind: &str, status: Status) -> bool {
+    kind == "done" || status == Status::Done
+}
+
 fn on_button(cfg: &Config, chat: i64, mid: i64, s: &Sent, data: &str) -> Result<String, String> {
     match data {
         "ap" => act(s, |root, t| approve(root, t, false)).map(|_| format!("✓ {} đã duyệt — team làm tiếp.", s.id)),
@@ -406,13 +420,32 @@ fn on_button(cfg: &Config, chat: i64, mid: i64, s: &Sent, data: &str) -> Result<
         "cc" => act(s, |root, t| continue_plan(root, t, "Telegram")).map(|_| format!("🛠 {} code tiếp theo kế hoạch đã duyệt.", s.id)),
         "st" => act(s, |_, t| super::inbox::resume(t, "", "boss")).map(|_| format!("▶️ {} đã bắt đầu / chạy tiếp.", s.id)),
         "rt" => act(s, |_, t| retry(t)).map(|_| format!("🔁 {} chạy lại.", s.id)),
-        // Merge is not undoable from here: ask once more.
+        // Pushing is not undoable from here: show what goes out, ask once more.
         "mg" => {
+            let t = super::load(&s.root, &s.id).ok_or("task không còn")?;
+            let text = match &t.mr {
+                Some(m) => format!("Nghiệm thu {}: đã có MR {}. Bấm để đánh dấu xong (đẩy thêm commit mới nếu có).", s.id, m.url),
+                None => {
+                    let mut p = super::action::mr_proposal(&t);
+                    super::chat::check(&s.root, &t, &mut p);
+                    if let Some(e) = p.check_error {
+                        return Err(format!("chưa tạo MR được: {e}"));
+                    }
+                    let br = t.branch.clone().unwrap_or_default();
+                    let mine = p.commits.iter().filter(|c| c.from_task).count();
+                    let mut text = format!("Tạo MR {} → {}: {mine} commit của task. Agent dùng skill của dự án để tạo MR (có thể cập nhật PMS theo skill).", if p.foreign.is_empty() { br.clone() } else { format!("{br}-mr") }, p.target.unwrap_or_default());
+                    if !p.foreign.is_empty() {
+                        let subj: Vec<&str> = p.foreign.iter().map(|c| c.subject.as_str()).collect();
+                        text.push_str(&format!(" Bỏ {} commit không phải của task: {}. Muốn đẩy cả chúng thì làm trên Board.", p.foreign.len(), clip(&subj.join("; "), 300)));
+                    }
+                    text
+                }
+            };
             let body = serde_json::json!({
                 "chat_id": chat,
-                "text": format!("Xác nhận nghiệm thu {}? Nhánh sẽ được merge (không push).", s.id),
+                "text": text,
                 "reply_parameters": { "message_id": mid },
-                "reply_markup": { "inline_keyboard": [[{ "text": "Merge ngay", "callback_data": "mg!" }]] },
+                "reply_markup": { "inline_keyboard": [[{ "text": "Tạo MR ngay", "callback_data": "mg!" }]] },
             });
             if let Some(m) = call(&cfg.token, "sendMessage", &body, 20) {
                 let cmid = m.get("message_id").and_then(|x| x.as_i64()).unwrap_or(0);
@@ -423,7 +456,12 @@ fn on_button(cfg: &Config, chat: i64, mid: i64, s: &Sent, data: &str) -> Result<
             }
             Ok(String::new())
         }
-        "mg!" => act(s, |root, t| approve(root, t, false)).map(|_| format!("✅ {} đã nghiệm thu và merge.", s.id)),
+        // Defaults: the task's commits only, origin's default branch (or the MR's).
+        "mg!" => super::action::accept(&s.root, &s.id, &super::action::mr_proposal(&super::load(&s.root, &s.id).ok_or("task không còn")?), Some("telegram")).map(|t| match (t.stage, &t.mr) {
+            (Stage::Done, Some(m)) => format!("✅ {} đã nghiệm thu: MR {}", s.id, m.url),
+            (Stage::Done, None) => format!("✅ {} đã nghiệm thu (không có git).", s.id),
+            _ => format!("⏳ {}: agent đang tạo MR bằng skill của dự án, xong sẽ báo.", s.id),
+        }),
         o if o.starts_with('o') => {
             let i: usize = o[1..].parse().map_err(|_| "nút lạ".to_string())?;
             let answer = s.options.get(i).cloned().ok_or("lựa chọn không còn")?;
@@ -511,6 +549,14 @@ mod tests {
     use crate::verbs::harness::board::tests::task;
 
     #[test]
+    fn replies_to_a_done_task_go_to_its_leader_chat() {
+        assert!(to_chat("done", Status::Done));
+        assert!(to_chat("acceptance", Status::Done), "accepted since the notification was sent");
+        assert!(!to_chat("acceptance", Status::Waiting), "still at the gate: the reply answers it");
+        assert!(!to_chat("approval", Status::Waiting));
+    }
+
+    #[test]
     fn a_parked_task_cannot_pass_its_gate_from_a_button() {
         let root = std::env::temp_dir().join(format!("ckit-tg-gate-{}", std::process::id()));
         let mut t = task(Stage::Investigate, Status::Waiting);
@@ -536,12 +582,9 @@ mod tests {
         let a = attention(&t).unwrap();
         assert_eq!((a.kind, a.buttons[0].1.as_str()), ("acceptance", "mg"), "merge asks for confirmation first");
         t.set(Stage::Dev, Status::Running);
-        t.asks.push(ask::Ask {
-            id: "Q-2".into(), from: Stage::Dev, to: "po".into(), question: "bảng nào?".into(), options: vec!["a".into(), "b".into()],
-            at: String::new(), status: "boss".into(), answer: None, by: None, answered_at: None,
-        });
+        t.asks.push(ask::Ask { id: "Q-2".into(), from: Stage::Dev, to: "leader".into(), question: "bảng nào?".into(), options: vec!["a".into(), "b".into()], at: String::new(), status: "boss".into(), answer: None, by: None, answered_at: None, kind: None, ac: None, phase: None });
         let a = attention(&t).unwrap();
         assert_eq!((a.kind, a.key.as_str(), a.buttons.len()), ("ask", "ask|Q-2", 2));
-        assert!(a.body.contains("được PO chuyển lên"));
+        assert!(a.body.contains("được Leader chuyển lên"));
     }
 }

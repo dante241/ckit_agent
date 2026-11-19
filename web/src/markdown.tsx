@@ -206,6 +206,11 @@ function parseBlocks(src: string): Block[] {
   return blocks;
 }
 
+/** One line of inline markdown (code, bold, links), no block wrapper: summaries, list rows. */
+export function Inline({ text }: { text: string }) {
+  return <>{renderInline(parseInline(text ?? ""), "i")}</>;
+}
+
 export function Markdown({ source }: { source: string }) {
   const blocks = parseBlocks(source ?? "");
   return (

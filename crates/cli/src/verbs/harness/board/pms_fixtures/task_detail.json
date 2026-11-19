@@ -1,0 +1,66 @@
+{
+ "status": 200,
+ "data": {
+  "success": "1",
+  "data": {
+   "label": "Task mẫu 1",
+   "projecttaskname": "Task mẫu 1",
+   "projecttasktype": "Coding",
+   "projecttaskpriority": "normal",
+   "projectid": "5001",
+   "projectid_label": "Dự án mẫu 1",
+   "assigned_user_id": "11",
+   "projecttask_no": "PT90001",
+   "projecttaskprogress": "0%",
+   "projecttaskhours": "0",
+   "startdate": "2026-01-05",
+   "enddate": "2026-01-06",
+   "createdtime": "2026-01-05 10:00:00",
+   "modifiedtime": "2026-01-05 10:15:00",
+   "modifiedby": "11",
+   "description": "<html>\n<head>\n\t<title></title>\n</head>\n<body><p>Cần <b>thống kê</b> chi phí&nbsp;mẫu &amp; báo cáo.</p><ul><li>Theo ngày</li><li>Theo loại</li></ul></body>\n</html>",
+   "projecttaskstatus": "Open",
+   "createdby": "11",
+   "main_owner_id": "11",
+   "related_cpprojectitem": "6001",
+   "related_cpprojectitem_label": "Hạng mục mẫu",
+   "start_date_plan": "2026-01-05",
+   "end_date_plan": "2026-01-06",
+   "checklist": [
+    {
+     "id": "1",
+     "name": "Bước mẫu 1",
+     "status": "1"
+    },
+    {
+     "id": "2",
+     "name": "Bước mẫu 2",
+     "status": "0"
+    }
+   ],
+   "record_id": "1001",
+   "record_module": "ProjectTask",
+   "id": "1001",
+   "totaltime": "0",
+   "projecttask_related": {
+    "entry_list": [
+     {
+      "id": "1003",
+      "projecttaskname": "Việc con mẫu",
+      "projecttaskstatus": "Open"
+     }
+    ],
+    "total_count": "1"
+   },
+   "assigned_owners": [
+    {
+     "id": "Users:11",
+     "name": "Nhân viên A (user@example.com)"
+    }
+   ],
+   "follower": [],
+   "editable": "1",
+   "deletable": "1"
+  }
+ }
+}

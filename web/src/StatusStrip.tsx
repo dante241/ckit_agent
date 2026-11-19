@@ -56,9 +56,10 @@ function hint(f: StripFilter, list: BoardTaskSummary[]): string {
   }
 }
 
-export function StatusStrip({ tasks, active, onPick }: { tasks: BoardTaskSummary[]; active: StripFilter | null; onPick: (f: StripFilter | null) => void }) {
+/** `loading`: the tile frames hold the strip's height while tasks load (no layout shift). */
+export function StatusStrip({ tasks, active, onPick, loading }: { tasks: BoardTaskSummary[]; active: StripFilter | null; onPick: (f: StripFilter | null) => void; loading?: boolean }) {
   return (
-    <div className="ss" role="group" aria-label="Lọc theo trạng thái">
+    <div className={`ss${loading ? " is-loading" : ""}`} role="group" aria-label="Lọc theo trạng thái" aria-busy={loading || undefined}>
       {TILES.map((tile) => {
         const list = tasks.filter((t) => matches(tile.id, t));
         const on = active === tile.id;
@@ -72,6 +73,7 @@ export function StatusStrip({ tasks, active, onPick }: { tasks: BoardTaskSummary
             aria-pressed={on}
             title={on ? "Bỏ lọc" : `Chỉ hiện: ${tile.name}`}
             onClick={() => onPick(on ? null : tile.id)}
+            disabled={loading}
           >
             <span className="ss-top">
               <span className="ss-n">{list.length}</span>

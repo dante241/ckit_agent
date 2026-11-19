@@ -509,7 +509,8 @@ export default function (pi: ExtensionAPI) {
 
   // ── board_ask — Board team members ask each other mid-step ─────────────────
   // Only inside a Board run (the board sets CKIT_BOARD_ASK_DIR). The question is
-  // a file the board worker routes to the BA / PO (a short read-only session) or
+  // a file the board worker routes to the Leader (who planned the phase; a
+  // read-only fork of its plan session) or
   // to the boss (dashboard); this tool waits for the answer file. Waiting costs
   // no tokens; the board pauses the step's timeout while a question is open.
   const askDir = process.env.CKIT_BOARD_ASK_DIR;
@@ -527,19 +528,28 @@ export default function (pi: ExtensionAPI) {
       name: "board_ask",
       label: "Board: ask the team",
       description:
-        "Ask a teammate and WAIT for the answer (this run is headless; `ask` is unavailable). `to`: `ba` = requirements / acceptance criteria / scope detail; `po` = product decision or trade-off (the Leader answers or escalates to the boss); `boss` = only what nobody else can decide (money, data, security, business rules). Ask only when the answer changes what you build — never for things the code, docs or planning tree answer. Give your recommended default in the question. Max 5 per run; on timeout decide yourself and mark it `(auto-decided)`.",
+        "Ask a teammate and WAIT for the answer (this run is headless; `ask` is unavailable). `to`: `leader` = requirements, acceptance criteria, scope detail, product or technical trade-off (the Leader who planned the phase answers, or escalates to the boss); `boss` = only what nobody else can decide (money, data, security, business rules). Ask only when the answer changes what you build — never for things the code, docs or planning tree answer. Give your recommended default in the question. Max 5 per run; on timeout decide yourself and mark it `(auto-decided)`.",
       parameters: z.object({
-        to: z.enum(["ba", "po", "boss"]),
-        question: z.string().min(5),
+        to: z.enum(["leader", "boss"]),
+        question: z.string().default(""),
         options: z.array(z.string()).max(5).default(() => []),
+        kind: z.enum(["question", "ac_change"]).default("question").describe("`ac_change` = you want to reinterpret, loosen, drop or replace an acceptance criterion (incl. re-grading, 'PASS theo cổng', moving it to Loại): only the boss decides, it never times out; never self-PASS such an AC"),
+        ac: z
+          .object({ ac: z.string(), old: z.string(), new: z.string(), reason: z.string(), evidence: z.string().default("") })
+          .optional()
+          .describe("required for kind=ac_change: AC id (AC-07), its current text, the proposed text/verdict, why, and the evidence (command + output)"),
       }),
       async execute(_id, params, signal) {
-        if (asked >= MAX_ASKS) return text(`Question limit (${MAX_ASKS}) reached for this run — decide yourself and mark it (auto-decided).`);
-        asked++;
+        const acChange = params.kind === "ac_change";
+        if (acChange && !params.ac) return text("kind=ac_change needs `ac: {ac, old, new, reason, evidence}`.");
+        if (!acChange && params.question.trim().length < 5) return text("`question` is required (≥5 chars).");
+        // AC changes are decisions the boss must take: never capped, never timed out.
+        if (!acChange && asked >= MAX_ASKS) return text(`Question limit (${MAX_ASKS}) reached for this run — decide yourself and mark it (auto-decided).`);
+        if (!acChange) asked++;
         mkdirSync(askDir, { recursive: true });
         // Exclusive create (`wx`): parallel askers in this run never share a number.
         const q = (n: number) =>
-          JSON.stringify({ id: `Q-${n}`, from, to: params.to, question: params.question, options: params.options, at: new Date().toISOString() });
+          JSON.stringify({ id: `Q-${n}`, from, to: acChange ? "boss" : params.to, question: params.question, options: params.options, kind: params.kind, ac: params.ac, at: new Date().toISOString() });
         let n = 1;
         for (;;) {
           try {
@@ -559,7 +569,7 @@ export default function (pi: ExtensionAPI) {
             return null; // absent (the board publishes it complete, via link)
           }
         };
-        const deadline = Date.now() + timeoutMs;
+        const deadline = acChange ? Infinity : Date.now() + timeoutMs;
         while (Date.now() < deadline && !signal?.aborted) {
           // A pause request beats waiting: return so the steer can be delivered.
           if (existsSync(join(askDir, "inbox", "PAUSE"))) return text(`The boss asked to pause — ${id} is left open; follow the pause instruction that follows.`);
@@ -569,6 +579,7 @@ export default function (pi: ExtensionAPI) {
         }
         // Aborted (cancel): leave it unanswered — the board closes it.
         if (signal?.aborted) return text(`${id} cancelled.`);
+        if (acChange) return text(`${id} still open.`);
         // Claim the timeout exclusively; an answer that landed first wins.
         try {
           writeFileSync(answerPath, JSON.stringify({ answer: "", by: "timeout", at: new Date().toISOString() }), { flag: "wx" });

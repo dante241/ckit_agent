@@ -1095,7 +1095,9 @@ pub(crate) fn ensure_engine(home: &Path, root: Option<&Path>) -> Result<()> {
     // project's own `.omp/agents/<name>.md` (packs, user overrides) is never removed;
     // omp already lets the project copy win.
     deploy_omp_pair(home, None, "agents/ba.md", ".omp/agent/agents/ba.md", "", "ba agent")?;
-    ensure_gw_quota(home)
+    ensure_gw_quota(home)?;
+    ensure_board_extension(home)?;
+    ensure_telegram_extension(home)
 }
 
 /// Deploy the `gw-quota` omp extension — a belowEditor widget showing the
@@ -1114,6 +1116,35 @@ pub(crate) fn ensure_gw_quota(home: &Path) -> Result<()> {
         ".omp/agent/extensions/gw-quota.ts",
         ".omp/extensions/gw-quota.ts",
         "gw-quota extension",
+    )
+}
+
+/// Deploy the Board extension for interactive omp sessions: footer line with what
+/// needs the boss, `/board` (approve / answer / retry in the terminal) and `/pms`.
+/// Same file the Board's coordinator loads with `-e`; in Board step runs
+/// (`CKIT_BOARD_STAGE`) it registers nothing. Global-only, idempotent.
+pub(crate) fn ensure_board_extension(home: &Path) -> Result<()> {
+    deploy_omp_pair(
+        home,
+        None,
+        "extensions/ckit-board.ts",
+        ".omp/agent/extensions/ckit-board.ts",
+        ".omp/extensions/ckit-board.ts",
+        "board extension",
+    )
+}
+
+/// Deploy the Telegram bridge for interactive omp sessions: the linked session sends
+/// turn results / `ask` questions to the paired chat and takes replies as user
+/// messages (`/tg setup <token>`). Global-only, idempotent.
+pub(crate) fn ensure_telegram_extension(home: &Path) -> Result<()> {
+    deploy_omp_pair(
+        home,
+        None,
+        "extensions/ckit-telegram.ts",
+        ".omp/agent/extensions/ckit-telegram.ts",
+        ".omp/extensions/ckit-telegram.ts",
+        "telegram extension",
     )
 }
 

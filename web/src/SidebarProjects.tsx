@@ -9,11 +9,12 @@ import { Glyph } from "./icons";
 import { askingYou } from "./Asks";
 import { STAGE_WHO, needLabel, useBoardAll } from "./Board";
 import { goTo } from "./TaskPage";
+import { ModelChip } from "./ModelChip";
 
 const OPEN_KEY = "ckit.nav.projects";
 
 type Tone = "need" | "fail" | "run" | "idle";
-type Line = { task: BoardTaskSummary; text: string; tone: Tone };
+type Line = { task: BoardTaskSummary; text: string; tone: Tone; model?: boolean };
 
 const needsYou = (t: BoardTaskSummary) => t.status === "waiting" || askingYou(t);
 
@@ -36,7 +37,7 @@ function summarize(p: ProjectBoard): { tone: Tone; need: number; failed: number;
   const n = { need: need.length, failed: failed.length };
   const runLine = (t: BoardTaskSummary): Line => {
     const when = elapsed(t.run_started ?? t.updated);
-    return { task: t, tone: "run", text: `${STAGE_WHO[t.stage] || "AI"} đang làm${when ? ` · ${when}` : ""}` };
+    return { task: t, tone: "run", model: true, text: `${STAGE_WHO[t.stage] || "AI"} đang làm${when ? ` · ${when}` : ""}` };
   };
   // One line: what needs the boss (or failed) first, else what is running, else the queue.
   const first: Line | null = need[0]
@@ -128,6 +129,7 @@ export function SidebarProjects() {
                 <button key={l.task.id} className={`sp-task is-${l.tone}`} onClick={() => openTask(p, l.task)} title={l.task.title}>
                   <span className="sp-task-id mono">{l.task.id}</span>
                   <span className="sp-task-text">{l.text}</span>
+                  {l.model ? <ModelChip m={l.task.run_model} className="sp-task-model" /> : null}
                 </button>
               ))}
             </li>

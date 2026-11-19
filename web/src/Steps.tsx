@@ -9,13 +9,13 @@ const CATALOG: BoardStepDef[] = [
   { key: "investigate", label: "Điều tra / Hỏi đáp", who: "Leader", gate: true, requires: [] },
   { key: "intake", label: "Tiếp nhận (new)", who: "Leader", gate: false, requires: [] },
   { key: "solution", label: "Kế hoạch phase (plan)", who: "Leader + BA", gate: false, requires: [] },
-  { key: "review", label: "PO duyệt", who: "Leader (PO)", gate: false, requires: ["solution"] },
+  { key: "review", label: "Phản biện kế hoạch", who: "Reviewer", gate: false, requires: ["solution"] },
   { key: "approval", label: "Bạn duyệt kế hoạch", who: "Bạn", gate: true, requires: ["solution"] },
   { key: "dev", label: "Phát triển (go)", who: "Dev", gate: false, requires: [] },
   { key: "test", label: "Kiểm thử (ship)", who: "Tester", gate: false, requires: ["dev"] },
   { key: "security", label: "Review bảo mật", who: "Security reviewer", gate: false, requires: ["dev"] },
   { key: "report", label: "Báo cáo", who: "Leader", gate: false, requires: [] },
-  { key: "acceptance", label: "Bạn nghiệm thu (merge)", who: "Bạn", gate: true, requires: [] },
+  { key: "acceptance", label: "Bạn nghiệm thu (tạo MR)", who: "Bạn", gate: true, requires: [] },
 ];
 
 export const FULL_STEPS: BoardStage[] = ["intake", "solution", "review", "approval", "dev", "test", "report", "acceptance"];
@@ -33,7 +33,7 @@ const SHORT: Partial<Record<BoardStage, string>> = {
   investigate: "Điều tra",
   intake: "Tiếp nhận",
   solution: "Kế hoạch",
-  review: "PO duyệt",
+  review: "Phản biện",
   approval: "Bạn duyệt",
   dev: "Phát triển",
   test: "Kiểm thử",
@@ -43,7 +43,7 @@ const SHORT: Partial<Record<BoardStage, string>> = {
 };
 const short = (s: BoardStage) => SHORT[s] ?? s;
 
-export const NO_ACCEPTANCE_NOTE = "Không nghiệm thu: nhánh sẽ để nguyên, không merge.";
+export const NO_ACCEPTANCE_NOTE = "Không nghiệm thu: nhánh để nguyên trên máy, không tạo MR.";
 
 export function useStepCatalog(): { catalog: BoardStepDef[]; presets: BoardStepPreset[] } {
   const q = useQuery({ queryKey: ["board-steps"], queryFn: api.boardStepCatalog, staleTime: Infinity, retry: false });

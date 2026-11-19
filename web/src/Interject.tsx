@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type BoardStatus, type BoardTask } from "./api";
 import { serverMessage } from "./Steps";
 import { askingYou } from "./Asks";
+import { revealInPane } from "./ui";
 
 const PAUSING = "đang xin tạm dừng…";
 
@@ -55,7 +56,7 @@ export function Interject({ t, root, seat, cancel, error }: { t: BoardTask; root
   // Questions sit right under the header (AskPanel); jump to the first answer box.
   const toAsk = () => {
     const panel = document.querySelector(".ask-panel");
-    panel?.scrollIntoView({ behavior: "smooth", block: "center" });
+    revealInPane(panel, true);
     panel?.querySelector<HTMLElement>("textarea, input, .ask-opt")?.focus({ preventScroll: true });
   };
 

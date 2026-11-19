@@ -129,7 +129,8 @@ mod tests {
         assert!(pause_age(&root, &t.id).is_some());
 
         t.runs.push(crate::verbs::harness::board::Run {
-            stage: Stage::Dev, n: 1, started: String::new(), ended: None, exit: None, cost: 0.0, verdict: Some("paused".into()), log: String::new(),
+            stage: Stage::Dev, n: 1, started: String::new(), ended: None, exit: None, cost: 0.0, verdict: Some("paused".into()), log: String::new(), phase: None, round: None,
+            title: None,
         });
         after_run(&mut t, "paused", None);
         assert_eq!((t.stage, t.status, t.paused), (Stage::Dev, Status::Waiting, true));

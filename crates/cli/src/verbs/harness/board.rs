@@ -3,7 +3,7 @@
 //! The human creates a task and only ever talks to the Leader. Each stage is a
 //! headless `omp -p` run with a role prompt (`assets/board/<stage>.md`):
 //!
-//!   intake (Leader) → solution (Leader + BA subagent) → review (Leader)
+//!   intake (Leader) → solution (Leader, also the BA) → review (independent Reviewer)
 //!   → approval [human gate] → dev → test → report (Leader) → acceptance [human gate] → done
 //!
 //! Review fail loops back to solution, test fail loops back to dev (bounded).
@@ -13,8 +13,8 @@
 //! Storage: `<project>/.cache/ckit/board/<id>/` (task.json + artifacts + logs +
 //! omp sessions). One stage runs at a time per project; one task at a time owns
 //! the code branch `board/<id>` (dev → acceptance) so runs never fight over the
-//! working tree. Accept = `git merge --no-ff` into the branch the task started
-//! from. Never pushes.
+//! working tree. Accept ("Nghiệm thu") = the task's merge request: the board pushes
+//! the task's commits and opens the MR/PR; it never merges locally.
 use std::collections::HashSet;
 use std::path::{Path as FsPath, PathBuf};
 use std::process::{Command, Stdio};
@@ -36,10 +36,18 @@ mod pm;
 mod ask;
 mod coord;
 mod inbox;
+mod pms;
 mod telegram;
 pub(crate) use coord::set_port as set_coordinator_port;
 mod progress;
+mod digest;
+mod timeline;
+mod goals;
+mod chat;
+mod action;
 mod workflow;
+mod usage;
+mod mrs;
 
 const BOARD_REL: &str = ".cache/ckit/board";
 /// Review rejections tolerated before the Leader escalates to the human anyway.
@@ -63,6 +71,9 @@ enum Stage {
     Acceptance,
     Done,
     Cancelled,
+    /// A follow-up action run ("Tạo merge request", …): never a step of the
+    /// pipeline, only a run on `runs` (see `action.rs`).
+    Action,
 }
 
 /// Every step a task may enable, in the only order they run.
@@ -85,6 +96,10 @@ fn full_feature() -> Vec<Stage> {
     vec![Intake, Solution, Review, Approval, Dev, Test, Report, Acceptance]
 }
 
+fn first_round() -> u32 {
+    1
+}
+
 impl Stage {
     fn key(self) -> &'static str {
         match self {
@@ -100,6 +115,7 @@ impl Stage {
             Stage::Acceptance => "acceptance",
             Stage::Done => "done",
             Stage::Cancelled => "cancelled",
+            Stage::Action => "action",
         }
     }
 
@@ -108,7 +124,7 @@ impl Stage {
             Stage::Investigate => "Điều tra / Hỏi đáp",
             Stage::Intake => "Tiếp nhận",
             Stage::Solution => "Kế hoạch",
-            Stage::Review => "PO duyệt",
+            Stage::Review => "Phản biện kế hoạch",
             Stage::Approval => "Bạn duyệt kế hoạch",
             Stage::Dev => "Phát triển",
             Stage::Test => "Kiểm thử",
@@ -117,6 +133,7 @@ impl Stage {
             Stage::Acceptance => "Bạn nghiệm thu",
             Stage::Done => "Xong",
             Stage::Cancelled => "Đã huỷ",
+            Stage::Action => "Thực hiện",
         }
     }
 
@@ -137,14 +154,19 @@ impl Stage {
     /// The team seat doing this step.
     fn who(self) -> &'static str {
         match self {
-            Stage::Solution => "Leader + BA",
-            Stage::Review => "Leader (PO)",
+            Stage::Solution => "Leader",
+            Stage::Review => "Reviewer",
             Stage::Approval | Stage::Acceptance => "Bạn",
             Stage::Dev => "Dev",
             Stage::Test => "Tester",
             Stage::Security => "Security reviewer",
             _ => "Leader",
         }
+    }
+
+    /// Thread author of this step's result message.
+    fn speaker(self) -> &'static str {
+        if self == Stage::Review { "reviewer" } else { "leader" }
     }
 
     fn model_class(self) -> TaskClass {
@@ -206,6 +228,16 @@ struct Run {
     cost: f64,
     verdict: Option<String>,
     log: String,
+    /// `/feature` phase the run started on (STATE `active_phase`); absent on
+    /// intake/report runs and on runs recorded before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    phase: Option<String>,
+    /// Revision round ("Vòng N", ≥2) the run belongs to; absent = the original round.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    round: Option<u32>,
+    /// Action runs: what was done ("Tạo merge request").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -258,6 +290,33 @@ struct Task {
     /// fixed steps Solution (its plan) → Approval → Dev (its run) → Acceptance.
     #[serde(default)]
     workflow: Option<workflow::Workflow>,
+    /// Where the boss pulled this task from (a CloudGO PMS task/ticket).
+    #[serde(default)]
+    source: Option<pms::Source>,
+    /// UC/AC texts the boss last approved (Bạn duyệt kế hoạch): the coordinator may
+    /// only approve a plan that keeps them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    approved_snapshot: Option<goals::Snapshot>,
+    /// A Tester pass held at phase close until the boss decides its AC changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ac_gate: Option<goals::AcGate>,
+    /// 1 = the original work; each confirmed "sửa thêm" from the chat adds a round
+    /// (Dev → … → Acceptance again on the same branch).
+    #[serde(default = "first_round")]
+    round: u32,
+    /// The boss's instruction for the current revision round.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revise: Option<String>,
+    /// The merge/pull request opened from the chat or at acceptance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mr: Option<chat::Mr>,
+    /// The base commit the task branch was created from: commits reachable from it
+    /// are not the task's (a merge request then pushes only the task's own).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base_sha: Option<String>,
+    /// "Trao đổi với Leader" messages.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    chat: Vec<chat::ChatMsg>,
 }
 
 impl Task {
@@ -266,12 +325,14 @@ impl Task {
             "id": self.id, "title": self.title, "stage": self.stage, "status": self.status,
             "note": self.note, "branch": self.branch, "cost": self.cost, "steps": self.steps,
             "workflow": self.workflow.as_ref().map(|w| w.name.clone()),
+            "source": self.source,
             "phase": active_phase(root, self),
             "progress": progress::progress(root, self).map(|p| p.counts()),
             "asking": self.asks.iter().filter(|a| a.status == "boss").count(),
             "paused": self.paused,
             "started": !self.runs.is_empty(),
             "run_started": self.runs.last().filter(|_| self.status == Status::Running).map(|r| r.started.clone()),
+            "run_model": usage::run_model(root, self),
             "created": self.created, "updated": self.updated,
         })
     }
@@ -284,17 +345,14 @@ impl Task {
     }
 
     /// Billed total, re-summed (never accumulated, so a run is billed exactly once):
-    /// every run plus the BA/PO answer sessions, each priced from its own log.
+    /// every run plus the Leader's answer sessions, each priced from its own log.
     fn recost(&mut self, root: &FsPath) {
-        let asks: f64 = std::fs::read_dir(ask::ask_dir(root, &self.id))
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
-            .map(|p| log_cost(&p))
-            .sum();
-        self.cost = self.runs.iter().map(|r| r.cost).sum::<f64>() + asks;
+        let dir_cost = |d: PathBuf| -> f64 {
+            std::fs::read_dir(d).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "jsonl")).map(|p| log_cost(&p)).sum()
+        };
+        // Runs + the Leader's answer sessions + the boss's chat turns.
+        let extra = dir_cost(ask::ask_dir(root, &self.id)) + dir_cost(task_dir(root, &self.id).join("chat"));
+        self.cost = self.runs.iter().map(|r| r.cost).sum::<f64>() + extra;
     }
 
     fn set(&mut self, stage: Stage, status: Status) {
@@ -358,13 +416,13 @@ fn after_run(t: &mut Task, verdict: &str, route: Option<&str>) {
         (Review, "fail") => {
             t.rounds.solution += 1;
             if t.rounds.solution >= MAX_SOLUTION_ROUNDS {
-                // A plan the PO keeps rejecting never reaches Dev unseen: without the
+                // A plan the Reviewer keeps rejecting never reaches Dev unseen: without the
                 // boss's approval step the task stops for a human instead.
                 if t.has(Approval) {
                     t.advance(Review);
                 } else {
                     t.note = Some(format!(
-                        "PO từ chối kế hoạch {MAX_SOLUTION_ROUNDS} lần — xem REVIEW. Bật 'Bạn duyệt kế hoạch' rồi Chạy lại để tự quyết, hoặc Chạy lại để lập kế hoạch lại từ đầu"
+                        "Reviewer từ chối kế hoạch {MAX_SOLUTION_ROUNDS} lần — xem REVIEW. Bật 'Bạn duyệt kế hoạch' rồi Chạy lại để tự quyết, hoặc Chạy lại để lập kế hoạch lại từ đầu"
                     ));
                     t.status = Failed;
                 }
@@ -485,16 +543,23 @@ fn next_id(root: &FsPath) -> String {
 fn roots_file(home: &FsPath) -> PathBuf {
     crate::brand::config_dir(home).join("board-roots.json")
 }
+/// Registered roots, resolved (`/tmp/x` and `/private/tmp/x` are one project)
+/// and de-duplicated, existing dirs only.
 fn roots(home: &FsPath) -> Vec<PathBuf> {
-    std::fs::read_to_string(roots_file(home))
+    let mut out: Vec<PathBuf> = Vec::new();
+    let raw = std::fs::read_to_string(roots_file(home))
         .ok()
         .and_then(|s| serde_json::from_str::<Vec<PathBuf>>(&s).ok())
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|p| p.is_dir())
-        .collect()
+        .unwrap_or_default();
+    for p in raw.into_iter().filter(|p| p.is_dir()).map(canonical) {
+        if !out.contains(&p) {
+            out.push(p);
+        }
+    }
+    out
 }
 fn register_root(home: &FsPath, root: &FsPath) {
+    let root = &canonical(root.to_path_buf());
     let mut all = roots(home);
     if !all.iter().any(|r| r == root) {
         all.push(root.to_path_buf());
@@ -576,6 +641,7 @@ fn checkout_task_branch(root: &FsPath, t: &mut Task) -> Result<(), String> {
             .lines()
             .map(String::from)
             .collect();
+        t.base_sha = git(root, &["rev-parse", "HEAD"]).ok().map(|s| s.trim().to_string());
         git(root, &["switch", "-c", &want])?;
         t.branch = Some(want);
     }
@@ -636,27 +702,6 @@ fn restore_base_pointers(root: &FsPath, t: &Task, base: &str) -> Result<(), Stri
     git(root, &["commit", "-m", &format!("docs: board {} restore base /feature pointers", t.id)]).map(|_| ())
 }
 
-fn merge_task_branch(root: &FsPath, t: &Task) -> Result<String, String> {
-    let (Some(br), Some(base)) = (&t.branch, &t.base) else {
-        return Ok("không có nhánh git — đánh dấu hoàn tất".into());
-    };
-    if current_branch(root).as_deref() != Some(br.as_str()) {
-        git(root, &["switch", br])?;
-    }
-    commit_leftovers(root, t, "planning")?;
-    if !clean(root) {
-        return Err(format!("còn file sửa dở ngoài phần /feature, không merge được: {}", dirty_files(root)));
-    }
-    restore_base_pointers(root, t, base)?;
-    git(root, &["switch", base])?;
-    let msg = format!("board {}: {}", t.id, t.title);
-    if let Err(e) = git(root, &["merge", "--no-ff", br, "-m", &msg]) {
-        let _ = git(root, &["merge", "--abort"]);
-        return Err(format!("merge {br} → {base} lỗi: {e}"));
-    }
-    Ok(format!("Đã merge {br} vào {base} (chưa push)."))
-}
-
 // ── /feature planning tree ──────────────────────────────────────────────────
 
 fn feature_slug(t: &Task) -> String {
@@ -700,25 +745,38 @@ fn ensure_feature(root: &FsPath, t: &mut Task) -> Result<(), String> {
 
 /// Start the background pipeline worker (one per dashboard process).
 pub(crate) fn start_worker(home: PathBuf) {
+    let mut adopted = Vec::new();
     {
-        // Opening the dashboard never starts work by itself: whatever was running
-        // or queued when it stopped (Ctrl+C, crash, reboot) is parked as paused and
-        // runs only when the boss presses Tiếp tục. An interrupted step continues in
-        // its own omp session (work, commits and engine state are kept).
+        // A run whose omp is still alive (the dashboard restarted: Ctrl+C, an
+        // update, the service manager) is adopted and finishes normally; its
+        // project's queue keeps going. Otherwise opening the dashboard never starts
+        // work by itself: whatever was running or queued when it stopped (crash,
+        // reboot) is parked as paused and runs only when the boss presses Tiếp tục.
+        // An interrupted step continues in its own omp session (work, commits and
+        // engine state are kept).
         let _g = guard();
         for root in roots(&home) {
-            for mut t in list(&root) {
-                if matches!(t.status, Status::Running | Status::Queued) {
+            let tasks = list(&root);
+            let live = tasks.iter().filter(|t| t.status == Status::Running).find_map(|t| live_run(&task_dir(&root, &t.id), t).map(|c| (t.id.clone(), c)));
+            for mut t in tasks {
+                if let Some((_, ctx)) = live.as_ref().filter(|(id, _)| *id == t.id) {
+                    t.say("system", "Dashboard vừa khởi động lại; bước này vẫn đang chạy và được theo dõi tiếp.");
+                    let _ = save(&root, &mut t);
+                    adopted.push((root.clone(), t, ctx.clone()));
+                } else if t.status == Status::Running || (t.status == Status::Queued && live.is_none()) {
                     if t.status == Status::Running {
                         kill_orphan(&task_dir(&root, &t.id));
                     }
                     park_on_open(&root, &mut t);
                     let _ = save(&root, &mut t);
-                } else if repair_runs(&root, &mut t) {
+                } else if t.status != Status::Queued && repair_runs(&root, &mut t) {
                     let _ = save(&root, &mut t);
                 }
             }
         }
+    }
+    for (root, t, ctx) in adopted {
+        adopt(root, t, ctx);
     }
     telegram::start();
     std::thread::spawn(move || loop {
@@ -776,8 +834,14 @@ fn repair_runs(root: &FsPath, t: &mut Task) -> bool {
     let logs = task_dir(root, &t.id).join("logs");
     for r in &mut t.runs {
         if r.ended.is_none() {
-            r.ended = Some(iso_now());
+            // The run stopped when its log stopped growing, not now (a restart
+            // hours later would otherwise show a 16-hour run).
+            let last = std::fs::metadata(logs.join(&r.log)).and_then(|m| m.modified()).ok();
+            r.ended = Some(last.map(iso_at).unwrap_or_else(iso_now));
             r.verdict = Some("interrupted".into());
+            if r.stage == Stage::Action && t.note.as_deref().is_some_and(|n| n.starts_with("Đang thực hiện")) {
+                t.note = None;
+            }
         }
         r.cost = log_cost(&logs.join(&r.log));
     }
@@ -850,6 +914,8 @@ fn claim_next(root: &FsPath) -> Option<Task> {
             continue;
         }
         let n = t.runs.iter().filter(|r| r.stage == t.stage).count() as u32 + 1;
+        // The phase this run works on is fixed now: a ship run moves STATE to the next one.
+        let phase = matches!(t.stage, Stage::Solution | Stage::Review | Stage::Dev | Stage::Test | Stage::Security).then(|| active_phase(root, &t)).flatten();
         t.runs.push(Run {
             stage: t.stage,
             n,
@@ -859,6 +925,9 @@ fn claim_next(root: &FsPath) -> Option<Task> {
             cost: 0.0,
             verdict: None,
             log: format!("{}-{}.jsonl", t.stage.key(), n),
+            phase,
+            round: (t.round > 1).then_some(t.round),
+            title: None,
         });
         t.status = Status::Running;
         t.note = None;
@@ -909,6 +978,7 @@ fn guard_tree(t: &mut Task, plan: bool, before: &str, after: &str) {
 
 /// HEAD and branch around a workflow run (`/cook` creates its own branch, syncs,
 /// commits: none of that shows in `git status`).
+#[derive(Serialize, Deserialize, Clone)]
 struct GitPos {
     head: Option<String>,
 }
@@ -929,8 +999,8 @@ impl GitPos {
     }
 }
 
-/// A workflow run must stay on the task branch the board owns (Acceptance merges
-/// it); its plan run must not commit or move HEAD either. Fails at the step that
+/// A workflow run must stay on the task branch the board owns (Acceptance opens its
+/// MR); its plan run must not commit or move HEAD either. Fails at the step that
 /// ran (after_run may have advanced past it), keeping an earlier failure note.
 fn guard_git(t: &mut Task, ran: Stage, branch_now: Option<&str>, head_moved: bool, new_commits: u32) {
     let Some(want) = t.branch.clone() else { return };
@@ -952,24 +1022,50 @@ fn guard_git(t: &mut Task, ran: Stage, branch_now: Option<&str>, head_moved: boo
     t.note = Some(prev.into_iter().chain(bad).collect::<Vec<_>>().join("; "));
 }
 
+/// What finishing a run needs, written next to `run.pid` when it starts
+/// (`run.json`): a restarted dashboard adopts a run that is still alive and
+/// finishes it exactly like the dashboard that started it.
+#[derive(Serialize, Deserialize, Clone)]
+struct RunCtx {
+    pid: u32,
+    log: String,
+    /// Unix seconds at the start (the legacy shared result file must be newer).
+    since: u64,
+    /// `git status` before a run that must not change the tree.
+    snapshot: Option<String>,
+    /// HEAD before a workflow run (it must leave git where the board put it).
+    git_pos: Option<GitPos>,
+}
+
 fn run_stage(root: &FsPath, t: Task) {
     let dir = task_dir(root, &t.id);
-    let logs = dir.join("logs");
-    let _ = std::fs::create_dir_all(&logs);
-    let log_name = t.runs.last().map(|r| r.log.clone()).unwrap_or_default();
-    let log_path = logs.join(&log_name);
-    let _ = std::fs::remove_file(result_file(&dir, &log_name));
-    let since = std::time::SystemTime::now();
-
+    let _ = std::fs::create_dir_all(dir.join("logs"));
+    let log = t.runs.last().map(|r| r.log.clone()).unwrap_or_default();
+    let _ = std::fs::remove_file(result_file(&dir, &log));
     // Investigate must leave the tree untouched, a workflow's plan touches only its
     // plan dirs: compare git status around the run.
     let plan_run = t.is_plan_run();
-    let snapshot = (t.stage == Stage::Investigate || plan_run).then(|| tree_status(root, plan_run));
-    // A workflow's plan and run steps must leave git where the board put it.
-    let git_pos = (t.workflow.is_some() && matches!(t.stage, Stage::Solution | Stage::Dev)).then(|| GitPos::take(root));
-    let outcome = spawn_and_wait(root, &t, &dir, &log_path);
-    let cost = log_cost(&log_path);
-    let result = read_result(&dir, &log_name, since);
+    let mut ctx = RunCtx {
+        pid: 0,
+        log,
+        since: SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+        snapshot: (t.stage == Stage::Investigate || plan_run).then(|| tree_status(root, plan_run)),
+        // A workflow's plan and run steps must leave git where the board put it.
+        git_pos: (t.workflow.is_some() && matches!(t.stage, Stage::Solution | Stage::Dev)).then(|| GitPos::take(root)),
+    };
+    let outcome = spawn_and_wait(root, &t, &dir, &mut ctx);
+    finish_run(root, &t, &ctx, outcome);
+}
+
+/// Record a finished run (`t` = the task as it was claimed) and move the task on.
+fn finish_run(root: &FsPath, t: &Task, ctx: &RunCtx, outcome: Result<Option<i32>, String>) {
+    let dir = task_dir(root, &t.id);
+    let log_name = ctx.log.clone();
+    let plan_run = t.is_plan_run();
+    // One streamed pass over the (often 100s of MB) log: the cost and the run's
+    // digest, cached for the task page.
+    let cost = digest::at_run_end(&dir, &log_name).cost;
+    let result = read_result(&dir, &log_name, UNIX_EPOCH + Duration::from_secs(ctx.since));
 
     let _g = guard();
     let Some(mut cur) = load(root, &t.id) else { return };
@@ -1005,18 +1101,26 @@ fn run_stage(root: &FsPath, t: Task) {
                 cur.note = Some(format!("{} không ghi file kết quả ({}) — xem log", cur.stage.key(), result_file(&dir, &log_name).display()));
             }
             (Ok(_), Some(r)) => {
-                cur.say("leader", &r.message);
+                cur.say(t.stage.speaker(), &r.message);
                 if cur.is_plan_run() && r.verdict.trim() == "pass" {
                     record_plan(root, &mut cur, r.plan.as_deref());
                 }
-                after_run(&mut cur, r.verdict.trim(), r.route.as_deref());
+                // A Tester pass whose ACs were bent waits for the boss's AC decision.
+                let held = t.stage == Stage::Test && r.verdict.trim() == "pass" && goals::hold(root, &mut cur, r.route.as_deref());
+                if !held {
+                    after_run(&mut cur, r.verdict.trim(), r.route.as_deref());
+                }
+                // A plan with AC ↔ task gaps goes back before the Reviewer sees it.
+                if t.stage == Stage::Solution && r.verdict.trim() == "pass" {
+                    goals::coverage_gate(root, &mut cur);
+                }
             }
         }
     }
-    if let Some(before) = snapshot.filter(|_| !cancelled) {
-        guard_tree(&mut cur, plan_run, &before, &tree_status(root, plan_run));
+    if let Some(before) = ctx.snapshot.as_ref().filter(|_| !cancelled) {
+        guard_tree(&mut cur, plan_run, before, &tree_status(root, plan_run));
     }
-    if let Some(pos) = git_pos.filter(|_| !cancelled) {
+    if let Some(pos) = ctx.git_pos.as_ref().filter(|_| !cancelled) {
         let (branch, moved, n) = pos.since(root);
         guard_git(&mut cur, t.stage, branch.as_deref(), moved, n);
     }
@@ -1042,14 +1146,14 @@ fn record_plan(root: &FsPath, t: &mut Task, reported: Option<&str>) {
 }
 
 /// Done without the acceptance step: commit /feature leftovers, return to base,
-/// leave the task branch unmerged for the boss.
+/// leave the task branch for the boss (no MR).
 fn park_if_finished(root: &FsPath, t: &mut Task) {
     if (t.stage, t.status) != (Stage::Done, Status::Done) {
         return;
     }
     leave_task_branch(root, t);
-    if let (Some(br), Some(base)) = (t.branch.clone(), t.base.clone()) {
-        t.say("system", &format!("Xong (task không có bước nghiệm thu): nhánh {br} để nguyên, chưa merge vào {base}."));
+    if let Some(br) = t.branch.clone() {
+        t.say("system", &format!("Xong (task không có bước nghiệm thu): nhánh {br} để nguyên, chưa tạo MR."));
     }
 }
 
@@ -1073,7 +1177,9 @@ fn omp_cmd() -> Command {
 /// Dev picking up the plan run's session (every run of a task shares `sessions/`,
 /// and `--continue` takes the newest one = the plan the boss just approved).
 fn continues_session(t: &Task, dir: &FsPath) -> bool {
-    t.resume || (t.workflow.is_some() && t.stage == Stage::Dev && !walk_files(&dir.join("sessions")).is_empty())
+    // A revision round's Dev continues the latest session: it remembers the work.
+    let revising = t.round > 1 && t.stage == Stage::Dev;
+    t.resume || ((revising || (t.workflow.is_some() && t.stage == Stage::Dev)) && !walk_files(&dir.join("sessions")).is_empty())
 }
 
 /// omp arguments for the task's current stage, the prompt excluded.
@@ -1089,14 +1195,13 @@ fn stage_args(root: &FsPath, t: &Task, dir: &FsPath) -> Vec<std::ffi::OsString> 
 }
 
 /// Run omp for the task's current stage. Ok(exit code) when it ran to the end.
-fn spawn_and_wait(root: &FsPath, t: &Task, dir: &FsPath, log_path: &FsPath) -> Result<Option<i32>, String> {
+fn spawn_and_wait(root: &FsPath, t: &Task, dir: &FsPath, ctx: &mut RunCtx) -> Result<Option<i32>, String> {
     let prompt = if t.resume { resume_prompt(t, dir) } else { build_prompt(root, t, dir)? };
-    let log_name = log_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let result = result_file(dir, &log_name);
+    let result = result_file(dir, &ctx.log);
     if let Some(p) = result.parent() {
         let _ = std::fs::create_dir_all(p);
     }
-    let log = std::fs::File::create(log_path).map_err(|e| format!("log: {e}"))?;
+    let log = std::fs::File::create(dir.join("logs").join(&ctx.log)).map_err(|e| format!("log: {e}"))?;
     let log_err = log.try_clone().map_err(|e| format!("log: {e}"))?;
     let mut cmd = omp_cmd();
     cmd.current_dir(root)
@@ -1105,28 +1210,104 @@ fn spawn_and_wait(root: &FsPath, t: &Task, dir: &FsPath, log_path: &FsPath) -> R
         .env("CKIT_BOARD_ASK_DIR", ask::ask_dir(root, &t.id))
         .env("CKIT_BOARD_STAGE", t.stage.key())
         .env("CKIT_BOARD_RESULT", &result);
+    // Its own process group: Ctrl+C on the dashboard, or the service manager
+    // stopping it, does not take the run down; the next dashboard adopts it.
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
     cmd
         .arg("-p")
         .arg(prompt)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err));
-    let mut child = cmd.spawn().map_err(|e| format!("không chạy được omp: {e}"))?;
-    // Lets a restarted dashboard stop this omp if the dashboard dies first.
-    let pid = child.id();
-    let _ = std::fs::write(dir.join("run.pid"), pid.to_string());
-    let out = wait_child(root, t, &mut child);
-    release_pid(dir, pid);
+    let child = cmd.spawn().map_err(|e| format!("không chạy được omp: {e}"))?;
+    ctx.pid = child.id();
+    // `run.pid` lets a restarted dashboard find this omp; `run.json` lets it finish the run.
+    let _ = std::fs::write(dir.join("run.pid"), ctx.pid.to_string());
+    let _ = std::fs::write(dir.join("run.json"), serde_json::to_vec(&*ctx).unwrap_or_default());
+    let out = wait_child(root, t, &mut Proc::Child(child));
+    release_pid(dir, ctx.pid);
     out
 }
 
-/// Drop `run.pid` only while it still names this run's omp: a racing run of the
-/// task may have written its own pid since, and a restarted dashboard needs it.
+/// Drop `run.pid` / `run.json` only while they still name this run's omp: a racing
+/// run of the task may have written its own since, and a restarted dashboard needs it.
 fn release_pid(dir: &FsPath, pid: u32) {
     let path = dir.join("run.pid");
     if std::fs::read_to_string(&path).is_ok_and(|s| s.trim() == pid.to_string()) {
         let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(dir.join("run.json"));
     }
+}
+
+/// A run's omp: started by this dashboard, or adopted from a previous one (not our
+/// child, so no exit code; it is reaped by init).
+enum Proc {
+    Child(std::process::Child),
+    Adopted(u32),
+}
+
+impl Proc {
+    /// Some(exit code) once it ended.
+    fn try_wait(&mut self) -> Result<Option<Option<i32>>, String> {
+        match self {
+            Proc::Child(c) => c.try_wait().map(|s| s.map(|s| s.code())).map_err(|e| e.to_string()),
+            Proc::Adopted(pid) => Ok((!pid_alive(*pid)).then_some(None)),
+        }
+    }
+
+    fn kill(&mut self) {
+        match self {
+            Proc::Child(c) => {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+            Proc::Adopted(pid) => stop_pid(*pid),
+        }
+    }
+}
+
+fn pid_alive(pid: u32) -> bool {
+    Command::new("kill").args(["-0", &pid.to_string()]).stderr(Stdio::null()).status().is_ok_and(|s| s.success())
+}
+
+/// SIGTERM, then SIGKILL after 5 s.
+fn stop_pid(pid: u32) {
+    let _ = Command::new("kill").arg(pid.to_string()).stderr(Stdio::null()).status();
+    for _ in 0..20 {
+        std::thread::sleep(Duration::from_millis(250));
+        if !pid_alive(pid) {
+            return;
+        }
+    }
+    let _ = Command::new("kill").args(["-9", &pid.to_string()]).stderr(Stdio::null()).status();
+}
+
+/// `pid` is this task's omp (its command line carries the task's session dir):
+/// pids get reused, and the boss may run their own omp sessions.
+fn owns_pid(dir: &FsPath, pid: u32) -> bool {
+    let argv = Command::new("ps").args(["-ww", "-o", "command=", "-p", &pid.to_string()]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    argv.contains(&dir.join("sessions").display().to_string())
+}
+
+/// The current run of `t` that a previous dashboard started and that is still
+/// alive: this dashboard finishes it instead of parking the task.
+fn live_run(dir: &FsPath, t: &Task) -> Option<RunCtx> {
+    let ctx: RunCtx = serde_json::from_str(&std::fs::read_to_string(dir.join("run.json")).ok()?).ok()?;
+    let last = t.runs.last()?;
+    (last.ended.is_none() && last.log == ctx.log && ctx.pid != 0 && owns_pid(dir, ctx.pid)).then_some(ctx)
+}
+
+/// Wait for an adopted run in the background and finish it (holds the project's run slot).
+fn adopt(root: PathBuf, t: Task, ctx: RunCtx) {
+    running().lock().map(|mut r| r.insert(root.clone())).ok();
+    std::thread::spawn(move || {
+        let dir = task_dir(&root, &t.id);
+        let outcome = wait_child(&root, &t, &mut Proc::Adopted(ctx.pid));
+        release_pid(&dir, ctx.pid);
+        finish_run(&root, &t, &ctx, outcome);
+        running().lock().map(|mut r| r.remove(&root)).ok();
+    });
 }
 
 /// This run's verdict file (`<task>/results/<stage>-<n>.json`): runs never share
@@ -1152,7 +1333,7 @@ fn read_result(dir: &FsPath, log: &str, since: std::time::SystemTime) -> Option<
 
 /// Wait for a run's omp: stops it on cancel, on an overdue pause, or after the
 /// working-time limit.
-fn wait_child(root: &FsPath, t: &Task, child: &mut std::process::Child) -> Result<Option<i32>, String> {
+fn wait_child(root: &FsPath, t: &Task, child: &mut Proc) -> Result<Option<i32>, String> {
     // The timeout counts working time only: a run waiting on a teammate's or the
     // boss's answer (`board_ask`) is not stuck.
     let mut worked = Duration::ZERO;
@@ -1160,8 +1341,8 @@ fn wait_child(root: &FsPath, t: &Task, child: &mut std::process::Child) -> Resul
     let ask_dir = ask::ask_dir(root, &t.id);
     let key = cancel_key(root, &t.id);
     loop {
-        if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
-            return Ok(st.code());
+        if let Some(code) = child.try_wait()? {
+            return Ok(code);
         }
         let cancelled = cancels().lock().map(|c| c.contains(&key)).unwrap_or(false);
         let dt = tick.elapsed();
@@ -1171,13 +1352,11 @@ fn wait_child(root: &FsPath, t: &Task, child: &mut std::process::Child) -> Resul
         }
         let pause_overdue = inbox::pause_age(root, &t.id).is_some_and(|a| a > inbox::PAUSE_GRACE);
         if pause_overdue {
-            let _ = child.kill();
-            let _ = child.wait();
+            child.kill();
             return Ok(None);
         }
         if cancelled || worked > STAGE_TIMEOUT {
-            let _ = child.kill();
-            let _ = child.wait();
+            child.kill();
             return if cancelled { Ok(None) } else { Err(format!("{} quá thời gian {}h", t.stage.key(), STAGE_TIMEOUT.as_secs() / 3600)) };
         }
         std::thread::sleep(Duration::from_millis(500));
@@ -1191,9 +1370,17 @@ fn build_prompt(root: &FsPath, t: &Task, dir: &FsPath) -> Result<String, String>
         let name = if t.stage == Stage::Dev { "board/cmd-run.md" } else { "board/cmd-plan.md" };
         asset(name)?.replace("{{CMD}}", &w.name).replace("{{CMD_PATH}}", &w.path).replace("{{PLAN}}", w.plan.as_deref().unwrap_or("(none)"))
     } else {
-        // Without a planning step Dev/Test work straight from the request (no PLAN, no AC matrix).
-        let variant = if matches!(t.stage, Stage::Dev | Stage::Test) && !t.has(Stage::Solution) { "-auto" } else { "" };
+        // Without a planning step Dev/Test work straight from the request (no PLAN, no AC
+        // matrix); so does a revision round: the phases are closed, the change is small.
+        let variant = if matches!(t.stage, Stage::Dev | Stage::Test) && (!t.has(Stage::Solution) || t.round > 1) { "-auto" } else { "" };
         format!("{}\n\n{}", asset("board/common.md")?, asset(&format!("board/{}{variant}.md", t.stage.key()))?)
+    };
+    let template = match t.revise.as_deref().filter(|_| t.round > 1) {
+        Some(r) => format!(
+            "{template}\n\n## Vòng {} — the boss asked for more after the work was done\nThe earlier rounds are already on `{{{{BRANCH}}}}`. This round does exactly this, nothing else (it overrides older instructions where they conflict):\n<revision>\n{r}\n</revision>",
+            t.round
+        ),
+        None => template,
     };
     let steps = t.steps.iter().map(|s| s.key()).collect::<Vec<_>>().join(" → ");
     let thread = if t.thread.is_empty() {
@@ -1230,7 +1417,7 @@ fn build_prompt(root: &FsPath, t: &Task, dir: &FsPath) -> Result<String, String>
 
 /// Documents the drawer shows, in reading order: the `/feature` tree (PROJECT,
 /// REQUIREMENTS, ROADMAP, per-phase CONTEXT/PLAN/VERIFICATION, STATE) plus the
-/// board's own REVIEW (PO) and REPORT. Second value = the doc to open first.
+/// board's own REVIEW (Reviewer) and REPORT. Second value = the doc to open first.
 fn task_docs(root: &FsPath, t: &Task) -> (Vec<(String, String)>, Option<String>) {
     let mut docs: Vec<(String, String)> = Vec::new();
     let mut add = |name: String, path: PathBuf| {
@@ -1293,14 +1480,7 @@ fn message_ends(log: &str) -> impl Iterator<Item = serde_json::Value> + '_ {
 }
 
 fn log_cost(path: &FsPath) -> f64 {
-    let raw = std::fs::read_to_string(path).unwrap_or_default();
-    message_ends(&raw)
-        .filter_map(|m| m.pointer("/usage/cost").cloned())
-        .map(|c| match c.get("total").and_then(|x| x.as_f64()) {
-            Some(t) => t,
-            None => c.as_object().map(|o| o.values().filter_map(|x| x.as_f64()).sum()).unwrap_or(0.0),
-        })
-        .sum()
+    digest::scan_file(path).cost
 }
 
 fn clip(s: &str, n: usize) -> String {
@@ -1311,54 +1491,57 @@ fn clip(s: &str, n: usize) -> String {
     }
 }
 
+/// The human-readable tail of a run log (or an omp session file: a subagent's):
+/// assistant text, tool calls, real errors, harness errors (blocked/skipped tool
+/// calls) and stderr. Streamed: only message lines are buffered.
 fn log_lines(path: &FsPath) -> Vec<serde_json::Value> {
-    let raw = std::fs::read_to_string(path).unwrap_or_default();
-    let mut out = Vec::new();
-    let line = |kind: &str, text: String| serde_json::json!({ "kind": kind, "text": text });
-    for l in raw.lines() {
-        if !l.starts_with('{') {
-            if !l.trim().is_empty() {
-                out.push(line("error", clip(l, 500))); // stderr interleaved in the log
+    let mut out: std::collections::VecDeque<serde_json::Value> = std::collections::VecDeque::with_capacity(LOG_TAIL + 1);
+    let mut push = |kind: &str, text: String| {
+        if out.len() == LOG_TAIL {
+            out.pop_front();
+        }
+        out.push_back(serde_json::json!({ "kind": kind, "text": text }));
+    };
+    let keep = |head: &[u8]| digest::is_message(head) || head.first().is_some_and(|b| *b != b'{');
+    let Ok(file) = std::fs::File::open(path) else { return Vec::new() };
+    let _ = digest::scan_lines(file, 24, keep, 32 << 20, |l| {
+        if !l.starts_with(b"{") {
+            let s = String::from_utf8_lossy(l);
+            if !s.trim().is_empty() {
+                push("error", clip(s.trim_end(), 500)); // stderr interleaved in the log
             }
-            continue;
+            return;
         }
-        if !l.starts_with("{\"type\":\"message_end\"") {
-            continue;
-        }
-        let Some(m) = serde_json::from_str::<serde_json::Value>(l).ok().and_then(|v| v.get("message").cloned()) else {
-            continue;
-        };
-        let role = m.get("role").and_then(|r| r.as_str()).unwrap_or("");
-        let blocks = m.get("content").and_then(|c| c.as_array()).cloned().unwrap_or_default();
-        match role {
+        let Some(m) = digest::message_of(l) else { return };
+        match m.get("role").and_then(|r| r.as_str()).unwrap_or("") {
             "assistant" => {
-                for b in blocks {
+                for b in m.get("content").and_then(|c| c.as_array()).into_iter().flatten() {
                     match b.get("type").and_then(|x| x.as_str()) {
                         Some("text") => {
                             let s = b.get("text").and_then(|x| x.as_str()).unwrap_or("").trim();
                             if !s.is_empty() {
-                                out.push(line("text", clip(s, 2000)));
+                                push("text", clip(s, 2000));
                             }
                         }
                         Some("toolCall") => {
                             let name = b.get("name").and_then(|x| x.as_str()).unwrap_or("tool");
                             let args = b.get("arguments").map(|a| a.to_string()).unwrap_or_default();
-                            out.push(line("tool", format!("{name} {}", clip(&args, 240))));
+                            push("tool", format!("{name} {}", clip(&args, 240)));
                         }
                         _ => {}
                     }
                 }
             }
             "toolResult" if m.get("isError").and_then(|x| x.as_bool()) == Some(true) => {
-                let text = blocks.iter().filter_map(|b| b.get("text").and_then(|x| x.as_str())).collect::<Vec<_>>().join(" ");
+                let text = digest::text_blocks(&m);
                 let name = m.get("toolName").and_then(|x| x.as_str()).unwrap_or("tool");
-                out.push(line("error", format!("{name}: {}", clip(&text, 400))));
+                let kind = if digest::is_harness_error(&text) { "harness" } else { "error" };
+                push(kind, format!("{name}: {}", clip(&text, 400)));
             }
             _ => {}
         }
-    }
-    let skip = out.len().saturating_sub(LOG_TAIL);
-    out.split_off(skip)
+    });
+    out.into()
 }
 
 // ── HTTP API ────────────────────────────────────────────────────────────────
@@ -1381,12 +1564,20 @@ pub(crate) fn routes<S: Clone + Send + Sync + 'static>() -> Router<S> {
         .route("/api/board/pm/report", post(pm::api_report))
         .route("/api/board/:id/progress", get(api_progress))
         .route("/api/board/:id/phases", get(api_phases))
+        .route("/api/board/:id/decisions", get(api_decisions))
+        .route("/api/board/:id/goals", get(api_goals))
+        .route("/api/board/:id/chat", get(api_chat).post(api_chat_post))
+        .route("/api/board/:id/chat/:msg/confirm", post(api_chat_confirm))
+        .route("/api/board/:id/chat/:msg/cancel", post(api_chat_cancel))
+        .route("/api/board/:id/mr/draft", get(api_mr_draft))
         .merge(telegram::routes())
+        .merge(pms::routes())
+        .merge(usage::routes())
+        .merge(mrs::routes())
         .route("/api/board/steps", get(api_step_catalog))
         .route("/api/board/workflows", get(workflow::api_list).post(workflow::api_toggle))
         .route("/api/board/:id/steps", post(api_steps))
         .route("/api/board/:id/asks/:qid", post(api_ask_answer))
-        .route("/api/board/:id/asks/:qid/escalate", post(api_ask_escalate))
         .route("/api/board/:id/inbox", post(api_inbox))
         .route("/api/board/:id/resume", post(api_resume))
         .route("/api/board/coord", get(api_coord).post(api_coord_say))
@@ -1403,25 +1594,14 @@ fn resume_prompt(t: &Task, dir: &FsPath) -> String {
 }
 
 /// Stop the omp a dead dashboard left running for this task (it would otherwise
-/// race the resumed run on the same tree). Kills only a process whose command
-/// line carries THIS task's session dir — pids get reused, and the boss may run
-/// their own omp sessions.
+/// race the resumed run on the same tree), when it is not adopted.
 fn kill_orphan(dir: &FsPath) {
     let Some(pid) = std::fs::read_to_string(dir.join("run.pid")).ok().and_then(|s| s.trim().parse::<u32>().ok()) else { return };
     let _ = std::fs::remove_file(dir.join("run.pid"));
-    let argv = Command::new("ps").args(["-ww", "-o", "command=", "-p", &pid.to_string()]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-    if !argv.contains(&dir.join("sessions").display().to_string()) {
-        return;
+    let _ = std::fs::remove_file(dir.join("run.json"));
+    if owns_pid(dir, pid) {
+        stop_pid(pid);
     }
-    let _ = Command::new("kill").arg(pid.to_string()).status();
-    for _ in 0..20 {
-        std::thread::sleep(Duration::from_millis(250));
-        let alive = Command::new("kill").args(["-0", &pid.to_string()]).status().is_ok_and(|s| s.success());
-        if !alive {
-            return;
-        }
-    }
-    let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
 }
 
 /// The interrupted run got as far as an omp session (written after `started`).
@@ -1447,28 +1627,104 @@ fn walk_files(dir: &FsPath) -> Vec<PathBuf> {
 
 #[derive(Deserialize)]
 struct AnswerBody {
-    answer: String,
-    /// boss (default) · po / ba (the coordinator answering for the team)
     #[serde(default)]
-    by: Option<String>,
+    answer: String,
+    /// AC change cards: `approve` / `reject`; `answer` is then the boss's comment.
+    #[serde(default)]
+    decision: Option<String>,
 }
 
-/// The boss (or the coordinator as PO) answers a teammate's mid-step question.
+/// The boss answers a teammate's mid-step question (pre-empts the Leader's answer),
+/// or decides an AC change card.
 async fn api_ask_answer(Path((id, qid)): Path<(String, String)>, Query(rq): Query<RootQ>, Json(b): Json<AnswerBody>) -> ApiRes<Task> {
-    let by = b.by.clone().unwrap_or_else(|| "boss".into());
-    if !matches!(by.as_str(), "boss" | "po" | "ba") {
-        return Err((StatusCode::BAD_REQUEST, "by phải là boss, po hoặc ba".into()));
-    }
-    update(&rq, &id, |root, t| ask::answer_as(root, t, &qid, &b.answer, &by))
+    let answer = match b.decision.as_deref() {
+        Some("approve") => format!("Duyệt. {}", b.answer.trim()).trim().to_string(),
+        Some("reject") => format!("Không duyệt. {}", b.answer.trim()).trim().to_string(),
+        Some(other) => return Err((StatusCode::BAD_REQUEST, format!("decision phải là approve hoặc reject, không phải {other}"))),
+        None => b.answer,
+    };
+    update(&rq, &id, |root, t| ask::answer_as(root, t, &qid, &answer, "boss"))
+}
+
+async fn api_chat(Path(id): Path<String>, Query(rq): Query<RootQ>) -> ApiRes<serde_json::Value> {
+    let root = project(&rq)?;
+    let t = load(&root, &id).ok_or((StatusCode::NOT_FOUND, format!("task {id} không tồn tại")))?;
+    let v = tokio::task::spawn_blocking(move || chat::view(&root, &t)).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(v))
 }
 
 #[derive(Deserialize)]
-struct EscalateBody {
-    reason: String,
+struct ChatBody {
+    #[serde(default)]
+    text: String,
 }
 
-async fn api_ask_escalate(Path((id, qid)): Path<(String, String)>, Query(rq): Query<RootQ>, Json(b): Json<EscalateBody>) -> ApiRes<Task> {
-    update(&rq, &id, |_, t| ask::escalate(t, &qid, &b.reason, "coordinator"))
+/// The boss writes to the task's Leader (answered in the background).
+async fn api_chat_post(Path(id): Path<String>, Query(rq): Query<RootQ>, Json(b): Json<ChatBody>) -> ApiRes<serde_json::Value> {
+    if b.text.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "nội dung trống".into()));
+    }
+    let Json(t) = update(&rq, &id, |root, t| chat::post(root, t, &b.text, None))?;
+    let root = project(&rq)?;
+    Ok(Json(chat::view(&root, &t)))
+}
+
+#[derive(Deserialize, Default)]
+struct ConfirmBody {
+    #[serde(default)]
+    fields: Option<chat::Fields>,
+}
+
+/// Run a proposal the boss confirmed (optionally edited). An action is prepared
+/// (git rails) and started in the background; preconditions that may clear later
+/// (branch gone, target missing, conflict, task running) refuse with 409 and keep
+/// the proposal open. A pushing action at the acceptance gate is the acceptance.
+async fn api_chat_confirm(Path((id, msg)): Path<(String, String)>, Query(rq): Query<RootQ>, body: Option<Json<ConfirmBody>>) -> ApiRes<serde_json::Value> {
+    let root = project(&rq)?;
+    let fields = body.and_then(|Json(b)| b.fields).unwrap_or_default();
+    // Record the edits first; the proposal must still be open.
+    let Json(t) = update(&rq, &id, |_, t| {
+        let p = chat::open_proposal(t, &msg)?;
+        chat::normalize(p);
+        chat::apply_fields(p, fields);
+        Ok(())
+    })?;
+    let p = t.chat.iter().find(|m| m.id == msg).and_then(|m| m.proposal.clone()).ok_or((StatusCode::NOT_FOUND, format!("không có tin {msg}")))?;
+    match p.kind.as_str() {
+        "action" => {
+            let accept = p.pushes && (t.stage, t.status) == (Stage::Acceptance, Status::Waiting);
+            let mode = action::Mode { msg: Some(msg.clone()), accept, via: None };
+            let (r2, id2) = (root.clone(), id.clone());
+            tokio::task::spawn_blocking(move || action::start(&r2, &id2, &p, mode).map(|_| ())).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?.map_err(bad)?;
+        }
+        "revise" => {
+            if chat::busy(&root, &id) {
+                return Err(bad("Leader đang trả lời hoặc một thao tác đang chạy — chờ xong".to_string()));
+            }
+            let _ = update(&rq, &id, |root, t| {
+                chat::revise(root, t, p.instruction.as_deref().unwrap_or(""))?;
+                chat::finish(t, &msg, Ok(()));
+                Ok(())
+            })?;
+        }
+        k => return Err(bad(format!("đề xuất {k} không chạy được"))),
+    }
+    let t = load(&root, &id).ok_or((StatusCode::NOT_FOUND, format!("task {id} không tồn tại")))?;
+    Ok(Json(chat::view(&root, &t)))
+}
+
+async fn api_chat_cancel(Path((id, msg)): Path<(String, String)>, Query(rq): Query<RootQ>) -> ApiRes<serde_json::Value> {
+    let Json(t) = update(&rq, &id, |_, t| chat::cancel(t, &msg))?;
+    let root = project(&rq)?;
+    Ok(Json(chat::view(&root, &t)))
+}
+
+/// Traceability: requirements → ACs → tasks → commits → verdicts, orphans, AC gate.
+async fn api_goals(Path(id): Path<String>, Query(rq): Query<RootQ>) -> ApiRes<serde_json::Value> {
+    let root = project(&rq)?;
+    let t = load(&root, &id).ok_or((StatusCode::NOT_FOUND, format!("task {id} không tồn tại")))?;
+    let v = tokio::task::spawn_blocking(move || goals::goals(&root, &t)).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(v))
 }
 
 #[derive(Deserialize)]
@@ -1730,6 +1986,9 @@ struct CreateBody {
     /// enabled for the project. Replaces `steps` with the workflow's fixed steps.
     #[serde(default)]
     workflow: Option<String>,
+    /// The PMS task/ticket the boss picked in "Lấy từ PMS".
+    #[serde(default)]
+    source: Option<pms::Source>,
 }
 
 /// Project for creating a task (or picking its workflow): any git repo may start
@@ -1758,6 +2017,9 @@ async fn api_create(Query(rq): Query<RootQ>, Json(b): Json<CreateBody>) -> ApiRe
         Some(name) => Some(workflow::resolve(&home, &root, name).map_err(|e| (StatusCode::BAD_REQUEST, e))?),
         None => None,
     };
+    if let Some(s) = &b.source {
+        s.validate().map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    }
     let steps = match (&wf, &b.steps) {
         (Some(_), _) => workflow::steps(),
         (None, Some(s)) => validate_steps(s).map_err(|e| (StatusCode::BAD_REQUEST, e))?,
@@ -1790,6 +2052,14 @@ async fn api_create(Query(rq): Query<RootQ>, Json(b): Json<CreateBody>) -> ApiRe
         resume_note: String::new(),
         paused_by: "new".into(),
         workflow: wf,
+        source: b.source,
+        approved_snapshot: None,
+        ac_gate: None,
+            round: 1,
+            revise: None,
+            mr: None,
+            base_sha: None,
+            chat: Vec::new(),
     };
     t.paused = true;
     save(&root, &mut t).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -1800,28 +2070,70 @@ async fn api_create(Query(rq): Query<RootQ>, Json(b): Json<CreateBody>) -> ApiRe
 async fn api_get(Path(id): Path<String>, Query(rq): Query<RootQ>) -> ApiRes<serde_json::Value> {
     let root = project(&rq)?;
     let t = load(&root, &id).ok_or((StatusCode::NOT_FOUND, format!("task {id} không tồn tại")))?;
-    let (docs, focus) = task_docs(&root, &t);
+    // Old runs are digested on first view (streams GBs of logs): off the async workers.
+    let v = tokio::task::spawn_blocking(move || task_detail(&root, &t)).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(v))
+}
+
+fn task_detail(root: &FsPath, t: &Task) -> serde_json::Value {
+    let (docs, focus) = task_docs(root, t);
     let docs: Vec<serde_json::Value> = docs.into_iter().map(|(name, content)| serde_json::json!({ "name": name, "content": content })).collect();
-    let prog = progress::progress(&root, &t).map(|p| p.counts());
+    let prog = progress::progress(root, t).map(|p| p.counts());
     // "Code theo kế hoạch này" is offered only when the endpoint would accept it.
-    let can_continue = continue_blocker(&root, &t).is_none();
-    Ok(Json(serde_json::json!({ "task": t, "docs": docs, "focus": focus, "phase": active_phase(&root, &t), "progress": prog, "can_continue": can_continue })))
+    let can_continue = continue_blocker(root, t).is_none();
+    // Model/effort per run (from each run's log) + the current one for the header.
+    let mut task = serde_json::to_value(t).unwrap_or_default();
+    let models = usage::run_models(root, t);
+    task["run_model"] = serde_json::json!(models.last().cloned().flatten().map(|m| usage::RunModel { subagents: Vec::new(), ..m }));
+    if let Some(runs) = task["runs"].as_array_mut() {
+        for (r, m) in runs.iter_mut().zip(models) {
+            r["model"] = serde_json::json!(m);
+        }
+    }
+    let story = timeline::enrich(root, t, &mut task);
+    serde_json::json!({
+        "task": task, "docs": docs, "focus": focus, "phase": active_phase(root, t), "progress": prog, "can_continue": can_continue,
+        "report": story.report, "now": story.now, "unanswered": story.unanswered,
+    })
+}
+
+/// Every decision of the task (boss, Leader/PO, coordinator for the boss, re-graded ACs).
+async fn api_decisions(Path(id): Path<String>, Query(rq): Query<RootQ>) -> ApiRes<serde_json::Value> {
+    let root = project(&rq)?;
+    let t = load(&root, &id).ok_or((StatusCode::NOT_FOUND, format!("task {id} không tồn tại")))?;
+    let d = tokio::task::spawn_blocking(move || timeline::decisions(&root, &t)).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!(d)))
 }
 
 #[derive(Deserialize)]
 struct LogQuery {
     run: Option<usize>,
+    /// A subagent session of the run (`digest.subagents_list[].id`).
+    agent: Option<String>,
 }
 
 async fn api_log(Path(id): Path<String>, Query(q): Query<LogQuery>, Query(rq): Query<RootQ>) -> ApiRes<serde_json::Value> {
     let root = project(&rq)?;
     let t = load(&root, &id).ok_or((StatusCode::NOT_FOUND, format!("task {id} không tồn tại")))?;
-    let last = t.runs.len().checked_sub(1);
-    let idx = q.run.or(last);
-    let run = idx.and_then(|i| t.runs.get(i));
-    let lines = run.map(|r| log_lines(&task_dir(&root, &id).join("logs").join(&r.log))).unwrap_or_default();
-    let running = t.status == Status::Running && idx == last;
-    Ok(Json(serde_json::json!({ "run": run, "running": running, "lines": lines })))
+    let v = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, ApiErr> {
+        let last = t.runs.len().checked_sub(1);
+        let idx = q.run.or(last);
+        let run = idx.and_then(|i| t.runs.get(i));
+        let dir = task_dir(&root, &id);
+        let agents = run.map(|r| usage::subagent_sessions(&dir, &dir.join("logs").join(&r.log), r)).unwrap_or_default();
+        let path = match (&q.agent, run) {
+            (Some(a), _) => Some(agents.iter().find(|(aid, ..)| aid == a).map(|(_, p, ..)| p.clone()).ok_or((StatusCode::NOT_FOUND, format!("không có subagent {a} trong lần chạy này")))?),
+            (None, Some(r)) => Some(dir.join("logs").join(&r.log)),
+            (None, None) => None,
+        };
+        let lines = path.map(|p| log_lines(&p)).unwrap_or_default();
+        let running = t.status == Status::Running && idx == last;
+        let agents: Vec<serde_json::Value> = agents.iter().map(|(aid, _, m, e)| serde_json::json!({ "id": aid, "name": aid, "model": m, "effort": e })).collect();
+        Ok(serde_json::json!({ "run": run, "running": running, "agent": q.agent, "agents": agents, "lines": lines }))
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+    Ok(Json(v))
 }
 
 #[derive(Deserialize)]
@@ -1848,15 +2160,69 @@ struct ApproveQ {
     then: Option<String>,
 }
 
-async fn api_approve(Path(id): Path<String>, Query(rq): Query<RootQ>, Query(aq): Query<ApproveQ>, body: Option<Json<ApproveQ>>) -> ApiRes<Task> {
-    // The coordinator may approve plans for the boss — never accept/merge.
+#[derive(Deserialize, Default)]
+struct ApproveBody {
+    #[serde(default)]
+    then: Option<String>,
+    /// Acceptance: the MR choices (`target`, `title`, `description`, `push` |
+    /// `include_foreign`), same as the chat's merge_request confirm.
+    #[serde(flatten)]
+    mr: chat::Fields,
+}
+
+async fn api_approve(Path(id): Path<String>, Query(rq): Query<RootQ>, Query(aq): Query<ApproveQ>, body: Option<Json<ApproveBody>>) -> ApiRes<Task> {
+    // The coordinator may approve plans for the boss — never accept (create the MR).
     let coordinator = aq.by.as_deref() == Some("coordinator");
-    let then_code = aq.then.as_deref() == Some("code") || body.is_some_and(|Json(b)| b.then.as_deref() == Some("code"));
+    let body = body.map(|Json(b)| b).unwrap_or_default();
+    let then_code = aq.then.as_deref() == Some("code") || body.then.as_deref() == Some("code");
     if then_code && coordinator {
         return Err(bad("điều phối chỉ được duyệt kế hoạch, không bật thêm bước code"));
     }
-    update(&rq, &id, |root, t| if then_code { approve_and_code(root, t) } else { approve(root, t, coordinator) })
+    let root = project(&rq)?;
+    let accepting = load(&root, &id).is_some_and(|t| (t.stage, t.status) == (Stage::Acceptance, Status::Waiting));
+    if accepting && !coordinator && !then_code {
+        return accept_via_mr(root, id, body.mr).await;
+    }
+    let res = update(&rq, &id, |root, t| if then_code { approve_and_code(root, t) } else { approve(root, t, coordinator) });
+    // A refused delegation is left for the boss: say why in the thread and on Telegram.
+    if let Err((_, msg)) = &res {
+        if let Some(reason) = msg.strip_prefix(COORD_REFUSED) {
+            let line = format!("{COORD_REFUSED}{reason}. Chờ sếp duyệt.");
+            if let Ok(Json(t)) = update(&rq, &id, |_, t| {
+                t.say("system", &line);
+                Ok(())
+            }) {
+                telegram::tell(&format!("⚠️ {} · {}: {line}", t.id, t.title));
+            }
+        }
+    }
+    res
 }
+
+/// Acceptance = the MR action. Without choices (and no MR yet) → 400 whose body is
+/// the draft JSON (`GET /mr/draft`) for the card; preconditions → 409, task stays
+/// at the gate. Otherwise the action starts and the task is returned at once.
+async fn accept_via_mr(root: PathBuf, id: String, fields: chat::Fields) -> ApiRes<Task> {
+    let has_mr = load(&root, &id).is_some_and(|t| t.mr.is_some());
+    if !fields.has_choice() && !has_mr {
+        let r = root.clone();
+        let i = id.clone();
+        let d = tokio::task::spawn_blocking(move || load(&r, &i).map(|t| chat::draft(&r, &t))).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        return Err((StatusCode::BAD_REQUEST, d.map(|d| d.to_string()).unwrap_or_default()));
+    }
+    let mut p = chat::Proposal { kind: "action".into(), state: "open".into(), pushes: true, ..Default::default() };
+    chat::apply_fields(&mut p, fields);
+    tokio::task::spawn_blocking(move || action::accept(&root, &id, &p, None)).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?.map(Json).map_err(bad)
+}
+
+async fn api_mr_draft(Path(id): Path<String>, Query(rq): Query<RootQ>) -> ApiRes<serde_json::Value> {
+    let root = project(&rq)?;
+    let t = load(&root, &id).ok_or((StatusCode::NOT_FOUND, format!("task {id} không tồn tại")))?;
+    tokio::task::spawn_blocking(move || chat::draft(&root, &t)).await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+/// Prefix of the coordinator's refused approval (the API error and the thread line).
+const COORD_REFUSED: &str = "Điều phối không được duyệt thay sếp: ";
 
 /// Add Dev, Test, Report, Acceptance to a plan-only task (other enabled steps
 /// stay); returns `old ⇒ new` for the thread.
@@ -1935,8 +2301,8 @@ async fn api_continue(Path(id): Path<String>, Query(rq): Query<RootQ>, headers: 
     update(&rq, &id, |root, t| continue_plan(root, t, &client))
 }
 
-/// Pass the gate the task waits at (plan approval, investigate continue/close,
-/// acceptance = merge). The coordinator may only approve plans.
+/// Pass the gate the task waits at (plan approval, investigate continue/close).
+/// Acceptance is the MR (`chat::accept`). The coordinator may only approve plans.
 fn approve(root: &FsPath, t: &mut Task, coordinator: bool) -> Result<(), String> {
     // A parked task waits for Bắt đầu / Tiếp tục first: passing its gate now would
     // skip work that never ran (e.g. close a never-started investigate).
@@ -1945,6 +2311,9 @@ fn approve(root: &FsPath, t: &mut Task, coordinator: bool) -> Result<(), String>
     }
     match (t.stage, t.status) {
         (Stage::Approval, Status::Waiting) if coordinator => {
+            if let Some(reason) = goals::coordinator_blocker(root, t) {
+                return Err(format!("{COORD_REFUSED}{reason}"));
+            }
             t.say("coordinator", "Duyệt kế hoạch thay sếp (theo luật uỷ quyền).");
             t.advance(Stage::Approval);
             park_if_finished(root, t);
@@ -1953,6 +2322,7 @@ fn approve(root: &FsPath, t: &mut Task, coordinator: bool) -> Result<(), String>
         _ if coordinator => Err("điều phối chỉ được duyệt kế hoạch".into()),
         (Stage::Approval, Status::Waiting) => {
             t.say("user", "Duyệt giải pháp.");
+            goals::record_snapshot(root, t);
             t.advance(Stage::Approval);
             park_if_finished(root, t);
             Ok(())
@@ -1963,13 +2333,7 @@ fn approve(root: &FsPath, t: &mut Task, coordinator: bool) -> Result<(), String>
             park_if_finished(root, t);
             Ok(())
         }
-        (Stage::Acceptance, Status::Waiting) => {
-            let msg = merge_task_branch(root, t)?;
-            t.say("user", "Nghiệm thu.");
-            t.say("system", &msg);
-            t.set(Stage::Done, Status::Done);
-            Ok(())
-        }
+        (Stage::Acceptance, Status::Waiting) => Err("nghiệm thu = tạo merge request (nút Tạo MR)".into()),
         _ => Err("task không ở cổng duyệt".into()),
     }
 }
@@ -1989,7 +2353,7 @@ fn retry(t: &mut Task) -> Result<(), String> {
         return Err("chỉ chạy lại được task lỗi".into());
     }
     t.note = None;
-    // Stopped after the PO's last rejection: re-running Review would just reject
+    // Stopped after the Reviewer's last rejection: re-running Review would just reject
     // (and bill) again. Go to the boss if they switched the gate on, else re-plan.
     if t.stage == Stage::Review && t.rounds.solution >= MAX_SOLUTION_ROUNDS {
         if t.has(Stage::Approval) {
@@ -2026,7 +2390,11 @@ async fn api_cancel(Path(id): Path<String>, Query(rq): Query<RootQ>) -> ApiRes<T
 
 /// UTC ISO-8601 (`2026-10-14T15:25:40Z`) without a date crate.
 fn iso_now() -> String {
-    let s = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    iso_at(SystemTime::now())
+}
+
+fn iso_at(t: SystemTime) -> String {
+    let s = t.duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
     let (days, rem) = (s.div_euclid(86_400), s.rem_euclid(86_400));
     // Howard Hinnant's civil_from_days.
     let z = days + 719_468;
@@ -2070,6 +2438,14 @@ mod tests {
             resume_note: String::new(),
             paused_by: String::new(),
             workflow: None,
+            source: None,
+            approved_snapshot: None,
+            ac_gate: None,
+            round: 1,
+            revise: None,
+            mr: None,
+            base_sha: None,
+            chat: Vec::new(),
         }
     }
 
@@ -2162,6 +2538,9 @@ mod tests {
         std::fs::write(dir.join("sessions/x/1.jsonl"), "{}").unwrap();
         let args = stage_args(&root, &t, &dir);
         assert!(has(&args, "--continue"), "{args:?}");
+        // A continued run still gets its own class's flags (incl. `--thinking`).
+        let class_flags: Vec<std::ffi::OsString> = ModelConfig::load().class_flags(t.stage.model_class()).into_iter().map(Into::into).collect();
+        assert!(class_flags.iter().all(|f| args.contains(f)), "{args:?} lacks {class_flags:?}");
         let sd = args.iter().position(|a| a == "--session-dir").unwrap();
         assert_eq!(args[sd + 1], dir.join("sessions").as_os_str(), "the plan step's session dir");
         t.stage = Stage::Solution;
@@ -2302,6 +2681,16 @@ mod tests {
     }
 
     #[test]
+    fn review_is_the_independent_reviewer_on_the_strong_model() {
+        let s = Stage::Review;
+        assert_eq!((s.key(), s.label(), s.who(), s.speaker()), ("review", "Phản biện kế hoạch", "Reviewer", "reviewer"));
+        assert!(matches!(s.model_class(), TaskClass::Review));
+        assert_eq!((Stage::Solution.who(), Stage::Solution.speaker()), ("Leader", "leader"));
+        let review = crate::assets::read("board/review.md").unwrap();
+        assert!(review.contains("did NOT write") && review.contains("never answer"), "independent reviewer prompt");
+    }
+
+    #[test]
     fn review_rejections_are_bounded() {
         let mut t = task(Stage::Review, Status::Running);
         for _ in 1..MAX_SOLUTION_ROUNDS {
@@ -2418,7 +2807,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("ckit-park-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let mut t = task(Stage::Dev, Status::Running);
-        t.runs.push(Run { stage: Stage::Dev, n: 1, started: iso_now(), ended: None, exit: None, cost: 0.0, verdict: None, log: "dev-1.jsonl".into() });
+        t.runs.push(Run { stage: Stage::Dev, n: 1, started: iso_now(), ended: None, exit: None, cost: 0.0, verdict: None, log: "dev-1.jsonl".into(), phase: None, round: None, title: None });
         park_on_open(&root, &mut t);
         assert_eq!((t.status, t.paused, t.paused_by.as_str()), (Status::Waiting, true, "restart"));
         assert_eq!(t.runs[0].verdict.as_deref(), Some("interrupted"));
@@ -2446,7 +2835,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         // Not a git repo → checkout is a no-op, so only the tree lock decides.
         let mut holder = task(Stage::Approval, Status::Waiting);
-        holder.runs.push(Run { stage: Stage::Intake, n: 1, started: String::new(), ended: None, exit: None, cost: 0.0, verdict: None, log: String::new() });
+        holder.runs.push(Run { stage: Stage::Intake, n: 1, started: String::new(), ended: None, exit: None, cost: 0.0, verdict: None, log: String::new(), phase: None, round: None, title: None });
         save(&root, &mut holder).unwrap();
         let mut next = task(Stage::Intake, Status::Queued);
         next.id = "T-002".into();
@@ -2466,46 +2855,6 @@ mod tests {
     }
 
     #[test]
-    fn accept_keeps_users_active_feature_and_refuses_unrelated_wip() {
-        let root = std::env::temp_dir().join(format!("ckit-board-merge-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("agents/planning")).unwrap();
-        let g = |args: &[&str]| git(&root, args).unwrap();
-        g(&["init", "-q", "-b", "main"]);
-        g(&["config", "user.email", "t@t"]);
-        g(&["config", "user.name", "t"]);
-        std::fs::write(root.join("agents/planning/ACTIVE.md"), "user-feat\n").unwrap();
-        std::fs::write(root.join("app.txt"), "v1\n").unwrap();
-        g(&["add", "-A"]);
-        g(&["commit", "-qm", "base"]);
-        // The user's own untracked draft under docs/ before the task starts.
-        std::fs::create_dir_all(root.join("docs/knowledge")).unwrap();
-        std::fs::write(root.join("docs/knowledge/draft.md"), "mine\n").unwrap();
-        let mut t = task(Stage::Acceptance, Status::Waiting);
-        checkout_task_branch(&root, &mut t).unwrap();
-        // What a /feature run leaves on the branch: its own ACTIVE slug + config + a code commit.
-        std::fs::write(root.join("agents/planning/ACTIVE.md"), "board-t-001\n").unwrap();
-        std::fs::write(root.join("agents/planning/config.json"), "{\"active_feature\":\"board-t-001\"}\n").unwrap();
-        std::fs::write(root.join("app.txt"), "v2\n").unwrap();
-        g(&["add", "app.txt"]);
-        g(&["commit", "-qm", "feat"]);
-        // User WIP outside /feature paths blocks the merge instead of being swept in.
-        std::fs::write(root.join("app.txt"), "user wip\n").unwrap();
-        let err = merge_task_branch(&root, &t).unwrap_err();
-        assert!(err.contains("app.txt"), "{err}");
-        g(&["checkout", "--", "app.txt"]);
-        merge_task_branch(&root, &t).unwrap();
-        assert_eq!(current_branch(&root).as_deref(), Some("main"));
-        assert_eq!(std::fs::read_to_string(root.join("agents/planning/ACTIVE.md")).unwrap(), "user-feat\n");
-        assert!(!root.join("agents/planning/config.json").exists(), "absent on base → stays absent");
-        let tracked = git(&root, &["ls-files", "docs/knowledge/draft.md"]).unwrap();
-        assert!(tracked.is_empty(), "user's pre-task draft must not be committed/merged");
-        assert_eq!(std::fs::read_to_string(root.join("docs/knowledge/draft.md")).unwrap(), "mine\n", "draft left untouched");
-        assert_eq!(std::fs::read_to_string(root.join("app.txt")).unwrap(), "v2\n", "the delivered code is merged");
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
     fn board_state_is_git_excluded_without_any_gitignore() {
         let root = std::env::temp_dir().join(format!("ckit-board-excl-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -2520,6 +2869,22 @@ mod tests {
         let st = git(&root, &["-c", "core.excludesFile=/dev/null", "status", "--porcelain", "--untracked-files=all"]).unwrap();
         assert!(!st.contains(".cache"), "board state visible to git: {st}");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_root_reached_through_a_symlink_is_one_project() {
+        let home = std::env::temp_dir().join(format!("ckit-roots-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let real = home.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, home.join("link")).unwrap();
+        std::fs::create_dir_all(roots_file(&home).parent().unwrap()).unwrap();
+        std::fs::write(roots_file(&home), serde_json::to_string(&[home.join("link"), real.clone()]).unwrap()).unwrap();
+        assert_eq!(roots(&home), vec![canonical(real.clone())], "legacy duplicate collapses");
+        register_root(&home, &home.join("link"));
+        assert_eq!(roots(&home).len(), 1, "registering the symlink adds nothing");
+        let _ = std::fs::remove_dir_all(home);
     }
 
     #[test]
@@ -2567,7 +2932,7 @@ mod tests {
         let history = "{\"type\":\"agent_end\",\"messages\":[{\"role\":\"assistant\",\"usage\":{\"cost\":{\"total\":0.75}}}]}\n";
         std::fs::write(logs.join("dev-2.jsonl"), format!("{header}{}{history}", end(0.1))).unwrap();
         std::fs::write(ask::ask_dir(&root, &t.id).join("po-1.jsonl"), end(0.05)).unwrap();
-        let run = |n: u32| Run { stage: Stage::Dev, n, started: iso_now(), ended: None, exit: None, cost: 0.0, verdict: None, log: format!("dev-{n}.jsonl") };
+        let run = |n: u32| Run { stage: Stage::Dev, n, started: iso_now(), ended: None, exit: None, cost: 0.0, verdict: None, log: format!("dev-{n}.jsonl"), phase: None, round: None, title: None };
         t.runs = vec![run(1), run(2)];
 
         // dev-1's worker finishes after dev-2 was claimed: it closes dev-1, not the last run.
@@ -2575,7 +2940,7 @@ mod tests {
         close_run(&root, &mut t, "dev-1.jsonl", Some(0), Some("pass".into()), c1);
         assert!((t.runs[0].cost - 0.75).abs() < 1e-9 && t.runs[0].ended.is_some());
         assert_eq!((t.runs[1].cost, t.runs[1].ended.as_deref()), (0.0, None));
-        assert!((t.cost - 0.8).abs() < 1e-9, "runs + PO answer, got {}", t.cost);
+        assert!((t.cost - 0.8).abs() < 1e-9, "runs + Leader answer, got {}", t.cost);
 
         // Restart: the orphaned dev-2 is closed and billed; a run billed from another log is re-priced.
         t.runs[0].cost = 9.0;
@@ -2592,7 +2957,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("ckit-board-stale-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let mut t = task(Stage::Dev, Status::Running);
-        let run = |n: u32| Run { stage: Stage::Dev, n, started: iso_now(), ended: None, exit: None, cost: 0.0, verdict: None, log: format!("dev-{n}.jsonl") };
+        let run = |n: u32| Run { stage: Stage::Dev, n, started: iso_now(), ended: None, exit: None, cost: 0.0, verdict: None, log: format!("dev-{n}.jsonl"), phase: None, round: None, title: None };
         t.runs = vec![run(1), run(2)];
         let said = t.thread.len();
 

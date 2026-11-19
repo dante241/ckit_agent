@@ -31,6 +31,7 @@ struct Activity {
     errors: usize,
     files: Vec<String>,
     last: String,
+    last_error: String,
 }
 
 #[derive(Default)]
@@ -90,48 +91,26 @@ fn who(stage: Stage) -> &'static str {
     stage.who()
 }
 
+#[cfg(test)]
 fn activity(log: &str) -> Activity {
-    let mut a = Activity::default();
-    for m in message_ends(log) {
-        let blocks = m.get("content").and_then(|c| c.as_array()).cloned().unwrap_or_default();
-        match m.get("role").and_then(|r| r.as_str()) {
-            Some("assistant") => {
-                for b in blocks {
-                    match b.get("type").and_then(|x| x.as_str()) {
-                        Some("toolCall") => {
-                            a.tools += 1;
-                            let name = b.get("name").and_then(|x| x.as_str()).unwrap_or("tool");
-                            let args = b.get("arguments").cloned().unwrap_or_default();
-                            let intent = args.get("i").and_then(|x| x.as_str());
-                            a.last = match intent {
-                                Some(i) => format!("{name}: {i}"),
-                                None => format!("{name} {}", clip(&args.to_string(), 80)),
-                            };
-                            if matches!(name, "edit" | "write") {
-                                let path = args.get("path").and_then(|x| x.as_str()).unwrap_or("");
-                                if !path.is_empty() && !path.contains("://") && !path.contains(BOARD_REL) {
-                                    let short = path.rsplit('/').next().unwrap_or(path).to_string();
-                                    if !a.files.contains(&short) {
-                                        a.files.push(short);
-                                    }
-                                }
-                            }
-                        }
-                        Some("text") => {
-                            let s = b.get("text").and_then(|x| x.as_str()).unwrap_or("").trim();
-                            if !s.is_empty() {
-                                a.last = clip(s, 120);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            Some("toolResult") if m.get("isError").and_then(|x| x.as_bool()) == Some(true) => a.errors += 1,
-            _ => {}
+    from_facts(digest::scan(log.as_bytes()))
+}
+
+/// Streamed: a running log is 100s of MB by the time the PM looks at it.
+fn activity_of(path: &FsPath) -> Activity {
+    from_facts(digest::scan_file(path))
+}
+
+fn from_facts(f: digest::Facts) -> Activity {
+    let mut files: Vec<String> = Vec::new();
+    for p in &f.files {
+        let short = p.rsplit('/').next().unwrap_or(p).to_string();
+        if !files.contains(&short) {
+            files.push(short);
         }
     }
-    a
+    // Harness errors (a blocked grep, a skipped wait) are not the work going wrong.
+    Activity { tools: f.tools, errors: f.errors, files, last: f.last, last_error: f.last_error.unwrap_or_default() }
 }
 
 fn status_line(t: &Task, phase: Option<&str>, a: &Activity, mins: u64) -> String {
@@ -147,6 +126,29 @@ fn status_line(t: &Task, phase: Option<&str>, a: &Activity, mins: u64) -> String
         s.push_str(&format!(". Gần nhất: {}", a.last));
     }
     s
+}
+
+/// ≤5-line digest of what a run has done so far (files edited, last error, last
+/// intent), for the Leader answering that run's question.
+#[cfg(test)]
+pub(super) fn run_digest(t: &Task, log: &str) -> String {
+    digest_text(t, activity(log))
+}
+
+/// `run_digest` of a log file, streamed.
+pub(super) fn run_digest_of(t: &Task, path: &FsPath) -> String {
+    digest_text(t, activity_of(path))
+}
+
+fn digest_text(t: &Task, a: Activity) -> String {
+    let or = |s: &str, none: &str| if s.is_empty() { none.to_string() } else { s.to_string() };
+    [
+        format!("Bước {} ({}), {} lệnh, {} lỗi tool", t.stage.key(), who(t.stage), a.tools, a.errors),
+        format!("File đã sửa: {}", or(&a.files.join(", "), "chưa có")),
+        format!("Lỗi gần nhất: {}", or(&a.last_error, "không có")),
+        format!("Việc gần nhất: {}", or(&a.last, "chưa có")),
+    ]
+    .join("\n")
 }
 
 /// Called by the worker every loop for each project root.
@@ -189,7 +191,7 @@ pub(super) fn observe(root: &FsPath) {
         let Some(run) = t.runs.last() else { continue };
         let log_path = task_dir(root, &t.id).join("logs").join(&run.log);
         let size = std::fs::metadata(&log_path).map(|m| m.len()).unwrap_or(0);
-        let a = activity(&std::fs::read_to_string(&log_path).unwrap_or_default());
+        let a = activity_of(&log_path);
         let elapsed = secs_since(&run.started);
         let (mins, reason) = {
             let mut st = state();
@@ -239,19 +241,40 @@ pub(super) fn observe(root: &FsPath) {
 
 /// Seconds since an `iso_now()` timestamp (`YYYY-MM-DDTHH:MM:SSZ`); 0 if unparsable.
 pub(super) fn secs_since(iso: &str) -> u64 {
+    let Some(then) = iso_secs(iso) else { return 0 };
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    (now - then).max(0) as u64
+}
+
+/// Unix seconds of a UTC `YYYY-MM-DDTHH:MM:SS…` timestamp (fraction/`Z` ignored).
+pub(super) fn iso_secs(iso: &str) -> Option<i64> {
     let n = |r: std::ops::Range<usize>| iso.get(r).and_then(|s| s.parse::<i64>().ok());
-    let (Some(y), Some(m), Some(d), Some(hh), Some(mm), Some(ss)) = (n(0..4), n(5..7), n(8..10), n(11..13), n(14..16), n(17..19)) else {
-        return 0;
-    };
+    let (y, m, d, hh, mm, ss) = (n(0..4)?, n(5..7)?, n(8..10)?, n(11..13)?, n(14..16)?, n(17..19)?);
     // Howard Hinnant's days_from_civil (inverse of iso_now's civil_from_days).
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
     let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let then = (era * 146_097 + doe - 719_468) * 86_400 + hh * 3600 + mm * 60 + ss;
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
-    (now - then).max(0) as u64
+    Some((era * 146_097 + doe - 719_468) * 86_400 + hh * 3600 + mm * 60 + ss)
+}
+
+/// `(at, text)` of the PM status ticks posted for task `id`, oldest first.
+pub(super) fn task_ticks(root: &FsPath, id: &str) -> Vec<(String, String)> {
+    let raw = std::fs::read_to_string(feed_path(root)).unwrap_or_default();
+    raw.lines()
+        .filter(|l| l.contains(id))
+        .filter_map(|l| serde_json::from_str::<Entry>(l).ok())
+        .filter(|e| e.kind == "status" && e.task.as_deref() == Some(id))
+        .map(|e| (e.at, e.text))
+        .collect()
+}
+
+/// Phase a status tick names: `Tester M1 đang test — …` → M1 (the word before `đang`).
+pub(super) fn tick_phase(text: &str) -> Option<String> {
+    let head = text.split(" đang ").next()?;
+    let w = head.split_whitespace().last()?;
+    (w.len() > 1 && w.starts_with('M') && w[1..].chars().all(|c| c.is_ascii_alphanumeric()) && w[1..].starts_with(|c: char| c.is_ascii_digit())).then(|| w.to_string())
 }
 
 fn log_tail(path: &FsPath, n: usize) -> String {
@@ -448,6 +471,19 @@ mod tests {
         assert_eq!(a.errors, 1);
         assert_eq!(a.files, vec!["calc.py".to_string()], "board artifacts and xd:// devices are not project edits");
         assert_eq!(a.last, "bash: Running tests");
+        assert_eq!(a.last_error, "");
+    }
+
+    #[test]
+    fn digest_names_files_last_error_and_last_intent() {
+        let log = concat!(
+            "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"name\":\"edit\",\"arguments\":{\"path\":\"app.py\",\"i\":\"Adding sum\"}}]}}\n",
+            "{\"type\":\"message_end\",\"message\":{\"role\":\"toolResult\",\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"SyntaxError: bad\"}]}}\n",
+        );
+        let t = super::super::tests::task(Stage::Dev, Status::Running);
+        let d = run_digest(&t, log);
+        assert!(d.lines().count() <= 5, "{d}");
+        assert!(d.contains("File đã sửa: app.py") && d.contains("Lỗi gần nhất: SyntaxError: bad") && d.contains("Việc gần nhất: edit: Adding sum"), "{d}");
     }
 
     #[test]
@@ -455,7 +491,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("ckit-pm-tick-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let mut t = super::super::tests::task(Stage::Dev, Status::Running);
-        t.runs.push(Run { stage: Stage::Dev, n: 1, started: iso_now(), ended: None, exit: None, cost: 0.0, verdict: None, log: "dev-1.jsonl".into() });
+        t.runs.push(Run { stage: Stage::Dev, n: 1, started: iso_now(), ended: None, exit: None, cost: 0.0, verdict: None, log: "dev-1.jsonl".into(), phase: None, round: None, title: None });
         save(&root, &mut t).unwrap();
         let logs = task_dir(&root, &t.id).join("logs");
         std::fs::create_dir_all(&logs).unwrap();

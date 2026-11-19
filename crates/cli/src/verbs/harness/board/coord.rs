@@ -1,10 +1,11 @@
-//! The coordinator ("Điều phối viên"): one standing agent per project that the
-//! boss chats with and that the board wakes on events (a teammate's question to
-//! the PO, a plan waiting for approval, a stalled or straying run, periodic
-//! oversight). It is ONE omp session kept on disk (`omp --continue`), run a turn
+//! The coordinator ("Điều phối viên"): the boss's assistant, one standing agent
+//! per project that the boss chats with (dashboard / Telegram) and that the
+//! board wakes on events (a plan waiting for approval, a stalled or straying
+//! run, periodic oversight). It does NOT answer team questions: the Leader does
+//! (`ask.rs`). It is ONE omp session kept on disk (`omp --continue`), run a turn
 //! at a time — standing without a resident process. It acts only through the
 //! board's own API (tools in `assets/extensions/ckit-board.ts`) plus read-only
-//! code tools: it never edits code and never merges.
+//! code tools: no edit/write/bash, so it never modifies the repo, never merges.
 
 use std::collections::HashMap;
 use std::path::{Path as FsPath, PathBuf};
@@ -20,7 +21,7 @@ use crate::models::{ModelConfig, TaskClass};
 const TURN_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 /// How often a running Dev/Test step is reviewed against its plan (only if it moved).
 const OVERSIGHT: Duration = Duration::from_secs(10 * 60);
-const TOOLS: &str = "read,grep,glob,board_status,board_task,board_create,board_message,board_resume,board_answer,board_escalate,board_approve";
+const TOOLS: &str = "read,grep,glob,board_status,board_task,board_create,board_message,board_resume,board_approve";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub(super) struct ChatMsg {
@@ -277,22 +278,12 @@ fn spawn(root: &FsPath, sessions: &FsPath, fresh: bool, ext: &FsPath, prompt: &s
     let err = f.try_clone().ok()?;
     let mut cmd = super::omp_cmd();
     cmd.current_dir(root)
-        .arg("--cwd")
-        .arg(root)
-        .args(["--mode", "json", "--approval-mode", "yolo", "--no-extensions", "--no-skills", "--session-dir"])
-        .arg(sessions)
-        .arg("-e")
-        .arg(ext)
-        .arg(format!("--tools={TOOLS}"))
-        .args(ModelConfig::load().class_flags(TaskClass::Plan))
+        .args(coord_args(root, sessions, fresh, ext))
         .env("CKIT_BOARD_API", format!("http://127.0.0.1:{port}"))
         .env("CKIT_BOARD_ROOT", root)
         .stdin(Stdio::null())
         .stdout(Stdio::from(f))
         .stderr(Stdio::from(err));
-    if !fresh {
-        cmd.arg("--continue");
-    }
     let mut child = cmd.arg("-p").arg(prompt).spawn().ok()?;
     let started = Instant::now();
     loop {
@@ -308,4 +299,37 @@ fn spawn(root: &FsPath, sessions: &FsPath, fresh: bool, ext: &FsPath, prompt: &s
         }
     }
     super::pm::answer_text(&std::fs::read_to_string(log).ok()?)
+}
+
+/// omp arguments of a coordinator turn, the prompt excluded: only its board
+/// tools (`-e ext`) and read-only code tools; `--continue` after the first turn.
+fn coord_args(root: &FsPath, sessions: &FsPath, fresh: bool, ext: &FsPath) -> Vec<std::ffi::OsString> {
+    let mut a: Vec<std::ffi::OsString> = vec!["--cwd".into(), root.into()];
+    a.extend(["--mode", "json", "--approval-mode", "yolo", "--no-extensions", "--no-skills", "--session-dir"].map(Into::into));
+    a.push(sessions.into());
+    a.extend(["-e".into(), ext.into(), format!("--tools={TOOLS}").into()]);
+    a.extend(ModelConfig::load().class_flags(TaskClass::Plan).into_iter().map(Into::into));
+    if !fresh {
+        a.push("--continue".into());
+    }
+    a
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn coordinator_runs_read_only_with_its_board_tools() {
+        let s: Vec<String> = coord_args(FsPath::new("/r"), FsPath::new("/r/s"), false, FsPath::new("/r/x.ts")).iter().map(|x| x.to_string_lossy().into_owned()).collect();
+        let tools = s.iter().find_map(|x| x.strip_prefix("--tools=")).expect("explicit tool list");
+        let tools: Vec<&str> = tools.split(',').collect();
+        assert!(["read", "grep", "glob", "board_status", "board_message", "board_approve"].iter().all(|t| tools.contains(t)));
+        for banned in ["edit", "write", "bash", "board_answer", "board_escalate"] {
+            assert!(!tools.contains(&banned), "{banned} must not be available to the coordinator");
+        }
+        assert!(s.contains(&"--no-extensions".to_string()) && s.contains(&"--continue".to_string()));
+        let ext = crate::assets::read("extensions/ckit-board.ts").unwrap();
+        assert!(!ext.contains("board_answer") && !ext.contains("board_escalate"), "no team-question tools registered");
+    }
 }

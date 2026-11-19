@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type ModelBoardRow, type ModelConfig, type ModelRole, type ModelTask } from "./api";
 import { Page, Loading, isMissing, ErrorState, EndpointMissing, EmptyState } from "./ui";
+import { Select } from "./Select";
 
 // Models page: leads with what each Board step actually runs (resolved through
 // omp `modelRoles`), one control per task class; the raw roles/tasks tables sit
@@ -219,7 +220,7 @@ function ModelPicker({ value, ompRoles, saving, label, onChange }: {
   };
   return (
     <div className="mb-picker">
-      <select
+      <Select
         className="model-select"
         aria-label={label}
         value={custom ? CUSTOM : value}
@@ -243,7 +244,7 @@ function ModelPicker({ value, ompRoles, saving, label, onChange }: {
         )}
         {!known && <option value={value}>{value}</option>}
         <option value={CUSTOM}>Nhập model id khác…</option>
-      </select>
+      </Select>
       {custom && (
         <form className="mb-custom" onSubmit={submit}>
           <input

@@ -13,7 +13,9 @@ import { NavIcon, Glyph } from "./icons";
 import { Page, Loading, isMissing, ErrorState, EndpointMissing, EmptyState } from "./ui";
 import { BoardPage, BoardNavBadge } from "./Board";
 import { SidebarProjects } from "./SidebarProjects";
+import { BrandMark } from "./BrandMark";
 import { ModelsPage } from "./Models";
+import { Select } from "./Select";
 import {
   ReactFlow, Background, Controls,
   useNodesState, useEdgesState,
@@ -88,9 +90,9 @@ export default function App() {
     <div className="app">
       <nav className="sidebar" aria-label="Sections">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">ck</span>
+          <span className="brand-mark" aria-hidden="true"><BrandMark size={26} /></span>
           <span className="brand-text">
-            <span className="brand-name">ckit</span>
+            <span className="brand-name">Ckit Harness</span>
             <span className="brand-sub">Đội AI của bạn</span>
           </span>
         </div>
@@ -472,12 +474,12 @@ function SkillsPage() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
-            <select value={tier} onChange={(e) => setTier(e.target.value as typeof tier)}>
+            <Select value={tier} onChange={(e) => setTier(e.target.value as typeof tier)}>
               <option value="all">all tiers</option>
               <option value="always">always</option>
               <option value="on-demand">on-demand</option>
               <option value="off">off</option>
-            </select>
+            </Select>
           </div>
         ) : undefined
       }
@@ -560,9 +562,9 @@ function MemoryPage() {
         <div className="toolbar">
           <label className="field">
             <span className="field-label">File</span>
-            <select value={file} onChange={(e) => { setFile(e.target.value as typeof file); setDraft(""); }}>
+            <Select value={file} onChange={(e) => { setFile(e.target.value as typeof file); setDraft(""); }}>
               {MEMORY_FILES.map((f) => <option key={f} value={f}>{f}.md</option>)}
-            </select>
+            </Select>
           </label>
           {!preview && (
             <button className="primary" disabled={save.isPending || isLoading} onClick={() => save.mutate(draft)}>
@@ -1341,10 +1343,10 @@ function RulesPage() {
           <input type="text" placeholder="rule-name" value={name} onChange={(e) => setName(e.target.value)} className="grow" aria-label="rule name" />
           <label className="field">
             <span className="field-label">Scope</span>
-            <select value={scope} onChange={(e) => setScope(e.target.value as "project" | "global")}>
+            <Select value={scope} onChange={(e) => setScope(e.target.value as "project" | "global")}>
               <option value="project">project</option>
               <option value="global">global</option>
-            </select>
+            </Select>
           </label>
         </div>
         <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Rule content (markdown)…" className="textarea-sm" aria-label="rule content" spellCheck={false} />

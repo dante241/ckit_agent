@@ -72,6 +72,9 @@ enum Cmd {
     /// Commit + push + PR (smart shortcut)
     Ship(verbs::ship::Args),
 
+    /// Automated PR/MR code review with omp (GitHub/GitLab; `init` writes the CI workflow)
+    Review(verbs::review::Args),
+
     /// Run project command per recipe (dev/build/test/fmt/lint)
     Run(verbs::run::Args),
 
@@ -98,6 +101,9 @@ enum Cmd {
 
     /// Stand up / refresh the agent harness (init = deploy skills+codegraph+AGENTS.md+memory; up = refresh)
     Harness(verbs::harness::Args),
+
+    /// Run the Board dashboard as a background service: install | uninstall | restart | logs | status
+    Service(verbs::service::Args),
 
     /// Render web route / file to PNG (for AI image-routing)
     Shot(verbs::shot::Args),
@@ -161,6 +167,7 @@ fn main() -> Result<()> {
         Some(Cmd::Ai(a))      => verbs::ai::run(a),
         Some(Cmd::Bg(a)) => verbs::bg::run(a),
         Some(Cmd::Ship(a))    => verbs::ship::run(a),
+        Some(Cmd::Review(a))  => verbs::review::run(a),
         Some(Cmd::Run(a))     => verbs::run::run(a),
         Some(Cmd::Theme(a)) => verbs::theme::run(a),
         Some(Cmd::Sec(a))     => verbs::sec::run(a),
@@ -169,6 +176,7 @@ fn main() -> Result<()> {
         Some(Cmd::Clean(a))   => verbs::clean::run(a),
         Some(Cmd::Skill(a))   => verbs::skill::run(a),
         Some(Cmd::Harness(a)) => verbs::harness::run(a),
+        Some(Cmd::Service(a)) => verbs::service::run(a),
         Some(Cmd::Shot(a))    => verbs::shot::run(a),
         Some(Cmd::DiffImg(a)) => verbs::diff_img::run(a),
         Some(Cmd::PdfImg(a))  => verbs::pdf_img::run(a),

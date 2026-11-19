@@ -1,18 +1,18 @@
 // The one thing the boss can do on a task card, right on the card (Bảng,
 // "Cần bạn" list, room seat). Same mutations as the task page; anything that
-// needs reading or a choice (answer, accept/merge, plan-only approval) opens
+// needs reading or a choice (answer, acceptance = create the MR, plan-only approval) opens
 // the task page instead, focused where the boss acts.
 import type { MouseEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type BoardTaskSummary } from "./api";
-import { askingYou } from "./Asks";
+import { acGateOf, askingYou } from "./Asks";
 import { isNew, isPaused } from "./Interject";
 import { isTerminal } from "./Board";
 import { focusOnOpen, type OpenFocus } from "./TaskPage";
 import { Glyph } from "./icons";
 
 type Run = "approve" | "retry" | "resume";
-type Action = { label: string; tone: "primary" | "retry"; run?: Run; focus?: OpenFocus };
+type Action = { label: string; tone: "primary" | "retry"; run?: Run; focus?: OpenFocus; title?: string };
 
 /** What the card offers for this task, or null when nothing waits on the boss. */
 export function cardAction(t: BoardTaskSummary): Action | null {
@@ -20,12 +20,13 @@ export function cardAction(t: BoardTaskSummary): Action | null {
   if (askingYou(t)) return { label: "Trả lời", tone: "primary", focus: "ask" };
   if (t.status === "failed") return { label: "Chạy lại", tone: "retry", run: "retry" };
   if (t.status !== "waiting") return null;
+  if (acGateOf(t)) return { label: "Duyệt đổi AC", tone: "primary", focus: "ask" };
   if (isPaused(t)) return { label: isNew(t) ? "Bắt đầu" : "Tiếp tục", tone: "primary", run: "resume" };
   switch (t.stage) {
     case "approval":
       return { label: "Duyệt kế hoạch", tone: "primary", run: "approve" };
     case "acceptance":
-      return { label: "Nghiệm thu", tone: "primary", focus: "act" };
+      return { label: "Nghiệm thu", tone: "primary", focus: "act", title: "Mở việc để nghiệm thu: agent đẩy nhánh của task và tạo MR bằng skill của dự án" };
     case "investigate":
       return { label: "Xem trả lời", tone: "primary", focus: "act" };
     default:
@@ -73,6 +74,7 @@ export function CardAction({ t, root, onOpen }: { t: BoardTaskSummary; root: str
         onClick={click}
         disabled={act.isPending}
         aria-label={`${a.label} ${t.id}`}
+        title={a.title}
       >
         {a.run === "retry" ? <Glyph name="refresh" /> : null}
         {act.isPending ? (a.run === "approve" ? "Đang duyệt…" : "Đang xếp lượt…") : a.label}
